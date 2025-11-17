@@ -314,3 +314,53 @@ Material(
 - **Single Window**: ImGui context supports only one window at a time
 - **No Tone Mapping**: Accumulated colors are directly averaged without tone mapping or exposure control
 - **Performance Overhead**: Post-process highlighting and pixel inspector use full-image GPU readbacks
+
+## 实现正确 Path Tracing 的要点（简短清单）
+
+以下是实现 “可收敛、无小黑点、物理正确” path tracer 的关键步骤与优先级建议：
+
+1. 高质量随机数 / 采样策略
+   - 使用高质量 RNG（PCG / xorshift128+ / Sobol + Owen scrambling）避免周期性噪点。
+   - 对每帧做像素级 jitter（亚像素抖动）和样本维度分层（stratified）或低偏差序列（蓝噪 / Sobol）。
+
+2. 累积与显示
+   - 在 shader 中累积样本并显示“累积平均值”，而不是只展示当前样本；这样逐帧会稳定收敛，明显减少黑点视觉感受。
+   - 在相机移动或场景变化时重置累积（Film::Reset）。
+
+3. 正确的几何/着色法线
+   - 在 ClosestHit/HitRecord 中从顶点缓冲读取并按重心插值顶点法线（shading normal），使用几何法线计算 front_face 并保证一致性。
+   - 如果不能访问顶点缓冲，提供健壮的回退法线估算；但长期方案应保证顶点访问可用。
+
+4. 重要性采样（急需）
+   - 漫反射：余弦加权半球采样（已经实现）。
+   - 镜面/粗糙金属：GGX / VNDF 重要性采样（显著提升高光和金属区域收敛速度）。
+   - 对发光体和环境使用预过滤/采样 CDF + MIS（Multiple Importance Sampling）。
+
+5. 能量守恒与权重修正
+   - 在采样与权重处确保基于 pdf 的重要性采样修正，维护能量守恒与无偏估计。
+   - 俄罗斯轮盘（Russian roulette）在合理 bounce 后启用并用 throughput 作为基准。
+
+6. 发光体与直接光
+   - 将发光体（area lights / point / directional）作为显式采样源并配合 MIS，避免通过纯路径追踪慢收敛的直接光估计。
+   - 对环境贴图做重要性采样（预计算 CDF）。
+
+7. 材质与 BRDF 完整实现
+   - 移植并验证 Disney/Principled BRDF（含 clearcoat, sheen, transmission），并保持与 CPU 侧 Material 结构一致的内存布局。
+   - 注意 StructuredBuffer 中的对齐与 padding。
+
+8. 结构化调试与收敛策略
+   - 使用小场景与已知参考图对比（例如 Lambert 球 + point light）验证每一步改动。
+   - 增加样本数、增加 bounce，或使用 denoiser（例如 OptiX/Intel/OpenImageDenoise）做后处理。
+
+9. 性能与资源绑定
+   - 确保顶点/索引/材质缓冲的绑定正确（shader 与 CPU 端布局一致）；未绑定会导致崩溃（你之前的错误堆栈即表明未绑定顶点缓冲）。  
+   - 在 C++ 端打印/验证 shader resource 绑定状态（assert 或 debug marker）。
+
+优先级建议（短期 -> 中期 -> 长期）：
+- 短期：启用 jitter + 输出累积平均；修复 RNG；确保顶点缓冲绑定或使用稳健回退（避免崩溃）。  
+- 中期：实现顶点法线插值（从缓冲读取）、GGX/VNDF 重要性采样、发光体直接采样 + MIS。  
+- 长期：多通道（spectral / chromatic）采样优化、变分采样/蓝噪序列、去噪器集成与更复杂的材质模型。
+
+如果你愿意，我可以：
+- 帮你把 GLSL 中的 SampleGgxVndfAnisotropic / SampleDisneyBRDF / ComposeHitRecord 等直接翻译成 HLSL 版本（需要你确认顶点/索引缓冲在 D3D12/Vulkan 端如何绑定与布局）。  
+- 或者先帮你做一版“顶点缓冲安全”的 HLSL：如果顶点缓冲已绑定则使用真实插值，否则回退到估算法线（当前实现类似）。
