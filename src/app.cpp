@@ -232,35 +232,35 @@ void Application::OnInit() {
         scene_->AddEntity(ground);
     }
 
-    // Red sphere (using octahedron as sphere substitute)
-    {
-        auto red_sphere = std::make_shared<Entity>(
-            "meshes/octahedron.obj",
-            Material(glm::vec3(1.0f, 0.2f, 0.2f), 0.3f, 0.0f),
-            glm::translate(glm::mat4(1.0f), glm::vec3(-2.0f, 0.5f, 0.0f))
-        );
-        scene_->AddEntity(red_sphere);
-    }
+    // Transparent red glass sphere (using octahedron as sphere substitute)
+     {
+         auto red_sphere = std::make_shared<Entity>(
+             "meshes/octahedron.obj",
+             Material(glm::vec3(1.0f, 0.3f, 0.3f), 0.05f, 0.0f, 0.95f, 1.5f), // 红色玻璃：明显的红色色调
+             glm::translate(glm::mat4(1.0f), glm::vec3(-2.0f, 0.5f, 0.0f))
+         );
+         scene_->AddEntity(red_sphere);
+     }
 
     // Green metallic sphere
-    {
-        auto green_sphere = std::make_shared<Entity>(
-            "meshes/octahedron.obj",
-            Material(glm::vec3(0.2f, 1.0f, 0.2f), 0.2f, 0.8f),
-            glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.5f, 0.0f))
-        );
-        scene_->AddEntity(green_sphere);
-    }
+     {
+         auto green_sphere = std::make_shared<Entity>(
+             "meshes/octahedron.obj",
+             Material(glm::vec3(0.2f, 1.0f, 0.2f), 0.2f, 0.8f),
+             glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.5f, 0.0f))
+         );
+         scene_->AddEntity(green_sphere);
+     }
 
-    // Blue cube
+    // Transparent blue glass cube
     {
         auto blue_cube = std::make_shared<Entity>(
             "meshes/cube.obj",
-            Material(glm::vec3(0.2f, 0.2f, 1.0f), 0.5f, 0.0f),
+            Material(glm::vec3(0.3f, 0.3f, 1.0f), 0.05f, 0.0f, 0.95f, 1.5f), // 蓝色玻璃：明显的蓝色色调
             glm::translate(glm::mat4(1.0f), glm::vec3(2.0f, 0.5f, 0.0f))
         );
         scene_->AddEntity(blue_cube);
-    }
+    }   
 
     // Build acceleration structures
     scene_->BuildAccelerationStructures();

@@ -7,6 +7,9 @@ struct Material {
   float3 base_color;
   float roughness;
   float metallic;
+  float transmission;  // 透明度
+  float ior;           // 折射率
+  float padding[2];    // 对齐
 };
 
 struct HoverInfo {
@@ -74,6 +77,48 @@ float3 SampleCosineHemisphere(float3 n, inout uint seed) {
 // Schlick Fresnel
 float3 FresnelSchlick(float cosTheta, float3 F0) {
 	return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+}
+
+// Snell's Law 折射计算
+// 返回折射光线方向，如果发生全反射则返回 float3(0,0,0)
+bool Refract(float3 I, float3 N, float eta, out float3 refracted) {
+	float cosi = dot(-I, N);
+	float cost2 = 1.0 - eta * eta * (1.0 - cosi * cosi);
+	if (cost2 < 0.0) {
+		// 全反射
+		refracted = float3(0, 0, 0);
+		return false;
+	}
+	refracted = eta * I + (eta * cosi - sqrt(cost2)) * N;
+	return true;
+}
+
+// 介质Fresnel（用于透明材质）
+float FresnelDielectric(float cosThetaI, float etaI, float etaT) {
+	cosThetaI = clamp(cosThetaI, -1.0, 1.0);
+	bool entering = cosThetaI > 0.0;
+	if (!entering) {
+		float temp = etaI;
+		etaI = etaT;
+		etaT = temp;
+		cosThetaI = abs(cosThetaI);
+	}
+	
+	float sinThetaI = sqrt(max(0.0, 1.0 - cosThetaI * cosThetaI));
+	float sinThetaT = etaI / etaT * sinThetaI;
+	
+	if (sinThetaT >= 1.0) {
+		return 1.0; // 全反射
+	}
+	
+	float cosThetaT = sqrt(max(0.0, 1.0 - sinThetaT * sinThetaT));
+	
+	float rParallel = ((etaT * cosThetaI) - (etaI * cosThetaT)) / 
+	                  ((etaT * cosThetaI) + (etaI * cosThetaT));
+	float rPerpendicular = ((etaI * cosThetaI) - (etaT * cosThetaT)) / 
+	                       ((etaI * cosThetaI) + (etaT * cosThetaT));
+	
+	return (rParallel * rParallel + rPerpendicular * rPerpendicular) / 2.0;
 }
 
 // GGX importance sampling for specular
@@ -154,7 +199,8 @@ float3 SampleGGX(float3 N, float3 V, float roughness, inout uint seed) {
 			float3 rayDirNorm = normalize(rayDir);
 			float tsky = 0.5 * (rayDirNorm.y + 1.0);
 			tsky = smoothstep(0.0, 1.0, tsky);
-			float3 sky = lerp(float3(1.0,1.0,1.0), float3(0.5,0.7,1.0), tsky);
+			// 降低天空亮度避免过曝
+			float3 sky = lerp(float3(0.6,0.6,0.6), float3(0.3,0.5,0.8), tsky);
 			radiance += throughput * sky;
 			break;
 		}
@@ -164,10 +210,58 @@ float3 SampleGGX(float3 N, float3 V, float roughness, inout uint seed) {
 		float3 N = normalize(payload.normal);
 		float3 V = normalize(-rayDir);
 		
-		// 确保法线朝向观察方向
-		if (dot(N, V) < 0.0) N = -N;
+		// 确保法线朝向观察方向（对于非透明材质）
+		bool entering = dot(N, V) > 0.0;
+		if (!entering && mat.transmission < 0.01) {
+			N = -N;
+		}
 		
-		// 计算Fresnel
+		// 透明材质处理
+		if (mat.transmission > 0.01) {
+			float etaI = 1.0; // 空气
+			float etaT = mat.ior; // 材质
+			float3 normal = N;
+			
+			// 判断是进入还是离开介质
+			if (!entering) {
+				float temp = etaI;
+				etaI = etaT;
+				etaT = temp;
+				normal = -N;
+			}
+			
+			float cosTheta = abs(dot(normal, V));
+			float Fr = FresnelDielectric(cosTheta, etaI, etaT);
+			
+			// 根据Fresnel决定反射还是折射
+			float reflectProb = Fr;
+			reflectProb = lerp(reflectProb, 1.0, 1.0 - mat.transmission);
+			
+			float randChoice = Rand01(seed);
+			if (randChoice < reflectProb) {
+				// 反射 - 不改变颜色，只反射
+				rayDir = reflect(-V, normal);
+				rayOrigin = payload.hit_pos + normal * 0.001;
+				// 反射不吸收颜色
+			} else {
+				// 折射
+				float3 refracted;
+				float eta = etaI / etaT;
+				if (Refract(-V, normal, eta, refracted)) {
+					rayDir = normalize(refracted);
+					rayOrigin = payload.hit_pos - normal * 0.001;
+					// 光线穿过玻璃时应用颜色滤镜（Beer定律的简化）
+					throughput *= mat.base_color;
+				} else {
+					// 全反射
+					rayDir = reflect(-V, normal);
+					rayOrigin = payload.hit_pos + normal * 0.001;
+				}
+			}
+			continue; // 跳过常规的镜面/漫反射处理
+		}
+		
+		// 计算Fresnel（非透明材质）
 		float3 F0 = lerp(float3(0.04,0.04,0.04), mat.base_color, mat.metallic);
 		float cosTheta = max(dot(N, V), 0.0);
 		float3 F = FresnelSchlick(cosTheta, F0);
