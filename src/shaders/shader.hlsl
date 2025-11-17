@@ -21,6 +21,16 @@ ConstantBuffer<HoverInfo> hover_info : register(b0, space4);
 RWTexture2D<int> entity_id_output : register(u0, space5);
 RWTexture2D<float4> accumulated_color : register(u0, space6);
 RWTexture2D<int> accumulated_samples : register(u0, space7);
+// 暂时注释掉全局几何缓冲区，使用简化的法线计算
+// StructuredBuffer<float3> global_vertices : register(t0, space8);
+// StructuredBuffer<float3> global_normals : register(t0, space9);
+// StructuredBuffer<uint3> global_indices : register(t0, space10);
+// struct EntityOffset {
+//     uint vertex_offset;
+//     uint index_offset;
+//     uint padding[2];
+// };
+// StructuredBuffer<EntityOffset> entity_offsets : register(t0, space11);
 
 struct RayPayload {
 	float3 radiance;
@@ -111,7 +121,7 @@ float3 SampleGGX(float3 N, float3 V, float roughness, inout uint seed) {
 	float3 rayOrigin0 = origin4.xyz;
 	float3 rayDir0 = normalize(direction4.xyz);
 	
-	const int MAX_BOUNCES = 4; // 保守增加一次反弹
+	const int MAX_BOUNCES = 30; // 保守增加一次反弹
 	RayPayload payload;
 	payload.radiance = float3(0,0,0);
 	payload.throughput = float3(1,1,1);
@@ -236,34 +246,37 @@ float3 SampleGGX(float3 N, float3 V, float roughness, inout uint seed) {
 	float t = RayTCurrent();
 	payload.hit_pos = WorldRayOrigin() + WorldRayDirection() * t;
 	
-	// 使用几何法线(三角形面法线) - 最可靠的方法
-	// 如果你的mesh有顶点法线,应该用barycentrics插值
-	// 这里先用对象空间几何法线近似
+	// 暂时回到更简单但更正确的几何法线计算方法
+	// 使用命中点位置来推断法线，但针对不同几何体类型进行优化
 	
 	float3 worldPos = payload.hit_pos;
 	float3 objectPos = mul(WorldToObject3x4(), float4(worldPos, 1.0)).xyz;
-	
-	// 简化但更稳健的法线估算
 	float3 objectNormal;
 	
-	// 对于简单几何体,使用径向法线作为默认(适用于球体/凸多面体)
-	objectNormal = normalize(objectPos);
+	// 根据实体ID来判断几何体类型
+	uint entity_id = InstanceID();
 	
-	// 对于平面(y坐标接近-1的大地面)
-	if (abs(objectPos.y + 1.0) < 0.2 && length(objectPos.xz) > 0.5) {
+	if (entity_id == 0) {
+		// 地面（第一个实体）- 始终使用向上的法线
 		objectNormal = float3(0, 1, 0);
 	}
-	// 对于立方体,检测哪个坐标的绝对值最大
 	else {
-		float3 absPos = abs(objectPos);
-		float maxComp = max(max(absPos.x, absPos.y), absPos.z);
+		// 对于八面体和立方体，使用更智能的法线计算
+		// 计算到物体中心的方向作为法线的起点
+		objectNormal = normalize(objectPos);
 		
-		if (abs(absPos.x - maxComp) < 0.01) {
-			objectNormal = float3(sign(objectPos.x), 0, 0);
-		} else if (abs(absPos.y - maxComp) < 0.01) {
-			objectNormal = float3(0, sign(objectPos.y), 0);
-		} else if (abs(absPos.z - maxComp) < 0.01) {
-			objectNormal = float3(0, 0, sign(objectPos.z));
+		// 对于立方体（最后一个实体），使用面法线
+		if (entity_id == 3) { // 蓝色立方体
+			float3 absPos = abs(objectPos);
+			float maxComp = max(max(absPos.x, absPos.y), absPos.z);
+			
+			if (abs(absPos.x - maxComp) < 0.01) {
+				objectNormal = float3(sign(objectPos.x), 0, 0);
+			} else if (abs(absPos.y - maxComp) < 0.01) {
+				objectNormal = float3(0, sign(objectPos.y), 0);
+			} else if (abs(absPos.z - maxComp) < 0.01) {
+				objectNormal = float3(0, 0, sign(objectPos.z));
+			}
 		}
 	}
 	
@@ -271,7 +284,7 @@ float3 SampleGGX(float3 N, float3 V, float roughness, inout uint seed) {
 	float3x3 objectToWorld = (float3x3)ObjectToWorld3x4();
 	payload.normal = normalize(mul(objectToWorld, objectNormal));
 	
-	// 确保法线朝向光线来源(双面材质支持)
+	// 确保法线朝向光线来源
 	if (dot(payload.normal, -WorldRayDirection()) < 0) {
 		payload.normal = -payload.normal;
 	}

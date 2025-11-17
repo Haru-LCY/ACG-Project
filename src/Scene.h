@@ -5,6 +5,13 @@
 #include <vector>
 #include <memory>
 
+// Entity offset information for global buffers
+struct EntityOffset {
+    uint32_t vertex_offset;  // Starting vertex index in global buffer
+    uint32_t index_offset;   // Starting index in global buffer
+    uint32_t padding[2];     // Align to 16 bytes for GPU
+};
+
 // Scene manages a collection of entities and builds the TLAS
 class Scene {
 public:
@@ -29,6 +36,14 @@ public:
     // Get materials buffer for all entities
     grassland::graphics::Buffer* GetMaterialsBuffer() const { return materials_buffer_.get(); }
 
+    // Get global geometry buffers for raytracing
+    grassland::graphics::Buffer* GetGlobalVertexBuffer() const { return global_vertex_buffer_.get(); }
+    grassland::graphics::Buffer* GetGlobalNormalBuffer() const { return global_normal_buffer_.get(); }
+    grassland::graphics::Buffer* GetGlobalIndexBuffer() const { return global_index_buffer_.get(); }
+    
+    // Get entity offset buffer (stores vertex/index offsets for each entity)
+    grassland::graphics::Buffer* GetEntityOffsetsBuffer() const { return entity_offsets_buffer_.get(); }
+
     // Get all entities
     const std::vector<std::shared_ptr<Entity>>& GetEntities() const { return entities_; }
 
@@ -37,10 +52,17 @@ public:
 
 private:
     void UpdateMaterialsBuffer();
+    void BuildGlobalGeometryBuffers();
 
     grassland::graphics::Core* core_;
     std::vector<std::shared_ptr<Entity>> entities_;
     std::unique_ptr<grassland::graphics::AccelerationStructure> tlas_;
     std::unique_ptr<grassland::graphics::Buffer> materials_buffer_;
+    
+    // Global geometry buffers for all entities combined
+    std::unique_ptr<grassland::graphics::Buffer> global_vertex_buffer_;
+    std::unique_ptr<grassland::graphics::Buffer> global_normal_buffer_;
+    std::unique_ptr<grassland::graphics::Buffer> global_index_buffer_;
+    std::unique_ptr<grassland::graphics::Buffer> entity_offsets_buffer_;
 };
 

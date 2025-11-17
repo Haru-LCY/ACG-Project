@@ -325,6 +325,11 @@ void Application::OnInit() {
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_WRITABLE_IMAGE, 1);          // space5 - entity ID output
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_WRITABLE_IMAGE, 1);          // space6 - accumulated color
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_WRITABLE_IMAGE, 1);          // space7 - accumulated samples
+    // 暂时注释掉全局几何缓冲区绑定
+    // program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space8 - global vertices
+    // program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space9 - global normals
+    // program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space10 - global indices
+    // program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space11 - entity offsets
     program_->Finalize();
 }
 
@@ -817,6 +822,11 @@ void Application::OnRender() {
     command_context->CmdBindResources(5, { entity_id_image_.get() }, grassland::graphics::BIND_POINT_RAYTRACING);
     command_context->CmdBindResources(6, { film_->GetAccumulatedColorImage() }, grassland::graphics::BIND_POINT_RAYTRACING);
     command_context->CmdBindResources(7, { film_->GetAccumulatedSamplesImage() }, grassland::graphics::BIND_POINT_RAYTRACING);
+    // 暂时注释掉全局几何缓冲区绑定
+    // command_context->CmdBindResources(8, { scene_->GetGlobalVertexBuffer() }, grassland::graphics::BIND_POINT_RAYTRACING);
+    // command_context->CmdBindResources(9, { scene_->GetGlobalNormalBuffer() }, grassland::graphics::BIND_POINT_RAYTRACING);
+    // command_context->CmdBindResources(10, { scene_->GetGlobalIndexBuffer() }, grassland::graphics::BIND_POINT_RAYTRACING);
+    // command_context->CmdBindResources(11, { scene_->GetEntityOffsetsBuffer() }, grassland::graphics::BIND_POINT_RAYTRACING);
     command_context->CmdDispatchRays(window_->GetWidth(), window_->GetHeight(), 1);
     
     // When camera is disabled, increment sample count and use accumulated image
