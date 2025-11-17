@@ -260,7 +260,71 @@ void Application::OnInit() {
             glm::translate(glm::mat4(1.0f), glm::vec3(2.0f, 0.5f, 0.0f))
         );
         scene_->AddEntity(blue_cube);
-    }   
+    }
+    
+    // Alpha Shadow 演示场景
+    // Alpha shadow test 1 - 亮色平板（投出最浅阴影）
+    {
+        auto alpha_plane_bright = std::make_shared<Entity>(
+            "meshes/cube.obj",
+            Material(
+                glm::vec3(0.95f, 0.95f, 0.95f),  // 很亮 (亮度 ~0.95)
+                0.8f,                         // 粗糙度
+                0.0f,                         // 非金属
+                0.0f,                         // 不透明
+                1.0f,                         // IOR
+                0.5f,                         // alpha_threshold：中等阈值
+                1.0f                          // has_alpha_map：启用 alpha
+            ),
+            glm::scale(
+                glm::translate(glm::mat4(1.0f), glm::vec3(-2.5f, 2.0f, -2.0f)),
+                glm::vec3(1.2f, 0.05f, 1.2f)  // 薄平板
+            )
+        );
+        scene_->AddEntity(alpha_plane_bright);
+    }
+    
+    // Alpha shadow test 2 - 中等灰色平板（投出中等阴影）
+    {
+        auto alpha_plane_mid = std::make_shared<Entity>(
+            "meshes/cube.obj",
+            Material(
+                glm::vec3(0.5f, 0.5f, 0.5f),  // 中灰 (亮度 ~0.5)
+                0.8f,                         // 粗糙度
+                0.0f,                         // 非金属
+                0.0f,                         // 不透明
+                1.0f,                         // IOR
+                0.5f,                         // alpha_threshold：中等阈值
+                1.0f                          // has_alpha_map：启用 alpha
+            ),
+            glm::scale(
+                glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 2.0f, -2.0f)),
+                glm::vec3(1.2f, 0.05f, 1.2f)  // 薄平板
+            )
+        );
+        scene_->AddEntity(alpha_plane_mid);
+    }
+    
+    // Alpha shadow test 3 - 暗色平板（投出最深阴影）
+    {
+        auto alpha_plane_dark = std::make_shared<Entity>(
+            "meshes/cube.obj",
+            Material(
+                glm::vec3(0.2f, 0.2f, 0.2f),  // 很暗 (亮度 ~0.2)
+                0.8f,                         // 粗糙度
+                0.0f,                         // 非金属
+                0.0f,                         // 不透明
+                1.0f,                         // IOR
+                0.5f,                         // alpha_threshold：中等阈值
+                1.0f                          // has_alpha_map：启用 alpha
+            ),
+            glm::scale(
+                glm::translate(glm::mat4(1.0f), glm::vec3(2.5f, 2.0f, -2.0f)),
+                glm::vec3(1.2f, 0.05f, 1.2f)  // 薄平板
+            )
+        );
+        scene_->AddEntity(alpha_plane_dark);
+    }
 
     // Build acceleration structures
     scene_->BuildAccelerationStructures();

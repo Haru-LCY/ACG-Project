@@ -9,7 +9,8 @@ struct Material {
   float metallic;
   float transmission;  // 透明度
   float ior;           // 折射率
-  float padding[2];    // 对齐
+  float alpha_threshold; // alpha shadow 阈值
+  float has_alpha_map;   // 是否有透明度贴图
 };
 
 struct HoverInfo {
@@ -124,10 +125,14 @@ float FresnelDielectric(float cosThetaI, float etaI, float etaT) {
 // GGX importance sampling for specular
 float3 SampleGGX(float3 N, float3 V, float roughness, inout uint seed) {
 	float a = roughness * roughness;
+	a = a * a; // 平方一次以增加低粗糙度时的采样效率
 	float u1 = Rand01(seed);
 	float u2 = Rand01(seed);
 	
-	float theta = atan(a * sqrt(u1) / sqrt(1.0 - u1));
+	// 避免极端情况
+	u1 = max(u1, 0.00001);
+	
+	float theta = atan(a * sqrt(u1) / sqrt(max(0.00001, 1.0 - u1)));
 	float phi = 2.0 * 3.14159265359 * u2;
 	
 	float3 H;
@@ -142,6 +147,86 @@ float3 SampleGGX(float3 N, float3 V, float roughness, inout uint seed) {
 	
 	H = normalize(T * H.x + N * H.y + B * H.z);
 	return normalize(2.0 * dot(V, H) * H - V);
+}
+
+// Alpha shadow 阴影射线追踪（非递归版本，避免栈溢出）
+// 检查从当前点到目标方向是否被遮挡，考虑透明度贴图
+// 返回值：1.0 = 完全可见，0.0 = 完全遮挡，0.0-1.0 = 透明度混合
+float TraceAlphaShadow(float3 rayOrigin, float3 rayDirection, float maxDistance, inout uint seed) {
+	float visibility = 1.0;
+	float travelDistance = 0.0;
+	const int MAX_BOUNCES = 3; // 限制透明体穿过次数为3次（性能优化）
+	const float MIN_VISIBILITY = 0.01; // 如果可见性过低，提前终止
+	
+	for (int i = 0; i < MAX_BOUNCES; ++i) {
+		if (travelDistance >= maxDistance || visibility < MIN_VISIBILITY) {
+			break;
+		}
+		
+		RayDesc shadowRay;
+		shadowRay.Origin = rayOrigin;
+		shadowRay.Direction = normalize(rayDirection);
+		shadowRay.TMin = 0.0001;
+		shadowRay.TMax = maxDistance - travelDistance;
+		
+		RayPayload shadowPayload;
+		shadowPayload.hit = false;
+		shadowPayload.material_idx = 0;
+		shadowPayload.hit_pos = float3(0, 0, 0);
+		shadowPayload.normal = float3(0, 1, 0);
+		shadowPayload.throughput = float3(1, 1, 1);
+		shadowPayload.radiance = float3(0, 0, 0);
+		
+		// 追踪阴影射线
+		TraceRay(as, RAY_FLAG_NONE, 0xFF, 0, 1, 0, shadowRay, shadowPayload);
+		
+		if (!shadowPayload.hit) {
+			// 没有hit = 完全可见
+			return visibility;
+		}
+		
+		// 获取材质信息
+		Material mat = materials[shadowPayload.material_idx];
+		float distanceToHit = length(shadowPayload.hit_pos - rayOrigin);
+		travelDistance += distanceToHit;
+		
+		// 如果材质是透明的，应用透明度衰减并继续追踪
+		if (mat.transmission > 0.01) {
+			// 应用透明度衰减
+			float transparency = mat.transmission;
+			visibility *= transparency;
+			
+			// 继续追踪，向前偏移
+			rayOrigin = shadowPayload.hit_pos + normalize(rayDirection) * 0.001;
+			continue;
+		}
+		
+		// 检查 alpha 贴图
+		if (mat.has_alpha_map > 0.5) {
+			// 使用材质的 alpha 阈值和基色亮度来决定透明度
+			float colorBrightness = dot(mat.base_color, float3(0.299, 0.587, 0.114));
+			float alpha = colorBrightness; // 使用颜色亮度作为 alpha 值
+			
+			// 如果 alpha 小于阈值，则认为是透明的
+			if (alpha < mat.alpha_threshold) {
+				// 像素透明，继续追踪
+				// 亮色更透明，暗色更不透明（正向透明度）
+				visibility *= alpha / mat.alpha_threshold; // 根据亮度与阈值的比例衰减
+				rayOrigin = shadowPayload.hit_pos + normalize(rayDirection) * 0.001;
+				continue;
+			} else {
+				// alpha >= threshold，但仍然允许部分光线通过（基于亮度）
+				// 亮色投影浅，暗色投影深
+				visibility *= alpha;
+				return visibility;
+			}
+		}
+		
+		// 不透明的物体，完全遮挡
+		return 0.0;
+	}
+	
+	return visibility;
 }
 
 [shader("raygeneration")] void RayGenMain() {
@@ -166,7 +251,7 @@ float3 SampleGGX(float3 N, float3 V, float roughness, inout uint seed) {
 	float3 rayOrigin0 = origin4.xyz;
 	float3 rayDir0 = normalize(direction4.xyz);
 	
-	const int MAX_BOUNCES = 30; // 保守增加一次反弹
+	const int MAX_BOUNCES = 50; // 增加到50以确保充分的光线弹射
 	RayPayload payload;
 	payload.radiance = float3(0,0,0);
 	payload.throughput = float3(1,1,1);
@@ -189,7 +274,7 @@ float3 SampleGGX(float3 N, float3 V, float roughness, inout uint seed) {
 		RayDesc ray;
 		ray.Origin = rayOrigin;
 		ray.Direction = rayDir;
-		ray.TMin = 0.001;
+		ray.TMin = 0.0001;  // 更小的Ray Epsilon以减少自我遮挡
 		ray.TMax = 10000.0;
 		
 		TraceRay(as, RAY_FLAG_NONE, 0xFF, 0, 1, 0, ray, payload);
@@ -216,6 +301,9 @@ float3 SampleGGX(float3 N, float3 V, float roughness, inout uint seed) {
 			N = -N;
 		}
 		
+		// 定义Ray Epsilon用于法线偏移
+		const float RAY_EPSILON = 0.001; // 足够大以避免自我相交
+		
 		// 透明材质处理
 		if (mat.transmission > 0.01) {
 			float etaI = 1.0; // 空气
@@ -241,7 +329,7 @@ float3 SampleGGX(float3 N, float3 V, float roughness, inout uint seed) {
 			if (randChoice < reflectProb) {
 				// 反射 - 不改变颜色，只反射
 				rayDir = reflect(-V, normal);
-				rayOrigin = payload.hit_pos + normal * 0.001;
+				rayOrigin = payload.hit_pos + normal * RAY_EPSILON; // 使用定义的Ray Epsilon
 				// 反射不吸收颜色
 			} else {
 				// 折射
@@ -249,13 +337,13 @@ float3 SampleGGX(float3 N, float3 V, float roughness, inout uint seed) {
 				float eta = etaI / etaT;
 				if (Refract(-V, normal, eta, refracted)) {
 					rayDir = normalize(refracted);
-					rayOrigin = payload.hit_pos - normal * 0.001;
+					rayOrigin = payload.hit_pos - normal * RAY_EPSILON; // 使用定义的Ray Epsilon
 					// 光线穿过玻璃时应用颜色滤镜（Beer定律的简化）
 					throughput *= mat.base_color;
 				} else {
 					// 全反射
 					rayDir = reflect(-V, normal);
-					rayOrigin = payload.hit_pos + normal * 0.001;
+					rayOrigin = payload.hit_pos + normal * RAY_EPSILON; // 使用定义的Ray Epsilon
 				}
 			}
 			continue; // 跳过常规的镜面/漫反射处理
@@ -283,7 +371,7 @@ float3 SampleGGX(float3 N, float3 V, float roughness, inout uint seed) {
 				rayDir = SampleGGX(N, V, mat.roughness, seed);
 			}
 			
-			rayOrigin = payload.hit_pos + N * 0.001;
+			rayOrigin = payload.hit_pos + N * RAY_EPSILON; // 使用定义的Ray Epsilon
 			
 			// 正确的能量补偿
 			float NdotL = max(dot(N, rayDir), 0.0);
@@ -295,11 +383,29 @@ float3 SampleGGX(float3 N, float3 V, float roughness, inout uint seed) {
 		} else {
 			// 漫反射分支
 			rayDir = SampleCosineHemisphere(N, seed);
-			rayOrigin = payload.hit_pos + N * 0.001;
+			rayOrigin = payload.hit_pos + N * RAY_EPSILON; // 使用定义的Ray Epsilon
 			
 			// Lambert BRDF: baseColor/π, pdf = cosθ/π, 相消后剩baseColor
 			float3 diffuseAlbedo = mat.base_color * (1.0 - mat.metallic);
 			throughput *= diffuseAlbedo * (1.0 - F) / (1.0 - specularProb);
+		}
+		
+		// Alpha Shadow 可见性检查（直接光源计算）
+		// 检查是否直接可见到光源
+		if (bounce == 0 && payload.hit) {
+			// 仅在第一次反弹时计算以提高性能
+			float3 lightDir = normalize(float3(1.0, 2.0, 1.0));
+			float lightVisibility = TraceAlphaShadow(payload.hit_pos + N * RAY_EPSILON, 
+			                                         lightDir, 
+			                                         100.0, 
+			                                         seed);
+			
+			// 计算漫反射直接照明
+			float NdotL = max(dot(N, lightDir), 0.0);
+			float3 directLight = mat.base_color * NdotL * lightVisibility * 0.8;
+			if (NdotL > 0.001) {
+				radiance += throughput * directLight;
+			}
 		}
 		
 		// Russian Roulette
