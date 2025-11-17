@@ -67,7 +67,6 @@ float3 FresnelSchlick(float cosTheta, float3 F0) {
 }
 
 [shader("raygeneration")] void RayGenMain() {
-	// 使用 dispatch 索引，但在生成像素中心前先初始化 seed（用于子像素抖动）
 	uint2 dispatchIndex = DispatchRaysIndex().xy;
 	int prev_samples = accumulated_samples[dispatchIndex];
 	uint seed = (uint)dispatchIndex.x * 1973u + (uint)dispatchIndex.y * 9277u + (uint)prev_samples * 26699u;
@@ -165,7 +164,7 @@ float3 FresnelSchlick(float cosTheta, float3 F0) {
 		}
 	}
 	
-	// 累积并输出平均值（比仅输出单次样本更快看出收敛）
+	// 累积并输出平均值
 	float4 prev_color = accumulated_color[dispatchIndex];
 	int prev_samps = prev_samples;
 	float4 new_sum = prev_color + float4(radiance, 1);
@@ -173,7 +172,6 @@ float3 FresnelSchlick(float cosTheta, float3 F0) {
 	accumulated_color[dispatchIndex] = new_sum;
 	accumulated_samples[dispatchIndex] = new_count;
 	
-	// 输出已累积的平均颜色，避免每帧只看单样本导致的闪烁黑点
 	float4 averaged = new_sum / max(1, new_count);
 	output[dispatchIndex] = averaged;
 	entity_id_output[dispatchIndex] = payload.hit ? (int)payload.material_idx : -1;

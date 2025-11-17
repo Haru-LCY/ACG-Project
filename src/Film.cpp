@@ -34,16 +34,18 @@ void Film::CreateImages() {
 }
 
 void Film::Reset() {
-    // Clear accumulated color to black
-    std::unique_ptr<grassland::graphics::CommandContext> cmd_context;
-    core_->CreateCommandContext(&cmd_context);
-    cmd_context->CmdClearImage(accumulated_color_image_.get(), { {0.0f, 0.0f, 0.0f, 0.0f} });
-    cmd_context->CmdClearImage(accumulated_samples_image_.get(), { {0, 0, 0, 0} });
-    cmd_context->CmdClearImage(output_image_.get(), { {0.0f, 0.0f, 0.0f, 0.0f} });
-    core_->SubmitCommandContext(cmd_context.get());
-    
     sample_count_ = 0;
-    grassland::LogInfo("Film accumulation reset");
+    
+    std::unique_ptr<grassland::graphics::CommandContext> command_context;
+    core_->CreateCommandContext(&command_context);
+
+    command_context->CmdClearImage(accumulated_samples_image_.get(), { {0, 0, 0, 0} });
+
+    command_context->CmdClearImage(accumulated_color_image_.get(), { {0.0, 0.0, 0.0, 0.0} });
+
+    command_context->CmdClearImage(output_image_.get(), { {0.0, 0.0, 0.0, 0.0} });
+
+    core_->SubmitCommandContext(command_context.get());
 }
 
 void Film::DevelopToOutput() {

@@ -410,6 +410,32 @@ void Application::OnUpdate() {
         // Process keyboard input to move camera
         ProcessInput();
         
+        CameraObject current_camera_object{};
+        current_camera_object.screen_to_camera = glm::inverse(
+            glm::perspective(glm::radians(60.0f), (float)window_->GetWidth() / (float)window_->GetHeight(), 0.1f, 10.0f));
+        current_camera_object.camera_to_world =
+            glm::inverse(glm::lookAt(camera_pos_, camera_pos_ + camera_front_, camera_up_));
+        
+ 
+        bool camera_moved = false;
+        if (has_prev_camera_) {
+            if (MatrixChanged(current_camera_object.camera_to_world, prev_camera_to_world_) ||
+                MatrixChanged(current_camera_object.screen_to_camera, prev_screen_to_camera_)) {
+                camera_moved = true;
+            }
+        }
+        
+        // 更新历史记录为当前矩阵
+        prev_camera_to_world_ = current_camera_object.camera_to_world;
+        prev_screen_to_camera_ = current_camera_object.screen_to_camera;
+        has_prev_camera_ = true;
+        
+        // 如果相机移动，清空累积缓冲区
+        if (camera_moved && film_) {
+            film_->Reset();  // Film::Reset() 负责清空 GPU 累积贴图
+        }
+
+        
         // Detect camera state change and reset accumulation if camera started moving
         if (camera_enabled_ != last_camera_enabled_) {
             if (camera_enabled_) {
@@ -431,13 +457,10 @@ void Application::OnUpdate() {
         hover_info.hovered_entity_id = hovered_entity_id_;
         hover_info_buffer_->UploadData(&hover_info, sizeof(HoverInfo));
 
-        // Update the camera buffer with new position/orientation
-        CameraObject camera_object{};
-        camera_object.screen_to_camera = glm::inverse(
-            glm::perspective(glm::radians(60.0f), (float)window_->GetWidth() / (float)window_->GetHeight(), 0.1f, 10.0f));
-        camera_object.camera_to_world =
-            glm::inverse(glm::lookAt(camera_pos_, camera_pos_ + camera_front_, camera_up_));
-        camera_object_buffer_->UploadData(&camera_object, sizeof(CameraObject));
+        // --------------- 修改开始 ---------------
+        // 上传当前帧的 CameraObject（使用上面计算的 current_camera_object）
+        camera_object_buffer_->UploadData(&current_camera_object, sizeof(CameraObject));
+        // --------------- 修改结束 ---------------
 
 
         // Optional: Animate entities

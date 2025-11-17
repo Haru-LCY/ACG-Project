@@ -90,4 +90,20 @@ private:
     
     // Entity selection
     int selected_entity_id_; // -1 if no entity selected
+
+    // 添加这些成员变量用于检测相机变化
+    glm::mat4 prev_camera_to_world_;
+    glm::mat4 prev_screen_to_camera_;
+    bool has_prev_camera_ = false;
+
+    // 辅助函数：比较两个矩阵是否不同
+    bool MatrixChanged(const glm::mat4& a, const glm::mat4& b, float epsilon = 1e-5f) {
+      for (int i = 0; i < 4; i++) {
+        for (int j = 0; j < 4; j++) {
+          if (fabs(a[i][j] - b[i][j]) > epsilon)
+            return true;
+        }
+      }
+      return false;
+    }
 };
