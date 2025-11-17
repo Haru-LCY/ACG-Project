@@ -14,7 +14,7 @@ struct Material {
 
     Material(const glm::vec3& color, float rough = 0.5f, float metal = 0.0f)
         : base_color(color)
-        , roughness(rough)
-        , metallic(metal) {}
+        , roughness(glm::clamp(rough, 0.01f, 1.0f))  // 避免除零
+        , metallic(glm::clamp(metal, 0.0f, 1.0f)) {}
 };
 

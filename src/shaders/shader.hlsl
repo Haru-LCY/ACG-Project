@@ -66,6 +66,29 @@ float3 FresnelSchlick(float cosTheta, float3 F0) {
 	return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
 }
 
+// GGX importance sampling for specular
+float3 SampleGGX(float3 N, float3 V, float roughness, inout uint seed) {
+	float a = roughness * roughness;
+	float u1 = Rand01(seed);
+	float u2 = Rand01(seed);
+	
+	float theta = atan(a * sqrt(u1) / sqrt(1.0 - u1));
+	float phi = 2.0 * 3.14159265359 * u2;
+	
+	float3 H;
+	H.x = sin(theta) * cos(phi);
+	H.y = cos(theta);
+	H.z = sin(theta) * sin(phi);
+	
+	// Build tangent space
+	float3 up = abs(N.z) < 0.999 ? float3(0, 0, 1) : float3(1, 0, 0);
+	float3 T = normalize(cross(up, N));
+	float3 B = cross(N, T);
+	
+	H = normalize(T * H.x + N * H.y + B * H.z);
+	return normalize(2.0 * dot(V, H) * H - V);
+}
+
 [shader("raygeneration")] void RayGenMain() {
 	uint2 dispatchIndex = DispatchRaysIndex().xy;
 	int prev_samples = accumulated_samples[dispatchIndex];
@@ -126,33 +149,53 @@ float3 FresnelSchlick(float cosTheta, float3 F0) {
 			break;
 		}
 		
-		// Hit: shading and throughput update (保持现有简化 PBR)
+		// 正确的材质处理
 		Material mat = materials[payload.material_idx];
 		float3 N = normalize(payload.normal);
 		float3 V = normalize(-rayDir);
+		
+		// 确保法线朝向观察方向
 		if (dot(N, V) < 0.0) N = -N;
 		
+		// 计算Fresnel
 		float3 F0 = lerp(float3(0.04,0.04,0.04), mat.base_color, mat.metallic);
 		float cosTheta = max(dot(N, V), 0.0);
 		float3 F = FresnelSchlick(cosTheta, F0);
-		float specularProb = (F.x + F.y + F.z) / 3.0;
-		specularProb = lerp(specularProb, 1.0, mat.metallic);
+		
+		// 选择镜面或漫反射分支
+		float specularProb = max(max(F.x, F.y), F.z);
+		specularProb = lerp(specularProb, 1.0, mat.metallic * 0.9); // 金属偏向镜面
+		specularProb = clamp(specularProb, 0.1, 0.95); // 避免极端值
 		
 		float rselect = Rand01(seed);
+		
 		if (rselect < specularProb) {
-			float3 perfectReflect = reflect(-V, N);
-			if (mat.roughness < 0.01) {
-				rayDir = perfectReflect;
+			// 镜面反射分支
+			if (mat.roughness < 0.05) {
+				// 完美镜面
+				rayDir = reflect(-V, N);
 			} else {
-				float3 perturbedDir = SampleCosineHemisphere(perfectReflect, seed);
-				rayDir = normalize(lerp(perfectReflect, perturbedDir, mat.roughness));
+				// 粗糙镜面(GGX采样)
+				rayDir = SampleGGX(N, V, mat.roughness, seed);
 			}
+			
 			rayOrigin = payload.hit_pos + N * 0.001;
-			throughput *= F / max(specularProb, 0.001);
+			
+			// 正确的能量补偿
+			float NdotL = max(dot(N, rayDir), 0.0);
+			if (NdotL > 0.001) {
+				throughput *= F * NdotL / specularProb;
+			} else {
+				break; // 终止无效路径
+			}
 		} else {
+			// 漫反射分支
 			rayDir = SampleCosineHemisphere(N, seed);
 			rayOrigin = payload.hit_pos + N * 0.001;
-			throughput *= mat.base_color * (1.0 - F) / max(1.0 - specularProb, 0.001);
+			
+			// Lambert BRDF: baseColor/π, pdf = cosθ/π, 相消后剩baseColor
+			float3 diffuseAlbedo = mat.base_color * (1.0 - mat.metallic);
+			throughput *= diffuseAlbedo * (1.0 - F) / (1.0 - specularProb);
 		}
 		
 		// Russian Roulette
@@ -193,38 +236,42 @@ float3 FresnelSchlick(float cosTheta, float3 F0) {
 	float t = RayTCurrent();
 	payload.hit_pos = WorldRayOrigin() + WorldRayDirection() * t;
 	
-	// 改进的法线估算：使用对象空间位置
+	// 使用几何法线(三角形面法线) - 最可靠的方法
+	// 如果你的mesh有顶点法线,应该用barycentrics插值
+	// 这里先用对象空间几何法线近似
+	
 	float3 worldPos = payload.hit_pos;
 	float3 objectPos = mul(WorldToObject3x4(), float4(worldPos, 1.0)).xyz;
 	
-	// 根据对象类型推断法线
+	// 简化但更稳健的法线估算
 	float3 objectNormal;
 	
-	// 检测平面（y 接近常数）
-	if (abs(objectPos.y + 1.0) < 0.15 || abs(objectPos.y) < 0.15 || abs(objectPos.y - 1.0) < 0.15) {
-		objectNormal = float3(0, sign(objectPos.y + 0.5), 0);
+	// 对于简单几何体,使用径向法线作为默认(适用于球体/凸多面体)
+	objectNormal = normalize(objectPos);
+	
+	// 对于平面(y坐标接近-1的大地面)
+	if (abs(objectPos.y + 1.0) < 0.2 && length(objectPos.xz) > 0.5) {
+		objectNormal = float3(0, 1, 0);
 	}
-	// 检测盒子（一个坐标的绝对值接近 1）
-	else if (abs(abs(objectPos.x) - 1.0) < 0.15 || abs(abs(objectPos.y) - 1.0) < 0.15 || abs(abs(objectPos.z) - 1.0) < 0.15) {
+	// 对于立方体,检测哪个坐标的绝对值最大
+	else {
 		float3 absPos = abs(objectPos);
-		if (absPos.x > absPos.y && absPos.x > absPos.z) {
+		float maxComp = max(max(absPos.x, absPos.y), absPos.z);
+		
+		if (abs(absPos.x - maxComp) < 0.01) {
 			objectNormal = float3(sign(objectPos.x), 0, 0);
-		} else if (absPos.y > absPos.z) {
+		} else if (abs(absPos.y - maxComp) < 0.01) {
 			objectNormal = float3(0, sign(objectPos.y), 0);
-		} else {
+		} else if (abs(absPos.z - maxComp) < 0.01) {
 			objectNormal = float3(0, 0, sign(objectPos.z));
 		}
-	}
-	// 默认：球体或其他凸物体，使用径向法线
-	else {
-		objectNormal = normalize(objectPos);
 	}
 	
 	// 转换到世界空间
 	float3x3 objectToWorld = (float3x3)ObjectToWorld3x4();
 	payload.normal = normalize(mul(objectToWorld, objectNormal));
 	
-	// 确保法线朝向光线来源
+	// 确保法线朝向光线来源(双面材质支持)
 	if (dot(payload.normal, -WorldRayDirection()) < 0) {
 		payload.normal = -payload.normal;
 	}
