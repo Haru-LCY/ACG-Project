@@ -379,8 +379,7 @@ float3 ComputePointLightContribution(float3 hitPos, float3 normal, float3 viewDi
 		const float RAY_EPSILON = 0.001; // 足够大以避免自我相交
 		
 		// ===== 计算点光源的直接光照（对所有材质，包括透明材质）=====
-		// 注意：对于透明材质，这里只计算表面的镜面反射高光，不包括漫反射
-		if (bounce == 0 || (bounce == 1 && mat.transmission > 0.01)) {
+		if (bounce == 0) {
 			const int MAX_POINT_LIGHTS = 16;
 			
 			for (int lightIdx = 0; lightIdx < MAX_POINT_LIGHTS; ++lightIdx) {
@@ -389,13 +388,14 @@ float3 ComputePointLightContribution(float3 hitPos, float3 normal, float3 viewDi
 					continue;
 				}
 				
-				// 对于透明材质，只添加镜面反射项；对于不透明材质，添加完整光照
+				// 对于透明材质，只添加Fresnel反射高光（不添加漫反射，避免不均匀）
+				// 对于不透明材质，添加完整光照
 				if (mat.transmission > 0.01) {
-					// 透明材质：只计算表面的Fresnel反射高光
+					// 透明材质：添加Fresnel镜面反射高光 + 简单的漫反射项（帮助低透射率的玻璃显示颜色）
 					float3 lightVec = light.position - payload.hit_pos;
 					float lightDistance = length(lightVec);
 					float3 lightDir = normalize(lightVec);
-					float NdotL = dot(N, lightDir);
+					float NdotL = max(dot(N, lightDir), 0.0);
 					
 					if (NdotL > 0.0) {
 						// 检查阴影
@@ -403,22 +403,26 @@ float3 ComputePointLightContribution(float3 hitPos, float3 normal, float3 viewDi
 						float3 lightVisibility = TraceAlphaShadowRGB(shadowOrigin, lightDir, lightDistance, seed);
 						
 						if (max(max(lightVisibility.r, lightVisibility.g), lightVisibility.b) > 0.001) {
-							// 计算Fresnel反射
+							// 计算Fresnel反射（透明材质的表面反射）
 							float cosTheta = abs(dot(N, V));
 							float Fr = FresnelDielectric(cosTheta, 1.0, mat.ior);
 							
-							// 计算镜面高光（使用半程向量）
+							// 镜面高光
 							float3 H = normalize(lightDir + V);
 							float NdotH = max(dot(N, H), 0.0);
-							float specPower = max(2.0 / (mat.roughness * mat.roughness) - 2.0, 1.0);
-							float spec = pow(NdotH, specPower);
+							float spec = pow(NdotH, 32.0) * Fr;
 							
 							// 光照衰减
 							float attenuation = light.strength / (4.0 * 3.14159265359 * lightDistance * lightDistance);
 							
-							// 透明表面反射的光带有材质的base_color色调
-							float3 specColor = mat.base_color * Fr * spec * NdotL;
-							radiance += throughput * specColor * light.color * attenuation * lightVisibility * SHADOW_DEBUG_BOOST;
+							// 对于低透射率的玻璃，添加一点漫反射帮助显示颜色
+							// transmission越低，漫反射权重越高
+							float diffuseWeight = (1.0 - mat.transmission) * 0.5;  // 最多50%的漫反射
+							float3 diffuse = mat.base_color * NdotL * diffuseWeight;
+							
+							// 只有镜面反射+漫反射
+							float3 specColor = (spec + diffuse) * light.color * attenuation * lightVisibility;
+							radiance += throughput * specColor * SHADOW_DEBUG_BOOST;
 						}
 					}
 				} else {
@@ -453,19 +457,16 @@ float3 ComputePointLightContribution(float3 hitPos, float3 normal, float3 viewDi
 			float cosTheta = abs(dot(normal, V));
 			float Fr = FresnelDielectric(cosTheta, etaI, etaT);
 			
-			// 修正：transmission 控制材质的透射能力
-			// transmission 高 = 更透明（更多折射，更少吸收）
-			// transmission 低 = 更不透明（更多吸收）
 			// 反射概率 = Fresnel（物理正确）
 			float reflectProb = Fr;
 			
 			float randChoice = Rand01(seed);
 			if (randChoice < reflectProb) {
-				// 反射路径
+				// 反射路径 - 镜面反射，不吸收颜色！
 				rayDir = reflect(-V, normal);
 				rayOrigin = payload.hit_pos + normal * RAY_EPSILON;
-				// 反射时也要应用材质的base_color作为反射颜色（有色玻璃表面反射也带颜色）
-				throughput *= mat.base_color;
+				// 玻璃表面的镜面反射应该是无色的，不要乘以base_color
+				// throughput 保持不变
 			} else {
 				// 折射/透射路径
 				float3 refracted;
@@ -474,17 +475,16 @@ float3 ComputePointLightContribution(float3 hitPos, float3 normal, float3 viewDi
 					rayDir = normalize(refracted);
 					rayOrigin = payload.hit_pos - normal * RAY_EPSILON;
 					
-					// 透射时的颜色衰减：
-					// 1. transmission_color 控制吸收（Beer-Lambert）
-					// 2. transmission 控制整体透射强度（低transmission = 更多吸收）
-					// 低transmission = 更不透明 = 更多能量被吸收
+					// 透射时应用颜色吸收
+					// transmission越低，吸收越多
+					// 使用base_color作为吸收滤镜（红色玻璃保留红色，吸收其他颜色）
 					float absorptionFactor = mat.transmission;
-					throughput *= mat.transmission_color * absorptionFactor;
+					throughput *= mat.base_color * absorptionFactor;
 				} else {
-					// 全反射
+					// 全反射 - 同样不吸收颜色
 					rayDir = reflect(-V, normal);
 					rayOrigin = payload.hit_pos + normal * RAY_EPSILON;
-					throughput *= mat.base_color;
+					// throughput 保持不变
 				}
 			}
 			continue; // 跳过常规的镜面/漫反射处理

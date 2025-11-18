@@ -234,33 +234,36 @@ void Application::OnInit() {
 
     // 三个红色玻璃球，展示不同的透明度
     // transmission 越小 = 越不透明，越能看到颜色
-    // 从左到右：几乎不透明(0.05) -> 半透明(0.3) -> 高透明(0.7)
-    {
-        // 最左：几乎不透明的红色玻璃（调整颜色避免太黑）
-        auto red_glass_low = std::make_shared<Entity>(
-            "meshes/octahedron.obj",
-            Material(glm::vec3(0.85f, 0.2f, 0.15f), 0.05f, 0.0f, 0.05f, glm::vec3(0.85f, 0.2f, 0.15f), 1.5f),
-            glm::translate(glm::mat4(1.0f), glm::vec3(-4.0f, 0.5f, 0.0f))
-        );
-        scene_->AddEntity(red_glass_low);
-    }
+    // 从左到右：不透明(0.1) -> 半透明(0.5) -> 高透明(0.9)
+    // {
+    //     // 最右：不透明的红色玻璃（类似宝石，深红色）
+    //     auto red_glass_low = std::make_shared<Entity>(
+    //         "meshes/octahedron.obj",
+    //         Material(glm::vec3(1.0f, 0.4f, 0.3f), 0.05f, 0.0f, 0.1f, glm::vec3(1.0f, 0.4f, 0.3f), 1.5f),
+    //         // glm::translate(glm::mat4(1.0f), glm::vec3(-4.0f, 0.5f, 0.0f))
+    //         glm::translate(glm::mat4(1.0f), glm::vec3(-1.0f, 0.5f, 0.0f))
+
+    //     );
+    //     scene_->AddEntity(red_glass_low);
+    // }
+
+    // {
+    //     // 中间：半透明红色玻璃
+    //     auto red_glass_mid = std::make_shared<Entity>(
+    //         "meshes/octahedron.obj",
+    //         Material(glm::vec3(0.98f, 0.35f, 0.28f), 0.05f, 0.0f, 0.5f, glm::vec3(0.98f, 0.35f, 0.28f), 1.5f),
+    //         glm::translate(glm::mat4(1.0f), glm::vec3(-2.5f, 0.5f, 0.0f))
+    //     );
+    //     scene_->AddEntity(red_glass_mid);
+    // }
 
     {
-        // 中间：半透明红色玻璃
-        auto red_glass_mid = std::make_shared<Entity>(
-            "meshes/octahedron.obj",
-            Material(glm::vec3(0.85f, 0.2f, 0.15f), 0.05f, 0.0f, 0.3f, glm::vec3(0.85f, 0.2f, 0.15f), 1.5f),
-            glm::translate(glm::mat4(1.0f), glm::vec3(-2.5f, 0.5f, 0.0f))
-        );
-        scene_->AddEntity(red_glass_mid);
-    }
-
-    {
-        // 最右：高透明红色玻璃
+    //     // 最左：高透明红色玻璃（应该看起来几乎透明）
         auto red_glass_high = std::make_shared<Entity>(
             "meshes/octahedron.obj",
-            Material(glm::vec3(0.85f, 0.2f, 0.15f), 0.05f, 0.0f, 0.7f, glm::vec3(0.85f, 0.2f, 0.15f), 1.5f),
-            glm::translate(glm::mat4(1.0f), glm::vec3(-1.0f, 0.5f, 0.0f))
+            Material(glm::vec3(0.95f, 0.3f, 0.25f), 0.05f, 0.0f, 0.9f, glm::vec3(0.95f, 0.3f, 0.25f), 1.5f),
+            // glm::translate(glm::mat4(1.0f), glm::vec3(-1.0f, 0.5f, 0.0f))
+            glm::translate(glm::mat4(1.0f), glm::vec3(-4.0f, 0.5f, 0.0f))
         );
         scene_->AddEntity(red_glass_high);
     }
@@ -304,22 +307,22 @@ void Application::OnInit() {
     // 初始化点光源数组（最多16个）
     point_lights_.resize(16);  // 预留16个点光源槽位
     
-    // 添加一个主光源（白色，强）- 位于场景右上方
-    point_lights_[0].position = glm::vec3(3.0f, 6.0f, 4.0f);
+    // 添加一个主光源（强白光）- 正上方偏右后方（更自然的布光）
+    point_lights_[0].position = glm::vec3(2.0f, 8.0f, 5.0f);
     point_lights_[0].color = glm::vec3(1.0f, 1.0f, 1.0f);
-    point_lights_[0].strength = 200.0f;  // 显著提高强度
+    point_lights_[0].strength = 250.0f;
     point_lights_[0].radius = 0.1f;
     
-    // 添加一个辅助光源（柔和白光）- 左上方补光
-    point_lights_[1].position = glm::vec3(-3.0f, 5.0f, 3.0f);
-    point_lights_[1].color = glm::vec3(0.9f, 0.9f, 1.0f);
-    point_lights_[1].strength = 120.0f;  // 提高补光强度
+    // 添加一个补光光源（柔和白光）- 左上方，避免产生强反光
+    point_lights_[1].position = glm::vec3(-5.0f, 5.0f, 3.0f);
+    point_lights_[1].color = glm::vec3(1.0f, 1.0f, 1.0f);
+    point_lights_[1].strength = 100.0f;
     point_lights_[1].radius = 0.1f;
     
-    // 添加一个环境补光（暖色）- 前下方，模拟地面反射
-    point_lights_[2].position = glm::vec3(0.0f, 1.0f, 5.0f);
-    point_lights_[2].color = glm::vec3(1.0f, 0.95f, 0.9f);
-    point_lights_[2].strength = 60.0f;  // 柔和的补光
+    // 添加一个环境光（模拟天空反射）
+    point_lights_[2].position = glm::vec3(0.0f, 0.5f, 6.0f);
+    point_lights_[2].color = glm::vec3(0.95f, 0.95f, 1.0f);
+    point_lights_[2].strength = 50.0f;
     point_lights_[2].radius = 0.1f;
     
     // 其余光源强度设为0（未使用）
