@@ -66,8 +66,11 @@ void Scene::BuildAccelerationStructures() {
 
     // Build global geometry buffers
     BuildGlobalGeometryBuffers();
+    
+    // Collect textures from entities
+    CollectTextures();
 
-    // Update materials buffer
+    // Update materials buffer (must be done after collecting textures to set texture IDs)
     UpdateMaterialsBuffer();
 }
 
@@ -216,5 +219,37 @@ void Scene::BuildGlobalGeometryBuffers() {
     
     grassland::LogInfo("Built global geometry buffers: {} vertices, {} normals, {} indices, {} entities", 
                        all_vertices.size(), all_normals.size(), all_indices.size(), entity_offsets.size());
+}
+
+void Scene::CollectTextures() {
+    textures_.clear();
+    
+    // Collect all unique textures from entities
+    for (auto& entity : entities_) {
+        if (entity->HasTexture()) {
+            // Add texture to array and set texture ID in entity's material
+            int texture_id = static_cast<int>(textures_.size());
+            textures_.push_back(entity->GetTexture());
+            entity->SetTextureId(texture_id);
+            
+            grassland::LogInfo("Assigned texture ID {} to entity with texture", texture_id);
+        }
+    }
+    
+    // Pad the texture array to the maximum size (16) to satisfy the static descriptor requirement in D3D12.
+    // If we don't do this, the descriptor table will have uninitialized descriptors, causing a crash.
+    if (!textures_.empty()) {
+        size_t current_texture_count = textures_.size();
+        const size_t max_textures = 16;
+        if (current_texture_count < max_textures) {
+            grassland::graphics::Image* fallback_texture = textures_[0]; // Use the first available texture as a fallback
+            for (size_t i = current_texture_count; i < max_textures; ++i) {
+                textures_.push_back(fallback_texture);
+            }
+            grassland::LogInfo("Padded texture array from {} to {} with a fallback texture.", current_texture_count, textures_.size());
+        }
+    }
+    
+    grassland::LogInfo("Collected {} textures from scene (padded to 16 for GPU binding)", textures_.size());
 }
 

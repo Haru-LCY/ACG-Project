@@ -12,6 +12,8 @@ struct Material {
 	float ior;           // 折射率
   float alpha_threshold; // alpha shadow 阈值
   float has_alpha_map;   // 是否有透明度贴图
+  int texture_id;        // 纹理ID：-1=无纹理, >=0=纹理索引
+  float3 padding;        // 对齐到16字节
 };
 
 struct HoverInfo {
@@ -50,6 +52,8 @@ RWTexture2D<float4> accumulated_color : register(u0, space6);
 RWTexture2D<int> accumulated_samples : register(u0, space7);
 StructuredBuffer<PointLight> point_lights : register(t0, space8);  // 点光源数组
 StructuredBuffer<AreaLight> area_lights : register(t0, space9);  // 面光源数组
+Texture2D textures[16] : register(t0, space10);  // 纹理数组 (最多16个)
+SamplerState texSampler : register(s0, space11);  // 纹理采样器
 //t，u，space分别表示纹理寄存器、采样器寄存器和常量缓冲区寄存器的空间索引
 
 struct RayPayload {
@@ -61,6 +65,7 @@ struct RayPayload {
 	float3 normal;
 	float2 barycentrics;
 	uint primitive_id;
+	float2 uv;  // UV坐标用于纹理采样
 };
 
 // Debug: shadow visibility boost (用于临时放大 lightVisibilityRGB 以便调试)
@@ -93,6 +98,18 @@ float3 SampleCosineHemisphere(float3 n, inout uint seed) {
 	float3 t = normalize(cross(up, n));
 	float3 b = cross(n, t);
 	return normalize(x * t + y * b + z * n);
+}
+
+// 获取材质的基础颜色（考虑纹理）
+float3 GetMaterialBaseColor(Material mat, float2 uv) {
+    if (mat.texture_id >= 0 && mat.texture_id < 16) {
+        // 有纹理，采样纹理颜色
+        float4 texColor = textures[mat.texture_id].SampleLevel(texSampler, uv, 0);
+        return texColor.rgb;
+    } else {
+        // 无纹理，使用材质颜色
+        return mat.base_color;
+    }
 }
 
 // Schlick Fresnel
@@ -255,7 +272,7 @@ float3 ACESFilm(float3 x) {
 }
 
 // [新增] 计算面光源贡献 (包含对透明/金属的特殊处理)
-float3 ComputeAreaLightContribution(float3 hitPos, float3 normal, float3 viewDir, Material material, AreaLight light, inout uint seed) {
+float3 ComputeAreaLightContribution(float3 hitPos, float3 normal, float3 viewDir, Material material, float2 uv, AreaLight light, inout uint seed) {
     // 1. 在面光源上随机采样一个点
     float u = Rand01(seed) - 0.5f; // [-0.5, 0.5]
     float v = Rand01(seed) - 0.5f; // [-0.5, 0.5]
@@ -294,12 +311,13 @@ float3 ComputeAreaLightContribution(float3 hitPos, float3 normal, float3 viewDir
     // 基础辐射度
     float3 Le = light.color * light.strength; 
 
-    // 5. BRDF 计算
+    // 5. BRDF 计算 - 使用纹理颜色
     float3 brdf = float3(0,0,0);
     
-    // 准备 PBR 参数
-    float3 diffuseAlbedo = material.base_color * (1.0 - material.metallic);
-    float3 F0 = lerp(float3(0.04, 0.04, 0.04), material.base_color, material.metallic);
+    // 准备 PBR 参数 - 使用纹理颜色替代base_color
+    float3 baseColor = GetMaterialBaseColor(material, uv);
+    float3 diffuseAlbedo = baseColor * (1.0 - material.metallic);
+    float3 F0 = lerp(float3(0.04, 0.04, 0.04), baseColor, material.metallic);
     float3 halfVec = normalize(lightDir + viewDir);
     float NdotH = max(dot(normal, halfVec), 0.0);
     float VdotH = max(dot(viewDir, halfVec), 0.0);
@@ -351,10 +369,11 @@ float3 ComputeAreaLightContribution(float3 hitPos, float3 normal, float3 viewDir
 //   normal: 着色点法线
 //   viewDir: 视线方向（指向观察者）
 //   material: 材质属性
+//   uv: UV坐标用于纹理采样
 //   light: 点光源数据
 //   seed: 随机数种子（用于软阴影采样）
 // 返回：该点光源对着色点的光照贡献（RGB颜色）
-float3 ComputePointLightContribution(float3 hitPos, float3 normal, float3 viewDir, Material material, PointLight light, inout uint seed) {
+float3 ComputePointLightContribution(float3 hitPos, float3 normal, float3 viewDir, Material material, float2 uv, PointLight light, inout uint seed) {
 	// 计算光源方向和距离
 	float3 lightVec = light.position - hitPos;
 	float lightDistance = length(lightVec);
@@ -380,9 +399,10 @@ float3 ComputePointLightContribution(float3 hitPos, float3 normal, float3 viewDi
 		return float3(0.0, 0.0, 0.0);
 	}
 	
-	// 计算漫反射项（Lambertian BRDF）
+	// 计算漫反射项（Lambertian BRDF）- 使用纹理颜色
 	// 漫反射反射率 = baseColor * (1 - metallic)
-	float3 diffuseAlbedo = material.base_color * (1.0 - material.metallic);
+	float3 baseColor = GetMaterialBaseColor(material, uv);
+	float3 diffuseAlbedo = baseColor * (1.0 - material.metallic);
 	float3 diffuse = diffuseAlbedo * NdotL / 3.14159265359;  // Lambert BRDF = albedo/π
 	
 	// 计算镜面反射项（基于Cook-Torrance微表面模型的简化）
@@ -391,7 +411,7 @@ float3 ComputePointLightContribution(float3 hitPos, float3 normal, float3 viewDi
 	float NdotV = max(dot(normal, viewDir), 0.0);
 	
 	// Fresnel项（使用Schlick近似）
-	float3 F0 = lerp(float3(0.04, 0.04, 0.04), material.base_color, material.metallic);
+	float3 F0 = lerp(float3(0.04, 0.04, 0.04), baseColor, material.metallic);
 	float VdotH = max(dot(viewDir, halfVec), 0.0);
 	float3 F = FresnelSchlick(VdotH, F0);
 	
@@ -477,12 +497,16 @@ float3 ComputePointLightContribution(float3 hitPos, float3 normal, float3 viewDi
         Material mat = materials[payload.material_idx];
         float3 N = normalize(payload.normal);
         float3 V = normalize(-rayDir);
+        float2 uv = payload.uv;  // 从payload获取UV坐标
         
         // 双面材质处理
         bool entering = dot(N, V) > 0.0;
         if (!entering && mat.transmission < 0.01) N = -N;
 
         float3 hitPos = payload.hit_pos;
+        
+        // 获取材质基础颜色（考虑纹理）
+        float3 baseColor = GetMaterialBaseColor(mat, uv);
         
         // ===== 直接光照计算 (Direct Lighting / NEE) =====
         // 仅在第一次弹射，或者(可选)每次漫反射/粗糙镜面弹射后计算
@@ -500,7 +524,7 @@ float3 ComputePointLightContribution(float3 hitPos, float3 normal, float3 viewDi
             for(int i=0; i<MAX_POINT_LIGHTS; ++i) {
                 PointLight pl = point_lights[i];
                 if(pl.strength > 0.0) {
-                    float3 pointLightContrib = ComputePointLightContribution(hitPos, N, V, mat, pl, seed);
+                    float3 pointLightContrib = ComputePointLightContribution(hitPos, N, V, mat, uv, pl, seed);
                     radiance += throughput * pointLightContrib;
                 }
             }
@@ -511,7 +535,7 @@ float3 ComputePointLightContribution(float3 hitPos, float3 normal, float3 viewDi
                 AreaLight al = area_lights[j];
                 if (al.strength <= 0.0) continue;
                 
-                float3 areaLightContrib = ComputeAreaLightContribution(hitPos, N, V, mat, al, seed);
+                float3 areaLightContrib = ComputeAreaLightContribution(hitPos, N, V, mat, uv, al, seed);
                 radiance += throughput * areaLightContrib;
             }
         }
@@ -550,7 +574,7 @@ float3 ComputePointLightContribution(float3 hitPos, float3 normal, float3 viewDi
         } 
         // [不透明材质逻辑]
         else {
-            float3 F0 = lerp(0.04, mat.base_color, mat.metallic);
+            float3 F0 = lerp(0.04, baseColor, mat.metallic);
             float3 F = FresnelSchlick(max(dot(N, V), 0.0), F0);
             float specularProb = lerp(max(F.x, max(F.y, F.z)), 1.0, mat.metallic);
             specularProb = clamp(specularProb, 0.1, 0.9);
@@ -568,7 +592,7 @@ float3 ComputePointLightContribution(float3 hitPos, float3 normal, float3 viewDi
                 // 漫反射
                 rayDir = SampleCosineHemisphere(N, seed);
                 rayOrigin = hitPos + N * 0.001;
-                throughput *= mat.base_color * (1.0 - mat.metallic); // 金属没有漫反射
+                throughput *= baseColor * (1.0 - mat.metallic); // 金属没有漫反射,使用纹理颜色
             }
         }
 
@@ -663,4 +687,10 @@ float3 ComputePointLightContribution(float3 hitPos, float3 normal, float3 viewDi
 	if (dot(payload.normal, -WorldRayDirection()) < 0) {
 		payload.normal = -payload.normal;
 	}
+	
+	// 计算UV坐标 - 使用球面映射
+	float3 normalizedPos = normalize(objectPos);
+	float u = 0.5 + atan2(normalizedPos.z, normalizedPos.x) / (2.0 * 3.14159265359);
+	float v = 0.5 - asin(normalizedPos.y) / 3.14159265359;
+	payload.uv = float2(u, v);
 }

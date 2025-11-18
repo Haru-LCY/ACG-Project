@@ -43,6 +43,10 @@ public:
     
     // Get entity offset buffer (stores vertex/index offsets for each entity)
     grassland::graphics::Buffer* GetEntityOffsetsBuffer() const { return entity_offsets_buffer_.get(); }
+    
+    // Get texture array for raytracing
+    const std::vector<grassland::graphics::Image*>& GetTextures() const { return textures_; }
+    size_t GetTextureCount() const { return textures_.size(); }
 
     // Get all entities
     const std::vector<std::shared_ptr<Entity>>& GetEntities() const { return entities_; }
@@ -53,6 +57,7 @@ public:
 private:
     void UpdateMaterialsBuffer();
     void BuildGlobalGeometryBuffers();
+    void CollectTextures();
 
     grassland::graphics::Core* core_;
     std::vector<std::shared_ptr<Entity>> entities_;
@@ -64,5 +69,8 @@ private:
     std::unique_ptr<grassland::graphics::Buffer> global_normal_buffer_;
     std::unique_ptr<grassland::graphics::Buffer> global_index_buffer_;
     std::unique_ptr<grassland::graphics::Buffer> entity_offsets_buffer_;
+    
+    // Texture array (raw pointers owned by entities)
+    std::vector<grassland::graphics::Image*> textures_;
 };
 

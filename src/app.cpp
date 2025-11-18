@@ -257,16 +257,16 @@ void Application::OnInit() {
     //     scene_->AddEntity(red_glass_mid);
     // }
 
-    {
-    //     // 最左：高透明红色玻璃（应该看起来几乎透明）
-        auto red_glass_high = std::make_shared<Entity>(
-            "meshes/octahedron.obj",
-            Material(glm::vec3(0.95f, 0.3f, 0.25f), 0.05f, 0.0f, 0.9f, glm::vec3(0.95f, 0.3f, 0.25f), 1.5f),
-            // glm::translate(glm::mat4(1.0f), glm::vec3(-1.0f, 0.5f, 0.0f))
-            glm::translate(glm::mat4(1.0f), glm::vec3(-4.0f, 0.5f, 0.0f))
-        );
-        scene_->AddEntity(red_glass_high);
-    }
+    // {
+    // //     // 最左：高透明红色玻璃（应该看起来几乎透明）
+    //     auto red_glass_high = std::make_shared<Entity>(
+    //         "meshes/octahedron.obj",
+    //         Material(glm::vec3(0.95f, 0.3f, 0.25f), 0.05f, 0.0f, 0.9f, glm::vec3(0.95f, 0.3f, 0.25f), 1.5f),
+    //         // glm::translate(glm::mat4(1.0f), glm::vec3(-1.0f, 0.5f, 0.0f))
+    //         glm::translate(glm::mat4(1.0f), glm::vec3(-4.0f, 0.5f, 0.0f))
+    //     );
+    //     scene_->AddEntity(red_glass_high);
+    // }
 
     // Green metallic sphere
      {
@@ -277,6 +277,17 @@ void Application::OnInit() {
          );
          scene_->AddEntity(green_sphere);
      }
+     
+    // Textured copper sphere
+    {
+        auto copper_sphere = std::make_shared<Entity>(
+            "meshes/octahedron.obj",
+            Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.3f, 0.9f),  // 白色基础,金属
+            glm::translate(glm::mat4(1.0f), glm::vec3(-2.5f, 0.5f, 0.0f)),
+            "textures/copper/Sphere_Base_color.png"
+        );
+        scene_->AddEntity(copper_sphere);
+    }
 
     // Transparent blue glass cube
     {
@@ -438,6 +449,15 @@ void Application::OnInit() {
     core_->CreateShader(GetShaderCode("shaders/shader.hlsl"), "ClosestHitMain", "lib_6_3", &closest_hit_shader_);
     grassland::LogInfo("Shader compiled successfully");
 
+    // Create texture sampler
+    grassland::graphics::SamplerInfo sampler_info;
+    sampler_info.min_filter = grassland::graphics::FILTER_MODE_LINEAR;
+    sampler_info.mag_filter = grassland::graphics::FILTER_MODE_LINEAR;
+    sampler_info.address_mode_u = grassland::graphics::ADDRESS_MODE_REPEAT;
+    sampler_info.address_mode_v = grassland::graphics::ADDRESS_MODE_REPEAT;
+    sampler_info.address_mode_w = grassland::graphics::ADDRESS_MODE_REPEAT;
+    core_->CreateSampler(sampler_info, &texture_sampler_);
+    
     core_->CreateRayTracingProgram(raygen_shader_.get(), miss_shader_.get(), closest_hit_shader_.get(), &program_);
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_ACCELERATION_STRUCTURE, 1);  // space0
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_WRITABLE_IMAGE, 1);          // space1 - color output
@@ -449,6 +469,8 @@ void Application::OnInit() {
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_WRITABLE_IMAGE, 1);          // space7 - accumulated samples
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space8 - point lights
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space9 - area lights
+    program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_IMAGE, 16);                  // space10 - texture array
+    program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_SAMPLER, 1);                 // space10 - texture sampler
     // 暂时注释掉全局几何缓冲区绑定
     // program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space9 - global vertices
     // program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space10 - global normals
@@ -473,6 +495,7 @@ void Application::OnClose() {
     hover_info_buffer_.reset();
     point_lights_buffer_.reset();  // 清理点光源缓冲区
     area_lights_buffer_.reset();   // 清理面光源缓冲区
+    texture_sampler_.reset();      // 清理纹理采样器
     
     // Don't call TerminateImGui - let the window destructor handle it
     // Just reset window which will clean everything up properly
@@ -950,6 +973,13 @@ void Application::OnRender() {
     command_context->CmdBindResources(7, { film_->GetAccumulatedSamplesImage() }, grassland::graphics::BIND_POINT_RAYTRACING);
     command_context->CmdBindResources(8, { point_lights_buffer_.get() }, grassland::graphics::BIND_POINT_RAYTRACING);  // 绑定点光源
     command_context->CmdBindResources(9, { area_lights_buffer_.get() }, grassland::graphics::BIND_POINT_RAYTRACING);  // 绑定面光源
+    
+    // Bind textures and sampler (space10)
+    if (scene_->GetTextureCount() > 0) {
+        command_context->CmdBindResources(10, scene_->GetTextures(), grassland::graphics::BIND_POINT_RAYTRACING);
+        command_context->CmdBindResources(11, { texture_sampler_.get() }, grassland::graphics::BIND_POINT_RAYTRACING);
+    }
+    
     // 暂时注释掉全局几何缓冲区绑定
     // command_context->CmdBindResources(9, { scene_->GetGlobalVertexBuffer() }, grassland::graphics::BIND_POINT_RAYTRACING);
     // command_context->CmdBindResources(10, { scene_->GetGlobalNormalBuffer() }, grassland::graphics::BIND_POINT_RAYTRACING);
