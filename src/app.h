@@ -45,6 +45,16 @@ private:
         int hovered_entity_id;
     };
     std::unique_ptr<grassland::graphics::Buffer> hover_info_buffer_;
+    
+    // Point lights buffer
+    struct PointLight {
+        glm::vec3 position;     // 光源位置
+        float strength;         // 光源强度
+        glm::vec3 color;        // 光源颜色
+        float radius;           // 光源半径（预留用于软阴影）
+    };
+    std::unique_ptr<grassland::graphics::Buffer> point_lights_buffer_;
+    std::vector<PointLight> point_lights_;  // 点光源数组
 
     // Shaders
     std::unique_ptr<grassland::graphics::Shader> raygen_shader_;

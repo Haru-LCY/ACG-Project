@@ -232,33 +232,37 @@ void Application::OnInit() {
         scene_->AddEntity(ground);
     }
 
-    // 三个红色半透明球用于测试透明度对阴影的影响
-    // 位置从左到右： transmission = 0.2（较暗）、0.6（中等）、0.95（几乎完全透明）
+    // 三个红色玻璃球，展示不同的透明度
+    // transmission 越小 = 越不透明，越能看到颜色
+    // 从左到右：几乎不透明(0.05) -> 半透明(0.3) -> 高透明(0.7)
     {
-        auto red_sphere_t02 = std::make_shared<Entity>(
+        // 最左：几乎不透明的红色玻璃（调整颜色避免太黑）
+        auto red_glass_low = std::make_shared<Entity>(
             "meshes/octahedron.obj",
-            Material(glm::vec3(1.0f, 0.3f, 0.3f), 0.05f, 0.0f, 0.2f, glm::vec3(1.0f, 0.12f, 0.12f), 1.5f),
+            Material(glm::vec3(0.85f, 0.2f, 0.15f), 0.05f, 0.0f, 0.05f, glm::vec3(0.85f, 0.2f, 0.15f), 1.5f),
             glm::translate(glm::mat4(1.0f), glm::vec3(-4.0f, 0.5f, 0.0f))
         );
-        scene_->AddEntity(red_sphere_t02);
+        scene_->AddEntity(red_glass_low);
     }
 
     {
-        auto red_sphere_t06 = std::make_shared<Entity>(
+        // 中间：半透明红色玻璃
+        auto red_glass_mid = std::make_shared<Entity>(
             "meshes/octahedron.obj",
-            Material(glm::vec3(1.0f, 0.3f, 0.3f), 0.05f, 0.0f, 0.6f, glm::vec3(1.0f, 0.12f, 0.12f), 1.5f),
+            Material(glm::vec3(0.85f, 0.2f, 0.15f), 0.05f, 0.0f, 0.3f, glm::vec3(0.85f, 0.2f, 0.15f), 1.5f),
             glm::translate(glm::mat4(1.0f), glm::vec3(-2.5f, 0.5f, 0.0f))
         );
-        scene_->AddEntity(red_sphere_t06);
+        scene_->AddEntity(red_glass_mid);
     }
 
     {
-        auto red_sphere_t095 = std::make_shared<Entity>(
+        // 最右：高透明红色玻璃
+        auto red_glass_high = std::make_shared<Entity>(
             "meshes/octahedron.obj",
-            Material(glm::vec3(1.0f, 0.3f, 0.3f), 0.05f, 0.0f, 0.95f, glm::vec3(1.0f, 0.12f, 0.12f), 1.5f),
+            Material(glm::vec3(0.85f, 0.2f, 0.15f), 0.05f, 0.0f, 0.7f, glm::vec3(0.85f, 0.2f, 0.15f), 1.5f),
             glm::translate(glm::mat4(1.0f), glm::vec3(-1.0f, 0.5f, 0.0f))
         );
-        scene_->AddEntity(red_sphere_t095);
+        scene_->AddEntity(red_glass_high);
     }
 
     // Green metallic sphere
@@ -295,6 +299,41 @@ void Application::OnInit() {
     HoverInfo initial_hover{};
     initial_hover.hovered_entity_id = -1;
     hover_info_buffer_->UploadData(&initial_hover, sizeof(HoverInfo));
+
+    // 创建点光源缓冲区并初始化点光源
+    // 初始化点光源数组（最多16个）
+    point_lights_.resize(16);  // 预留16个点光源槽位
+    
+    // 添加一个主光源（白色，强）- 位于场景右上方
+    point_lights_[0].position = glm::vec3(3.0f, 6.0f, 4.0f);
+    point_lights_[0].color = glm::vec3(1.0f, 1.0f, 1.0f);
+    point_lights_[0].strength = 200.0f;  // 显著提高强度
+    point_lights_[0].radius = 0.1f;
+    
+    // 添加一个辅助光源（柔和白光）- 左上方补光
+    point_lights_[1].position = glm::vec3(-3.0f, 5.0f, 3.0f);
+    point_lights_[1].color = glm::vec3(0.9f, 0.9f, 1.0f);
+    point_lights_[1].strength = 120.0f;  // 提高补光强度
+    point_lights_[1].radius = 0.1f;
+    
+    // 添加一个环境补光（暖色）- 前下方，模拟地面反射
+    point_lights_[2].position = glm::vec3(0.0f, 1.0f, 5.0f);
+    point_lights_[2].color = glm::vec3(1.0f, 0.95f, 0.9f);
+    point_lights_[2].strength = 60.0f;  // 柔和的补光
+    point_lights_[2].radius = 0.1f;
+    
+    // 其余光源强度设为0（未使用）
+    for (int i = 3; i < 16; ++i) {
+        point_lights_[i].position = glm::vec3(0.0f);
+        point_lights_[i].color = glm::vec3(1.0f);
+        point_lights_[i].strength = 0.0f;  // 强度为0表示未激活
+        point_lights_[i].radius = 0.0f;
+    }
+    
+    // 创建并上传点光源缓冲区
+    core_->CreateBuffer(sizeof(PointLight) * 16, grassland::graphics::BUFFER_TYPE_DYNAMIC, &point_lights_buffer_);
+    point_lights_buffer_->UploadData(point_lights_.data(), sizeof(PointLight) * 16);
+    grassland::LogInfo("初始化了 {} 个点光源", 3);
 
     // Initialize camera state member variables
     camera_pos_ = glm::vec3{ 0.0f, 1.0f, 5.0f };
@@ -345,11 +384,12 @@ void Application::OnInit() {
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_WRITABLE_IMAGE, 1);          // space5 - entity ID output
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_WRITABLE_IMAGE, 1);          // space6 - accumulated color
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_WRITABLE_IMAGE, 1);          // space7 - accumulated samples
+    program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space8 - point lights
     // 暂时注释掉全局几何缓冲区绑定
-    // program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space8 - global vertices
-    // program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space9 - global normals
-    // program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space10 - global indices
-    // program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space11 - entity offsets
+    // program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space9 - global vertices
+    // program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space10 - global normals
+    // program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space11 - global indices
+    // program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space12 - entity offsets
     program_->Finalize();
 }
 
@@ -367,6 +407,7 @@ void Application::OnClose() {
     entity_id_image_.reset();
     camera_object_buffer_.reset();
     hover_info_buffer_.reset();
+    point_lights_buffer_.reset();  // 清理点光源缓冲区
     
     // Don't call TerminateImGui - let the window destructor handle it
     // Just reset window which will clean everything up properly
@@ -842,11 +883,12 @@ void Application::OnRender() {
     command_context->CmdBindResources(5, { entity_id_image_.get() }, grassland::graphics::BIND_POINT_RAYTRACING);
     command_context->CmdBindResources(6, { film_->GetAccumulatedColorImage() }, grassland::graphics::BIND_POINT_RAYTRACING);
     command_context->CmdBindResources(7, { film_->GetAccumulatedSamplesImage() }, grassland::graphics::BIND_POINT_RAYTRACING);
+    command_context->CmdBindResources(8, { point_lights_buffer_.get() }, grassland::graphics::BIND_POINT_RAYTRACING);  // 绑定点光源
     // 暂时注释掉全局几何缓冲区绑定
-    // command_context->CmdBindResources(8, { scene_->GetGlobalVertexBuffer() }, grassland::graphics::BIND_POINT_RAYTRACING);
-    // command_context->CmdBindResources(9, { scene_->GetGlobalNormalBuffer() }, grassland::graphics::BIND_POINT_RAYTRACING);
-    // command_context->CmdBindResources(10, { scene_->GetGlobalIndexBuffer() }, grassland::graphics::BIND_POINT_RAYTRACING);
-    // command_context->CmdBindResources(11, { scene_->GetEntityOffsetsBuffer() }, grassland::graphics::BIND_POINT_RAYTRACING);
+    // command_context->CmdBindResources(9, { scene_->GetGlobalVertexBuffer() }, grassland::graphics::BIND_POINT_RAYTRACING);
+    // command_context->CmdBindResources(10, { scene_->GetGlobalNormalBuffer() }, grassland::graphics::BIND_POINT_RAYTRACING);
+    // command_context->CmdBindResources(11, { scene_->GetGlobalIndexBuffer() }, grassland::graphics::BIND_POINT_RAYTRACING);
+    // command_context->CmdBindResources(12, { scene_->GetEntityOffsetsBuffer() }, grassland::graphics::BIND_POINT_RAYTRACING);
     command_context->CmdDispatchRays(window_->GetWidth(), window_->GetHeight(), 1);
     
     // When camera is disabled, increment sample count and use accumulated image
