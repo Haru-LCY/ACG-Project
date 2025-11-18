@@ -26,6 +26,20 @@ struct PointLight {
   float radius;        // 光源半径（用于软阴影）
 };
 
+//面光源结构体
+struct AreaLight {
+    float3 position;     // 光源中心位置
+    float strength;      // 总辐射功率（单位：瓦特）
+    float3 color;        // 光源颜色 (RGB, 范围0-1)
+    float width;         // 光源宽度（米）
+    float3 direction;    // 光源法线方向（归一化）
+    float height;        // 光源高度（米）
+    float3 u_axis;       // 宽度方向轴（归一化）
+    float pad1;
+    float3 v_axis;       // 高度方向轴（归一化）
+    float pad2;
+};
+
 RaytracingAccelerationStructure as : register(t0, space0);
 RWTexture2D<float4> output : register(u0, space1);
 ConstantBuffer<CameraInfo> camera_info : register(b0, space2);
@@ -35,6 +49,8 @@ RWTexture2D<int> entity_id_output : register(u0, space5);
 RWTexture2D<float4> accumulated_color : register(u0, space6);
 RWTexture2D<int> accumulated_samples : register(u0, space7);
 StructuredBuffer<PointLight> point_lights : register(t0, space8);  // 点光源数组
+StructuredBuffer<AreaLight> area_lights : register(t0, space9);  // 面光源数组
+//t，u，space分别表示纹理寄存器、采样器寄存器和常量缓冲区寄存器的空间索引
 
 struct RayPayload {
 	float3 radiance;
@@ -49,6 +65,7 @@ struct RayPayload {
 
 // Debug: shadow visibility boost (用于临时放大 lightVisibilityRGB 以便调试)
 static const float SHADOW_DEBUG_BOOST = 1.0; //1.0相当于正常
+static const float PI = 3.14159265359;
 
 // 改进的 PCG RNG
 uint PCGHash(inout uint state) {
@@ -226,6 +243,106 @@ float3 TraceAlphaShadowRGB(float3 rayOrigin, float3 rayDirection, float maxDista
 	return visibility;
 }
 
+
+// [新增] ACES Tone Mapping (解决过曝/刺眼问题的关键)
+float3 ACESFilm(float3 x) {
+    float a = 2.51f;
+    float b = 0.03f;
+    float c = 2.43f;
+    float d = 0.59f;
+    float e = 0.14f;
+    return saturate((x * (a * x + b)) / (x * (c * x + d) + e));
+}
+
+// [新增] 计算面光源贡献 (包含对透明/金属的特殊处理)
+float3 ComputeAreaLightContribution(float3 hitPos, float3 normal, float3 viewDir, Material material, AreaLight light, inout uint seed) {
+    // 1. 在面光源上随机采样一个点
+    float u = Rand01(seed) - 0.5f; // [-0.5, 0.5]
+    float v = Rand01(seed) - 0.5f; // [-0.5, 0.5]
+    
+    float3 samplePos = light.position + (light.u_axis * u * light.width) + (light.v_axis * v * light.height);
+    
+    // 2. 几何计算
+    float3 lightVec = samplePos - hitPos;
+    float distSq = dot(lightVec, lightVec);
+    float dist = sqrt(distSq);
+    float3 lightDir = lightVec / dist;
+    
+    float NdotL = dot(normal, lightDir);
+    float3 lightNormal = light.direction; // 面光源朝向
+    float LdotLn = dot(-lightDir, lightNormal); // 光源表面法线与光线的夹角
+    
+    // 剔除：光源在背面 或 光源本身背对物体
+    if (NdotL <= 0.0 || LdotLn <= 0.0) {
+        return float3(0,0,0);
+    }
+    
+    // 3. 阴影检测
+    const float RAY_EPSILON = 0.001;
+    // 注意：TraceAlphaShadowRGB 需要减去一点距离防止击中光源本身
+    float3 visibility = TraceAlphaShadowRGB(hitPos + normal * RAY_EPSILON, lightDir, dist - RAY_EPSILON, seed);
+    
+    if (max(max(visibility.r, visibility.g), visibility.b) < 0.001) {
+        return float3(0,0,0);
+    }
+    
+    // 4. 辐射度计算 (Monte Carlo Integration)
+    // 几何因子 = (cosTheta_Surface * cosTheta_Light * Area) / dist^2
+    float area = light.width * light.height;
+    float geometryFactor = (NdotL * LdotLn * area) / distSq;
+    
+    // 基础辐射度
+    float3 Le = light.color * light.strength; 
+
+    // 5. BRDF 计算
+    float3 brdf = float3(0,0,0);
+    
+    // 准备 PBR 参数
+    float3 diffuseAlbedo = material.base_color * (1.0 - material.metallic);
+    float3 F0 = lerp(float3(0.04, 0.04, 0.04), material.base_color, material.metallic);
+    float3 halfVec = normalize(lightDir + viewDir);
+    float NdotH = max(dot(normal, halfVec), 0.0);
+    float VdotH = max(dot(viewDir, halfVec), 0.0);
+    float NdotV = max(dot(normal, viewDir), 0.0);
+    
+    // 镜面反射项 (GGX)
+    float3 F = FresnelSchlick(VdotH, F0);
+    float alpha = material.roughness * material.roughness;
+    float alpha2 = alpha * alpha;
+    float denom = (NdotH * NdotH * (alpha2 - 1.0) + 1.0);
+    float D = alpha2 / (PI * denom * denom);
+    
+    float k = (material.roughness + 1.0) * (material.roughness + 1.0) / 8.0;
+    float G = (NdotV / (NdotV * (1.0 - k) + k)) * (NdotL / (NdotL * (1.0 - k) + k));
+    
+    float3 specular = (D * F * G) / max(4.0 * NdotV * NdotL, 0.001);
+    
+    // == 关键逻辑：根据材质类型混合 ==
+    if (material.transmission > 0.01) {
+        // [透明物体]
+        // NEE 只计算直接反射的高光(Glare)。
+        // 漫反射部分设为0 (或极低)，因为玻璃内部的亮光应由透射光线(refraction)提供。
+        // 这样避免玻璃表面看起来像磨砂或发光。
+        brdf = specular; 
+        
+        // 加上Fresnel透射衰减 (可选，近似)
+        float dielectricF = FresnelDielectric(dot(normal, viewDir), 1.0, material.ior);
+        brdf *= dielectricF; 
+    } 
+    else {
+        // [不透明/金属物体]
+        float3 kD = (1.0 - F) * (1.0 - material.metallic);
+        float3 diffuse = diffuseAlbedo / PI;
+        brdf = kD * diffuse + specular;
+    }
+    
+    return Le * brdf * geometryFactor * visibility;
+}
+
+// ... (保留原有的 PointLight 计算函数) ...
+
+
+
 // 计算点光源的直接光照贡献
 // 参数：
 //   hitPos: 着色点位置
@@ -304,253 +421,186 @@ float3 ComputePointLightContribution(float3 hitPos, float3 normal, float3 viewDi
 }
 
 [shader("raygeneration")] void RayGenMain() {
-	uint2 dispatchIndex = DispatchRaysIndex().xy;
-	int prev_samples = accumulated_samples[dispatchIndex];
-	uint seed = (uint)dispatchIndex.x * 1973u + (uint)dispatchIndex.y * 9277u + (uint)prev_samples * 26699u;
-	seed = PCGHash(seed);
-	seed = PCGHash(seed);
-	
-	// 生成亚像素抖动 [-0.5, 0.5)
-	float jitter_x = Rand01(seed) - 0.5;
-	float jitter_y = Rand01(seed) - 0.5;
-	float2 pixel_center = (float2)dispatchIndex + float2(0.5 + jitter_x, 0.5 + jitter_y);
-	float2 uv = pixel_center / float2(DispatchRaysDimensions().xy);
-	uv.y = 1.0 - uv.y;
-	float2 d = uv * 2.0 - 1.0;
-	
-	float4 origin4 = mul(camera_info.camera_to_world, float4(0, 0, 0, 1));
-	float4 target = mul(camera_info.screen_to_camera, float4(d, 1, 1));
-	float4 direction4 = mul(camera_info.camera_to_world, float4(target.xyz, 0));
-	
-	float3 rayOrigin0 = origin4.xyz;
-	float3 rayDir0 = normalize(direction4.xyz);
-	
-	const int MAX_BOUNCES = 50; // 增加到50以确保充分的光线弹射
-	RayPayload payload;
-	payload.radiance = float3(0,0,0);
-	payload.throughput = float3(1,1,1);
-	payload.hit = false;
-	payload.material_idx = 0;
-	payload.barycentrics = float2(0, 0);
-	payload.primitive_id = 0;
-	
-	float3 radiance = float3(0,0,0);
-	float3 throughput = float3(1,1,1);
-	float3 rayOrigin = rayOrigin0;
-	float3 rayDir = rayDir0;
-	
-	for (int bounce = 0; bounce < MAX_BOUNCES; ++bounce) {
-		payload.hit = false;
-		payload.material_idx = 0;
-		payload.hit_pos = float3(0,0,0);
-		payload.normal = float3(0,1,0);
-		
-		RayDesc ray;
-		ray.Origin = rayOrigin;
-		ray.Direction = rayDir;
-		ray.TMin = 0.0001;  // 更小的Ray Epsilon以减少自我遮挡
-		ray.TMax = 10000.0;
-		
-		TraceRay(as, RAY_FLAG_NONE, 0xFF, 0, 1, 0, ray, payload);
-		
-		if (!payload.hit) {
-			// Miss: sample environment / sky（提升环境光亮度）
-			float3 rayDirNorm = normalize(rayDir);
-			float tsky = 0.5 * (rayDirNorm.y + 1.0);
-			tsky = smoothstep(0.0, 1.0, tsky);
-			// 提升天空亮度，提供更好的环境照明
-			float3 sky = lerp(float3(0.8,0.8,0.85), float3(0.5,0.65,0.95), tsky);
-			radiance += throughput * sky;
-			break;
-		}
-		
-		// 正确的材质处理
-		Material mat = materials[payload.material_idx];
-		float3 N = normalize(payload.normal);
-		float3 V = normalize(-rayDir);
-		
-		// 确保法线朝向观察方向（对于非透明材质）
-		bool entering = dot(N, V) > 0.0;
-		if (!entering && mat.transmission < 0.01) {
-			N = -N;
-		}
-		
-		// 定义Ray Epsilon用于法线偏移
-		const float RAY_EPSILON = 0.001; // 足够大以避免自我相交
-		
-		// ===== 计算点光源的直接光照（对所有材质，包括透明材质）=====
-		if (bounce == 0) {
-			const int MAX_POINT_LIGHTS = 16;
-			
-			for (int lightIdx = 0; lightIdx < MAX_POINT_LIGHTS; ++lightIdx) {
-				PointLight light = point_lights[lightIdx];
-				if (light.strength <= 0.0) {
-					continue;
-				}
-				
-				// 对于透明材质，只添加Fresnel反射高光（不添加漫反射，避免不均匀）
-				// 对于不透明材质，添加完整光照
-				if (mat.transmission > 0.01) {
-					// 透明材质：添加Fresnel镜面反射高光 + 简单的漫反射项（帮助低透射率的玻璃显示颜色）
-					float3 lightVec = light.position - payload.hit_pos;
-					float lightDistance = length(lightVec);
-					float3 lightDir = normalize(lightVec);
-					float NdotL = max(dot(N, lightDir), 0.0);
-					
-					if (NdotL > 0.0) {
-						// 检查阴影
-						float3 shadowOrigin = payload.hit_pos + N * RAY_EPSILON;
-						float3 lightVisibility = TraceAlphaShadowRGB(shadowOrigin, lightDir, lightDistance, seed);
-						
-						if (max(max(lightVisibility.r, lightVisibility.g), lightVisibility.b) > 0.001) {
-							// 计算Fresnel反射（透明材质的表面反射）
-							float cosTheta = abs(dot(N, V));
-							float Fr = FresnelDielectric(cosTheta, 1.0, mat.ior);
-							
-							// 镜面高光
-							float3 H = normalize(lightDir + V);
-							float NdotH = max(dot(N, H), 0.0);
-							float spec = pow(NdotH, 32.0) * Fr;
-							
-							// 光照衰减
-							float attenuation = light.strength / (4.0 * 3.14159265359 * lightDistance * lightDistance);
-							
-							// 对于低透射率的玻璃，添加一点漫反射帮助显示颜色
-							// transmission越低，漫反射权重越高
-							float diffuseWeight = (1.0 - mat.transmission) * 0.5;  // 最多50%的漫反射
-							float3 diffuse = mat.base_color * NdotL * diffuseWeight;
-							
-							// 只有镜面反射+漫反射
-							float3 specColor = (spec + diffuse) * light.color * attenuation * lightVisibility;
-							radiance += throughput * specColor * SHADOW_DEBUG_BOOST;
-						}
-					}
-				} else {
-					// 不透明材质：使用完整的点光源计算
-					float3 lightContribution = ComputePointLightContribution(
-						payload.hit_pos, 
-						N, 
-						V, 
-						mat, 
-						light, 
-						seed
-					);
-					radiance += throughput * lightContribution;
-				}
-			}
-		}
-		
-		// 透明材质处理
-		if (mat.transmission > 0.01) {
-			float etaI = 1.0; // 空气
-			float etaT = mat.ior; // 材质
-			float3 normal = N;
-			
-			// 判断是进入还是离开介质
-			if (!entering) {
-				float temp = etaI;
-				etaI = etaT;
-				etaT = temp;
-				normal = -N;
-			}
-			
-			float cosTheta = abs(dot(normal, V));
-			float Fr = FresnelDielectric(cosTheta, etaI, etaT);
-			
-			// 反射概率 = Fresnel（物理正确）
-			float reflectProb = Fr;
-			
-			float randChoice = Rand01(seed);
-			if (randChoice < reflectProb) {
-				// 反射路径 - 镜面反射，不吸收颜色！
-				rayDir = reflect(-V, normal);
-				rayOrigin = payload.hit_pos + normal * RAY_EPSILON;
-				// 玻璃表面的镜面反射应该是无色的，不要乘以base_color
-				// throughput 保持不变
-			} else {
-				// 折射/透射路径
-				float3 refracted;
-				float eta = etaI / etaT;
-				if (Refract(-V, normal, eta, refracted)) {
-					rayDir = normalize(refracted);
-					rayOrigin = payload.hit_pos - normal * RAY_EPSILON;
-					
-					// 透射时应用颜色吸收
-					// transmission越低，吸收越多
-					// 使用base_color作为吸收滤镜（红色玻璃保留红色，吸收其他颜色）
-					float absorptionFactor = mat.transmission;
-					throughput *= mat.base_color * absorptionFactor;
-				} else {
-					// 全反射 - 同样不吸收颜色
-					rayDir = reflect(-V, normal);
-					rayOrigin = payload.hit_pos + normal * RAY_EPSILON;
-					// throughput 保持不变
-				}
-			}
-			continue; // 跳过常规的镜面/漫反射处理
-		}
-		
-		// 计算Fresnel（非透明材质）
-		float3 F0 = lerp(float3(0.04,0.04,0.04), mat.base_color, mat.metallic);
-		float cosTheta = max(dot(N, V), 0.0);
-		float3 F = FresnelSchlick(cosTheta, F0);
-		
-		// 选择镜面或漫反射分支
-		float specularProb = max(max(F.x, F.y), F.z);
-		specularProb = lerp(specularProb, 1.0, mat.metallic * 0.9); // 金属偏向镜面
-		specularProb = clamp(specularProb, 0.1, 0.95); // 避免极端值
-		
-		float rselect = Rand01(seed);
-		
-		if (rselect < specularProb) {
-			// 镜面反射分支
-			if (mat.roughness < 0.05) {
-				// 完美镜面
-				rayDir = reflect(-V, N);
-			} else {
-				// 粗糙镜面(GGX采样)
-				rayDir = SampleGGX(N, V, mat.roughness, seed);
-			}
-			
-			rayOrigin = payload.hit_pos + N * RAY_EPSILON; // 使用定义的Ray Epsilon
-			
-			// 正确的能量补偿
-			float NdotL = max(dot(N, rayDir), 0.0);
-			if (NdotL > 0.001) {
-				throughput *= F * NdotL / specularProb;
-			} else {
-				break; // 终止无效路径
-			}
-		} else {
-			// 漫反射分支
-			rayDir = SampleCosineHemisphere(N, seed);
-			rayOrigin = payload.hit_pos + N * RAY_EPSILON; // 使用定义的Ray Epsilon
-			
-			// Lambert BRDF: baseColor/π, pdf = cosθ/π, 相消后剩baseColor
-			float3 diffuseAlbedo = mat.base_color * (1.0 - mat.metallic);
-			throughput *= diffuseAlbedo * (1.0 - F) / (1.0 - specularProb);
-		}
-		
-		// Russian Roulette
-		if (bounce >= 2) {
-			float p = max(max(throughput.x, throughput.y), throughput.z);
-			p = min(p, 0.95);
-			if (Rand01(seed) > p) { break; }
-			throughput /= max(p, 0.001);
-		}
-	}
-	
-	// 累积并输出平均值
-	float4 prev_color = accumulated_color[dispatchIndex];
-	int prev_samps = prev_samples;
-	float4 new_sum = prev_color + float4(radiance, 1);
-	int new_count = prev_samps + 1;
-	accumulated_color[dispatchIndex] = new_sum;
-	accumulated_samples[dispatchIndex] = new_count;
-	
-	float4 averaged = new_sum / max(1, new_count);
-	output[dispatchIndex] = averaged;
-	entity_id_output[dispatchIndex] = payload.hit ? (int)payload.material_idx : -1;
+    // ... (保留原有的像素坐标计算和 Ray 初始化代码) ...
+    uint2 dispatchIndex = DispatchRaysIndex().xy;
+    int prev_samples = accumulated_samples[dispatchIndex];
+    uint seed = (uint)dispatchIndex.x * 1973u + (uint)dispatchIndex.y * 9277u + (uint)prev_samples * 26699u;
+    seed = PCGHash(seed);
+    seed = PCGHash(seed);
+    
+    float jitter_x = Rand01(seed) - 0.5;
+    float jitter_y = Rand01(seed) - 0.5;
+    float2 pixel_center = (float2)dispatchIndex + float2(0.5 + jitter_x, 0.5 + jitter_y);
+    float2 uv = pixel_center / float2(DispatchRaysDimensions().xy);
+    uv.y = 1.0 - uv.y;
+    float2 d = uv * 2.0 - 1.0;
+    
+    float4 origin4 = mul(camera_info.camera_to_world, float4(0, 0, 0, 1));
+    float4 target = mul(camera_info.screen_to_camera, float4(d, 1, 1));
+    float4 direction4 = mul(camera_info.camera_to_world, float4(target.xyz, 0));
+    
+    float3 rayOrigin = origin4.xyz;
+    float3 rayDir = normalize(direction4.xyz);
+
+    const int MAX_BOUNCES = 10; // 50太高了，通常 8-12 就够了，性能更好
+    RayPayload payload;
+    
+    float3 radiance = float3(0,0,0);
+    float3 throughput = float3(1,1,1);
+    
+    for (int bounce = 0; bounce < MAX_BOUNCES; ++bounce) {
+        // 初始化 payload
+        payload.hit = false;
+        payload.material_idx = 0;
+        payload.hit_pos = float3(0,0,0);
+        payload.normal = float3(0,1,0);
+        
+        RayDesc ray;
+        ray.Origin = rayOrigin;
+        ray.Direction = rayDir;
+        ray.TMin = 0.001;
+        ray.TMax = 10000.0;
+        
+        TraceRay(as, RAY_FLAG_NONE, 0xFF, 0, 1, 0, ray, payload);
+        
+        if (!payload.hit) {
+            // Skybox / Environment
+            float3 rayDirNorm = normalize(rayDir);
+            float tsky = 0.5 * (rayDirNorm.y + 1.0);
+            float3 sky = lerp(float3(0.1, 0.1, 0.15), float3(0.2, 0.25, 0.35), tsky); //稍微调暗环境光配合点光源
+            radiance += throughput * sky;
+            break;
+        }
+        
+        Material mat = materials[payload.material_idx];
+        float3 N = normalize(payload.normal);
+        float3 V = normalize(-rayDir);
+        
+        // 双面材质处理
+        bool entering = dot(N, V) > 0.0;
+        if (!entering && mat.transmission < 0.01) N = -N;
+
+        float3 hitPos = payload.hit_pos;
+        
+        // ===== 直接光照计算 (Direct Lighting / NEE) =====
+        // 仅在第一次弹射，或者(可选)每次漫反射/粗糙镜面弹射后计算
+        // 这里为了简化，只在 bounce == 0 时计算所有光源，或者每次bounce都算（更准确）
+        // 建议：每次bounce都计算，但要处理好权重(MIS)，这里用简单的纯NEE逻辑
+        
+        // 如果是镜面反射(roughness很低)或玻璃折射，通常不进行NEE，由光线追踪隐式处理
+        // 但为了看到光源的高光，我们允许计算Specular部分的NEE
+        
+        bool useNEE = true; // 开启直接光照采样
+        
+        if (useNEE) {
+            // 1. 点光源循环
+            const int MAX_POINT_LIGHTS = 16;
+            for(int i=0; i<MAX_POINT_LIGHTS; ++i) {
+                PointLight pl = point_lights[i];
+                if(pl.strength > 0.0) {
+                    float3 pointLightContrib = ComputePointLightContribution(hitPos, N, V, mat, pl, seed);
+                    radiance += throughput * pointLightContrib;
+                }
+            }
+            
+            // 2. 面光源循环
+            const int MAX_AREA_LIGHTS = 8; // 假设最多8个
+            for (int j = 0; j < MAX_AREA_LIGHTS; ++j) {
+                AreaLight al = area_lights[j];
+                if (al.strength <= 0.0) continue;
+                
+                float3 areaLightContrib = ComputeAreaLightContribution(hitPos, N, V, mat, al, seed);
+                radiance += throughput * areaLightContrib;
+            }
+        }
+
+        // ===== 间接光照 (BSDF Sampling / 递归) =====
+        
+        // [透明材质逻辑]
+        if (mat.transmission > 0.01) {
+            float etaI = 1.0;
+            float etaT = mat.ior;
+            float3 normal = N;
+            if (!entering) {
+                etaI = mat.ior; etaT = 1.0; normal = -N;
+            }
+            
+            float cosTheta = abs(dot(normal, V));
+            float Fr = FresnelDielectric(cosTheta, etaI, etaT);
+            
+            if (Rand01(seed) < Fr) {
+                // 反射
+                rayDir = reflect(-V, normal);
+                rayOrigin = hitPos + normal * 0.001;
+            } else {
+                // 折射
+                float3 refracted;
+                if (Refract(-V, normal, etaI/etaT, refracted)) {
+                    rayDir = normalize(refracted);
+                    rayOrigin = hitPos - normal * 0.001;
+                    // Beer's Law 吸收
+                    if (entering) throughput *= mat.transmission_color; // 简单模拟
+                } else {
+                    rayDir = reflect(-V, normal); // 全反射
+                    rayOrigin = hitPos + normal * 0.001;
+                }
+            }
+        } 
+        // [不透明材质逻辑]
+        else {
+            float3 F0 = lerp(0.04, mat.base_color, mat.metallic);
+            float3 F = FresnelSchlick(max(dot(N, V), 0.0), F0);
+            float specularProb = lerp(max(F.x, max(F.y, F.z)), 1.0, mat.metallic);
+            specularProb = clamp(specularProb, 0.1, 0.9);
+            
+            if (Rand01(seed) < specularProb) {
+                // 镜面反射/金属
+                if (mat.roughness < 0.05) rayDir = reflect(-V, N);
+                else rayDir = SampleGGX(N, V, mat.roughness, seed);
+                
+                rayOrigin = hitPos + N * 0.001;
+                
+                float NdotL_next = max(dot(N, rayDir), 0.0);
+                if(NdotL_next > 0) throughput *= F; // 简单的能量近似
+            } else {
+                // 漫反射
+                rayDir = SampleCosineHemisphere(N, seed);
+                rayOrigin = hitPos + N * 0.001;
+                throughput *= mat.base_color * (1.0 - mat.metallic); // 金属没有漫反射
+            }
+        }
+
+        // 俄罗斯轮盘赌 (Russian Roulette) 终止路径
+        if (bounce > 3) {
+            float p = max(max(throughput.r, throughput.g), throughput.b);
+            if (Rand01(seed) > p) break;
+            throughput /= p;
+        }
+    }
+    
+    // ================== 5. 最终输出处理 (Tone Mapping) ==================
+    
+    // 累积颜色
+    float4 prev_color = accumulated_color[dispatchIndex];
+    // 注意：Radiance 可能非常大 (HDR)，需要累积 HDR 值
+    float4 new_sum = prev_color + float4(radiance, 1.0);
+    int new_count = prev_samples + 1;
+    
+    accumulated_color[dispatchIndex] = new_sum;
+    accumulated_samples[dispatchIndex] = new_count;
+    
+    // 计算平均值
+    float3 hdrColor = new_sum.rgb / float(new_count);
+    
+    // [关键] 应用 Tone Mapping (HDR -> LDR)
+    // 这将把 (20, 50, 20) 这样的亮度映射回 (0.9, 1.0, 0.9) 而不是截断
+    float3 mappedColor = ACESFilm(hdrColor);
+    
+    // Gamma 校正
+    mappedColor = pow(mappedColor, 1.0 / 2.2);
+    
+    output[dispatchIndex] = float4(mappedColor, 1.0);
+    entity_id_output[dispatchIndex] = payload.hit ? (int)payload.material_idx : -1;
 }
 
 [shader("miss")] void MissMain(inout RayPayload payload) {

@@ -56,6 +56,22 @@ private:
     std::unique_ptr<grassland::graphics::Buffer> point_lights_buffer_;
     std::vector<PointLight> point_lights_;  // 点光源数组
 
+    // Area lights buffer
+    struct AreaLight {
+        glm::vec3 position;     // 光源中心位置
+        float strength;         // 总辐射功率（单位：瓦特）
+        glm::vec3 color;        // 光源颜色 (RGB, 范围0-1)
+        float width;            // 光源宽度（米）
+        glm::vec3 direction;    // 光源法线方向（归一化）
+        float height;           // 光源高度（米）
+        glm::vec3 u_axis;       // 宽度方向轴（归一化）
+        float pad1;
+        glm::vec3 v_axis;       // 高度方向轴（归一化）
+        float pad2;
+    };
+    std::unique_ptr<grassland::graphics::Buffer> area_lights_buffer_;
+    std::vector<AreaLight> area_lights_;  // 面光源数组
+
     // Shaders
     std::unique_ptr<grassland::graphics::Shader> raygen_shader_;
     std::unique_ptr<grassland::graphics::Shader> miss_shader_;

@@ -338,6 +338,64 @@ void Application::OnInit() {
     point_lights_buffer_->UploadData(point_lights_.data(), sizeof(PointLight) * 16);
     grassland::LogInfo("初始化了 {} 个点光源", 3);
 
+    // 初始化面光源数组（最多8个）
+    area_lights_.resize(8);
+    //////!!!!!!!!!!!!!为了调试把所有area light强度设为0，避免影响观察!!!!!!!!!!!!!!!
+    // 配置主光源 - 白色天花板光
+    area_lights_[0].position = glm::vec3(0.0f, 4.0f, 0.0f);      // 上方4米
+    area_lights_[0].color = glm::vec3(1.0f, 1.0f, 1.0f);         // 白色
+    area_lights_[0].strength = 0.0f;                             // 60瓦
+    area_lights_[0].width = 3.0f;                                 // 3米宽
+    area_lights_[0].height = 3.0f;                                // 3米高
+    area_lights_[0].direction = glm::normalize(glm::vec3(0.0f, -1.0f, 0.0f));  // 向下
+    area_lights_[0].u_axis = glm::normalize(glm::vec3(1.0f, 0.0f, 0.0f));      // X轴
+    area_lights_[0].v_axis = glm::normalize(glm::vec3(0.0f, 0.0f, 1.0f));      // Z轴
+    area_lights_[0].pad1 = 0.0f;
+    area_lights_[0].pad2 = 0.0f;
+    
+    // 配置红色侧光 - 左侧
+    area_lights_[1].position = glm::vec3(-5.0f, 2.0f, 0.0f);     // 左侧
+    area_lights_[1].color = glm::vec3(1.0f, 0.3f, 0.3f);         // 红色
+    area_lights_[1].strength = 0.0f;                             // 25瓦
+    area_lights_[1].width = 1.0f;                                 // 1米宽
+    area_lights_[1].height = 2.0f;                                // 2米高
+    area_lights_[1].direction = glm::normalize(glm::vec3(1.0f, 0.0f, 0.0f));   // 向右
+    area_lights_[1].u_axis = glm::normalize(glm::vec3(0.0f, 1.0f, 0.0f));      // Y轴
+    area_lights_[1].v_axis = glm::normalize(glm::vec3(0.0f, 0.0f, 1.0f));      // Z轴
+    area_lights_[1].pad1 = 0.0f;
+    area_lights_[1].pad2 = 0.0f;
+    
+    // 配置蓝色侧光 - 右侧
+    area_lights_[2].position = glm::vec3(5.0f, 2.0f, 0.0f);      // 右侧
+    area_lights_[2].color = glm::vec3(0.3f, 0.3f, 1.0f);         // 蓝色
+    area_lights_[2].strength = 0.0f;                             // 25瓦
+    area_lights_[2].width = 1.0f;                                 // 1米宽
+    area_lights_[2].height = 2.0f;                                // 2米高
+    area_lights_[2].direction = glm::normalize(glm::vec3(-1.0f, 0.0f, 0.0f));  // 向左
+    area_lights_[2].u_axis = glm::normalize(glm::vec3(0.0f, 1.0f, 0.0f));      // Y轴
+    area_lights_[2].v_axis = glm::normalize(glm::vec3(0.0f, 0.0f, 1.0f));      // Z轴
+    area_lights_[2].pad1 = 0.0f;
+    area_lights_[2].pad2 = 0.0f;
+    
+    // 其余光源强度设为0（未使用）
+    for (int i = 3; i < 8; ++i) {
+        area_lights_[i].position = glm::vec3(0.0f);
+        area_lights_[i].color = glm::vec3(1.0f);
+        area_lights_[i].strength = 0.0f;  // 强度为0表示未激活
+        area_lights_[i].width = 0.0f;
+        area_lights_[i].height = 0.0f;
+        area_lights_[i].direction = glm::vec3(0.0f, -1.0f, 0.0f);
+        area_lights_[i].u_axis = glm::vec3(1.0f, 0.0f, 0.0f);
+        area_lights_[i].v_axis = glm::vec3(0.0f, 0.0f, 1.0f);
+        area_lights_[i].pad1 = 0.0f;
+        area_lights_[i].pad2 = 0.0f;
+    }
+    
+    // 创建并上传面光源缓冲区
+    core_->CreateBuffer(sizeof(AreaLight) * 8, grassland::graphics::BUFFER_TYPE_DYNAMIC, &area_lights_buffer_);
+    area_lights_buffer_->UploadData(area_lights_.data(), sizeof(AreaLight) * 8);
+    grassland::LogInfo("初始化了 {} 个面光源", 3);
+
     // Initialize camera state member variables
     camera_pos_ = glm::vec3{ 0.0f, 1.0f, 5.0f };
     camera_up_ = glm::vec3{ 0.0f, 1.0f, 0.0f }; // World up
@@ -388,6 +446,7 @@ void Application::OnInit() {
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_WRITABLE_IMAGE, 1);          // space6 - accumulated color
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_WRITABLE_IMAGE, 1);          // space7 - accumulated samples
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space8 - point lights
+    program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space9 - area lights
     // 暂时注释掉全局几何缓冲区绑定
     // program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space9 - global vertices
     // program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space10 - global normals
@@ -411,6 +470,7 @@ void Application::OnClose() {
     camera_object_buffer_.reset();
     hover_info_buffer_.reset();
     point_lights_buffer_.reset();  // 清理点光源缓冲区
+    area_lights_buffer_.reset();   // 清理面光源缓冲区
     
     // Don't call TerminateImGui - let the window destructor handle it
     // Just reset window which will clean everything up properly
@@ -887,6 +947,7 @@ void Application::OnRender() {
     command_context->CmdBindResources(6, { film_->GetAccumulatedColorImage() }, grassland::graphics::BIND_POINT_RAYTRACING);
     command_context->CmdBindResources(7, { film_->GetAccumulatedSamplesImage() }, grassland::graphics::BIND_POINT_RAYTRACING);
     command_context->CmdBindResources(8, { point_lights_buffer_.get() }, grassland::graphics::BIND_POINT_RAYTRACING);  // 绑定点光源
+    command_context->CmdBindResources(9, { area_lights_buffer_.get() }, grassland::graphics::BIND_POINT_RAYTRACING);  // 绑定面光源
     // 暂时注释掉全局几何缓冲区绑定
     // command_context->CmdBindResources(9, { scene_->GetGlobalVertexBuffer() }, grassland::graphics::BIND_POINT_RAYTRACING);
     // command_context->CmdBindResources(10, { scene_->GetGlobalNormalBuffer() }, grassland::graphics::BIND_POINT_RAYTRACING);
