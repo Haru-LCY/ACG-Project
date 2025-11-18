@@ -8,7 +8,8 @@ struct Material {
   float roughness;
   float metallic;
   float transmission;  // 透明度
-  float ior;           // 折射率
+	float3 transmission_color; // 透射颜色/吸收色（用于有色玻璃的 Beer–Lambert 衰减）
+	float ior;           // 折射率
   float alpha_threshold; // alpha shadow 阈值
   float has_alpha_map;   // 是否有透明度贴图
 };
@@ -25,16 +26,6 @@ ConstantBuffer<HoverInfo> hover_info : register(b0, space4);
 RWTexture2D<int> entity_id_output : register(u0, space5);
 RWTexture2D<float4> accumulated_color : register(u0, space6);
 RWTexture2D<int> accumulated_samples : register(u0, space7);
-// 暂时注释掉全局几何缓冲区，使用简化的法线计算
-// StructuredBuffer<float3> global_vertices : register(t0, space8);
-// StructuredBuffer<float3> global_normals : register(t0, space9);
-// StructuredBuffer<uint3> global_indices : register(t0, space10);
-// struct EntityOffset {
-//     uint vertex_offset;
-//     uint index_offset;
-//     uint padding[2];
-// };
-// StructuredBuffer<EntityOffset> entity_offsets : register(t0, space11);
 
 struct RayPayload {
 	float3 radiance;
@@ -46,6 +37,9 @@ struct RayPayload {
 	float2 barycentrics;
 	uint primitive_id;
 };
+
+// Debug: shadow visibility boost (用于临时放大 lightVisibilityRGB 以便调试)
+static const float SHADOW_DEBUG_BOOST = 1.0;
 
 // 改进的 PCG RNG
 uint PCGHash(inout uint state) {
@@ -149,83 +143,77 @@ float3 SampleGGX(float3 N, float3 V, float roughness, inout uint seed) {
 	return normalize(2.0 * dot(V, H) * H - V);
 }
 
-// Alpha shadow 阴影射线追踪（非递归版本，避免栈溢出）
-// 检查从当前点到目标方向是否被遮挡，考虑透明度贴图
-// 返回值：1.0 = 完全可见，0.0 = 完全遮挡，0.0-1.0 = 透明度混合
-float TraceAlphaShadow(float3 rayOrigin, float3 rayDirection, float maxDistance, inout uint seed) {
-	float visibility = 1.0;
+// Alpha shadow 阴影射线追踪（非递归版本，返回 RGB 可见度，支持有色透射 Beer–Lambert 衰减）
+// 返回值：float3(1,1,1) = 完全可见，float3(0,0,0) = 完全遮挡，其他为按通道衰减后的可见度
+float3 TraceAlphaShadowRGB(float3 rayOrigin, float3 rayDirection, float maxDistance, inout uint seed) {
+	float3 visibility = float3(1.0, 1.0, 1.0);
 	float travelDistance = 0.0;
-	const int MAX_BOUNCES = 3; // 限制透明体穿过次数为3次（性能优化）
-	const float MIN_VISIBILITY = 0.01; // 如果可见性过低，提前终止
-	
+	const int MAX_BOUNCES = 6; // 允许更多透明体穿过次数以捕获混合
+	const float MIN_VISIBILITY = 0.001; // 如果可见性过低，提前终止
+
 	for (int i = 0; i < MAX_BOUNCES; ++i) {
-		if (travelDistance >= maxDistance || visibility < MIN_VISIBILITY) {
+		if (travelDistance >= maxDistance || max(max(visibility.r, visibility.g), visibility.b) < MIN_VISIBILITY) {
 			break;
 		}
-		
+
 		RayDesc shadowRay;
 		shadowRay.Origin = rayOrigin;
 		shadowRay.Direction = normalize(rayDirection);
 		shadowRay.TMin = 0.0001;
 		shadowRay.TMax = maxDistance - travelDistance;
-		
+
 		RayPayload shadowPayload;
 		shadowPayload.hit = false;
 		shadowPayload.material_idx = 0;
 		shadowPayload.hit_pos = float3(0, 0, 0);
 		shadowPayload.normal = float3(0, 1, 0);
-		shadowPayload.throughput = float3(1, 1, 1);
-		shadowPayload.radiance = float3(0, 0, 0);
-		
+
 		// 追踪阴影射线
 		TraceRay(as, RAY_FLAG_NONE, 0xFF, 0, 1, 0, shadowRay, shadowPayload);
-		
+
 		if (!shadowPayload.hit) {
 			// 没有hit = 完全可见
 			return visibility;
 		}
-		
+
 		// 获取材质信息
 		Material mat = materials[shadowPayload.material_idx];
 		float distanceToHit = length(shadowPayload.hit_pos - rayOrigin);
 		travelDistance += distanceToHit;
-		
-		// 如果材质是透明的，应用透明度衰减并继续追踪
+
+		// 如果材质是透明的，应用有色透射（Beer–Lambert 简化）并继续追踪
 		if (mat.transmission > 0.01) {
-			// 应用透明度衰减
-			float transparency = mat.transmission;
-			visibility *= transparency;
-			
+			// 使用 transmission_color 作为每单位距离的透射色近似：visibility *= transmission_color ^ distance
+			// 并额外乘以传输强度 scalar
+			float3 colorAttenuation = pow(mat.transmission_color, distanceToHit);
+			visibility *= colorAttenuation * mat.transmission;
+
 			// 继续追踪，向前偏移
 			rayOrigin = shadowPayload.hit_pos + normalize(rayDirection) * 0.001;
 			continue;
 		}
-		
+
 		// 检查 alpha 贴图
 		if (mat.has_alpha_map > 0.5) {
-			// 使用材质的 alpha 阈值和基色亮度来决定透明度
+			// 原先用亮度作为 alpha 的近似，这里也按亮度决定通道级别的透射
 			float colorBrightness = dot(mat.base_color, float3(0.299, 0.587, 0.114));
-			float alpha = colorBrightness; // 使用颜色亮度作为 alpha 值
-			
-			// 如果 alpha 小于阈值，则认为是透明的
+			float alpha = colorBrightness;
+
 			if (alpha < mat.alpha_threshold) {
-				// 像素透明，继续追踪
-				// 亮色更透明，暗色更不透明（正向透明度）
-				visibility *= alpha / mat.alpha_threshold; // 根据亮度与阈值的比例衰减
+				float factor = alpha / mat.alpha_threshold;
+				visibility *= float3(factor, factor, factor);
 				rayOrigin = shadowPayload.hit_pos + normalize(rayDirection) * 0.001;
 				continue;
 			} else {
-				// alpha >= threshold，但仍然允许部分光线通过（基于亮度）
-				// 亮色投影浅，暗色投影深
-				visibility *= alpha;
+				visibility *= float3(alpha, alpha, alpha);
 				return visibility;
 			}
 		}
-		
+
 		// 不透明的物体，完全遮挡
-		return 0.0;
+		return float3(0.0, 0.0, 0.0);
 	}
-	
+
 	return visibility;
 }
 
@@ -338,8 +326,8 @@ float TraceAlphaShadow(float3 rayOrigin, float3 rayDirection, float maxDistance,
 				if (Refract(-V, normal, eta, refracted)) {
 					rayDir = normalize(refracted);
 					rayOrigin = payload.hit_pos - normal * RAY_EPSILON; // 使用定义的Ray Epsilon
-					// 光线穿过玻璃时应用颜色滤镜（Beer定律的简化）
-					throughput *= mat.base_color;
+					// 光线穿过玻璃时应用传输颜色（有色玻璃应使用 transmission_color）
+					throughput *= mat.transmission_color * mat.transmission;
 				} else {
 					// 全反射
 					rayDir = reflect(-V, normal);
@@ -395,14 +383,18 @@ float TraceAlphaShadow(float3 rayOrigin, float3 rayDirection, float maxDistance,
 		if (bounce == 0 && payload.hit) {
 			// 仅在第一次反弹时计算以提高性能
 			float3 lightDir = normalize(float3(1.0, 2.0, 1.0));
-			float lightVisibility = TraceAlphaShadow(payload.hit_pos + N * RAY_EPSILON, 
-			                                         lightDir, 
-			                                         100.0, 
-			                                         seed);
-			
-			// 计算漫反射直接照明
+			float3 lightVisibilityRGB = TraceAlphaShadowRGB(payload.hit_pos + N * RAY_EPSILON,
+															lightDir,
+															100.0,
+															seed);
+			// 临时放大用于调试并限制在[0,1]
+			lightVisibilityRGB *= SHADOW_DEBUG_BOOST;
+			lightVisibilityRGB = clamp(lightVisibilityRGB, 0.0, 1.0);
+
+			// 计算漫反射直接照明（光源假设为白光，可扩展为光源颜色）
 			float NdotL = max(dot(N, lightDir), 0.0);
-			float3 directLight = mat.base_color * NdotL * lightVisibility * 0.8;
+			float3 lightColor = float3(1.0, 1.0, 1.0);
+			float3 directLight = mat.base_color * NdotL * lightColor * lightVisibilityRGB * 0.8;
 			if (NdotL > 0.001) {
 				radiance += throughput * directLight;
 			}
