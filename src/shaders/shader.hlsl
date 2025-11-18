@@ -325,9 +325,9 @@ float3 ComputeAreaLightContribution(float3 hitPos, float3 normal, float3 viewDir
         // 这样避免玻璃表面看起来像磨砂或发光。
         brdf = specular; 
         
-        // 加上Fresnel透射衰减 (可选，近似)
-        float dielectricF = FresnelDielectric(dot(normal, viewDir), 1.0, material.ior);
-        brdf *= dielectricF; 
+        // 不再额外乘 Fresnel，因为 specular 中已经包含了 F 项
+        // float dielectricF = FresnelDielectric(dot(normal, viewDir), 1.0, material.ior);
+        // brdf *= dielectricF; 
     } 
     else {
         // [不透明/金属物体]
@@ -336,6 +336,8 @@ float3 ComputeAreaLightContribution(float3 hitPos, float3 normal, float3 viewDir
         brdf = kD * diffuse + specular;
     }
     
+    // 最终光照贡献 = 光源辐射 * BRDF * 几何因子 * 可见性
+    // Le 已经包含了光源的颜色和强度
     return Le * brdf * geometryFactor * visibility;
 }
 

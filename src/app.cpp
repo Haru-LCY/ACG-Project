@@ -310,19 +310,19 @@ void Application::OnInit() {
     // 添加一个主光源（强白光）- 正上方偏右后方（更自然的布光）
     point_lights_[0].position = glm::vec3(2.0f, 8.0f, 5.0f);
     point_lights_[0].color = glm::vec3(1.0f, 1.0f, 1.0f);
-    point_lights_[0].strength = 250.0f;
+    point_lights_[0].strength = 0.0f;
     point_lights_[0].radius = 0.1f;
     
     // 添加一个补光光源（柔和白光）- 左上方，避免产生强反光
     point_lights_[1].position = glm::vec3(-5.0f, 5.0f, 3.0f);
     point_lights_[1].color = glm::vec3(1.0f, 1.0f, 1.0f);
-    point_lights_[1].strength = 100.0f;
+    point_lights_[1].strength = 0.0f;
     point_lights_[1].radius = 0.1f;
     
     // 添加一个环境光（模拟天空反射）
     point_lights_[2].position = glm::vec3(0.0f, 0.5f, 6.0f);
     point_lights_[2].color = glm::vec3(0.95f, 0.95f, 1.0f);
-    point_lights_[2].strength = 50.0f;
+    point_lights_[2].strength = 0.0f;
     point_lights_[2].radius = 0.1f;
     
     // 其余光源强度设为0（未使用）
@@ -340,11 +340,10 @@ void Application::OnInit() {
 
     // 初始化面光源数组（最多8个）
     area_lights_.resize(8);
-    //////!!!!!!!!!!!!!为了调试把所有area light强度设为0，避免影响观察!!!!!!!!!!!!!!!
-    // 配置主光源 - 白色天花板光
+    // 配置主光源 - 红色天花板光
     area_lights_[0].position = glm::vec3(0.0f, 4.0f, 0.0f);      // 上方4米
-    area_lights_[0].color = glm::vec3(1.0f, 1.0f, 1.0f);         // 白色
-    area_lights_[0].strength = 0.0f;                             // 60瓦
+    area_lights_[0].color = glm::vec3(1.0f, 0.3f, 0.3f);         // 红色
+    area_lights_[0].strength = 10.0f;                             // 100瓦
     area_lights_[0].width = 3.0f;                                 // 3米宽
     area_lights_[0].height = 3.0f;                                // 3米高
     area_lights_[0].direction = glm::normalize(glm::vec3(0.0f, -1.0f, 0.0f));  // 向下
@@ -355,8 +354,9 @@ void Application::OnInit() {
     
     // 配置红色侧光 - 左侧
     area_lights_[1].position = glm::vec3(-5.0f, 2.0f, 0.0f);     // 左侧
-    area_lights_[1].color = glm::vec3(1.0f, 0.3f, 0.3f);         // 红色
-    area_lights_[1].strength = 0.0f;                             // 25瓦
+    // area_lights_[1].color = glm::vec3(1.0f, 0.3f, 0.3f);         
+    area_lights_[1].color = glm::vec3(0.3f, 0.3f, 1.0f);         // 蓝色
+    area_lights_[1].strength = 10.0f;                             // 25瓦
     area_lights_[1].width = 1.0f;                                 // 1米宽
     area_lights_[1].height = 2.0f;                                // 2米高
     area_lights_[1].direction = glm::normalize(glm::vec3(1.0f, 0.0f, 0.0f));   // 向右
@@ -367,8 +367,10 @@ void Application::OnInit() {
     
     // 配置蓝色侧光 - 右侧
     area_lights_[2].position = glm::vec3(5.0f, 2.0f, 0.0f);      // 右侧
-    area_lights_[2].color = glm::vec3(0.3f, 0.3f, 1.0f);         // 蓝色
-    area_lights_[2].strength = 0.0f;                             // 25瓦
+    // area_lights_[2].color = glm::vec3(0.3f, 0.3f, 1.0f);         // 蓝色
+    //绿色
+    area_lights_[2].color = glm::vec3(0.3f, 1.0f, 0.3f);
+    area_lights_[2].strength = 10.0f;                             // 25瓦
     area_lights_[2].width = 1.0f;                                 // 1米宽
     area_lights_[2].height = 2.0f;                                // 2米高
     area_lights_[2].direction = glm::normalize(glm::vec3(-1.0f, 0.0f, 0.0f));  // 向左
