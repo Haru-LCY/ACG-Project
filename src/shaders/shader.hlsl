@@ -199,6 +199,101 @@ float2 SampleUnitDisk(inout uint seed) {
     return float2(r * cos(theta), r * sin(theta));
 }
 
+
+// =========================================================================
+// 新增函数：PBR 辅助函数
+// =========================================================================
+
+// 计算 GGX NDF D项
+float DistributionGGX(float NdotH, float roughness) {
+    float a = roughness * roughness;
+    float a2 = a * a;
+    float NdotH2 = NdotH * NdotH;
+    float denom = NdotH2 * (a2 - 1.0) + 1.0;
+    return a2 / (PI * denom * denom);
+}
+
+// 计算 GGX Smith Masking-Shadowing G项 (Schlick-GGX近似)
+float GeometrySchlickGGX(float NdotV, float roughness) {
+    float r = roughness + 1.0;
+    float k = (r * r) / 8.0;
+    return NdotV / (NdotV * (1.0 - k) + k);
+}
+
+// 计算 GGX 几何项 G
+float GeometrySmith(float NdotV, float NdotL, float roughness) {
+    return GeometrySchlickGGX(NdotV, roughness) * GeometrySchlickGGX(NdotL, roughness);
+}
+
+// 计算 Cook-Torrance PBR BRDF (仅考虑反射部分)
+float3 CookTorranceBRDF(float3 L, float3 V, float3 N, float3 baseColor, float roughness, float metallic, out float3 specularF0) {
+    float3 H = normalize(V + L);
+    float NdotL = max(dot(N, L), 0.0);
+    float NdotV = max(dot(N, V), 0.0);
+    float NdotH = max(dot(N, H), 0.0);
+    float VdotH = max(dot(V, H), 0.0);
+    
+    // Fresnel
+    specularF0 = lerp(float3(0.04, 0.04, 0.04), baseColor, metallic);
+    float3 F = FresnelSchlick(VdotH, specularF0);
+    
+    // Normal Distribution Function (NDF)
+    float D = DistributionGGX(NdotH, roughness);
+    
+    // Geometry Term (G)
+    float G = GeometrySmith(NdotV, NdotL, roughness);
+    
+    // Specular Term
+    float3 specular = (D * F * G) / max(4.0 * NdotV * NdotL, 0.001);
+    
+    // Diffuse Term (Oren-Nayar/Lambertian)
+    float3 kD = (1.0 - F) * (1.0 - metallic);
+    float3 diffuse = baseColor * (1.0 - metallic) / PI;
+    
+    return kD * diffuse + specular;
+}
+
+// 计算 GGX/Cosine 联合采样的 PDF 值
+float CalculateBSDFPdf(float3 L, float3 V, float3 N, float roughness, float metallic, float3 F0, bool isSpecularSample) {
+    float NdotL = max(dot(N, L), 0.0);
+    if (NdotL <= 0.0) return 0.0;
+    
+    if (metallic > 0.99) { // 纯金属（只做镜面采样）
+        // GGX 采样的 PDF (基于微面元法线 H)
+        float3 H = normalize(V + L);
+        float NdotH = max(dot(N, H), 0.0);
+        float HdotL = max(dot(H, L), 0.0);
+        float D = DistributionGGX(NdotH, roughness);
+        return D * NdotH / (4.0 * HdotL);
+    } else { // 电介质/混合（漫反射 + 镜面反射）
+        // 概率加权混合
+        float3 F = FresnelSchlick(max(dot(N, V), 0.0), F0);
+        // 使用平均菲涅尔项作为镜面反射概率P_s
+        float P_s = (F.x + F.y + F.z) / 3.0; 
+        P_s = clamp(P_s, 0.1, 0.9); // 增加鲁棒性
+        float P_d = 1.0 - P_s; // 漫反射概率
+        
+        // 漫反射 PDF: Cosine Hemisphere Sampling
+        float pdf_d = NdotL / PI; 
+        
+        // 镜面反射 PDF: GGX Importance Sampling (同纯金属)
+        float3 H = normalize(V + L);
+        float NdotH = max(dot(N, H), 0.0);
+        float HdotL = max(dot(H, L), 0.0);
+        float D = DistributionGGX(NdotH, roughness);
+        float pdf_s = D * NdotH / (4.0 * HdotL);
+        
+        // 联合 PDF
+        if (isSpecularSample) {
+            // 如果本次是Specular采样（但目标光线是L），则其自身PDF是P_s * pdf_s，另一个是P_d * pdf_d
+            return P_s * pdf_s + P_d * pdf_d;
+        } else {
+             // 否则，认为是漫反射采样（但目标光线是L），则其自身PDF是P_d * pdf_d，另一个是P_s * pdf_s
+             return P_d * pdf_d + P_s * pdf_s;
+        }
+    }
+}
+
 // Alpha shadow 阴影射线追踪（非递归版本，返回 RGB 可见度，支持有色透射 Beer–Lambert 衰减）
 // 返回值：float3(1,1,1) = 完全可见，float3(0,0,0) = 完全遮挡，其他为按通道衰减后的可见度
 float3 TraceAlphaShadowRGB(float3 rayOrigin, float3 rayDirection, float maxDistance, inout uint seed) {
@@ -284,8 +379,8 @@ float3 ACESFilm(float3 x) {
     return saturate((x * (a * x + b)) / (x * (c * x + d) + e));
 }
 
-// [新增] 计算面光源贡献 (包含对透明/金属的特殊处理)
-float3 ComputeAreaLightContribution(float3 hitPos, float3 normal, float3 viewDir, Material material, float2 uv, AreaLight light, inout uint seed) {
+// [修改] 计算面光源贡献 (包含对透明/金属的特殊处理)
+float3 ComputeAreaLightContribution(float3 hitPos, float3 normal, float3 viewDir, Material material, float2 uv, AreaLight light, inout uint seed, out float pdf_light, out float3 sampledDir) {
     // 1. 在面光源上随机采样一个点
     float u = Rand01(seed) - 0.5f; // [-0.5, 0.5]
     float v = Rand01(seed) - 0.5f; // [-0.5, 0.5]
@@ -297,6 +392,7 @@ float3 ComputeAreaLightContribution(float3 hitPos, float3 normal, float3 viewDir
     float distSq = dot(lightVec, lightVec);
     float dist = sqrt(distSq);
     float3 lightDir = lightVec / dist;
+    sampledDir = lightDir;
     
     float NdotL = dot(normal, lightDir);
     float3 lightNormal = light.direction; // 面光源朝向
@@ -304,72 +400,45 @@ float3 ComputeAreaLightContribution(float3 hitPos, float3 normal, float3 viewDir
     
     // 剔除：光源在背面 或 光源本身背对物体
     if (NdotL <= 0.0 || LdotLn <= 0.0) {
+        pdf_light = 0.0;
         return float3(0,0,0);
     }
     
     // 3. 阴影检测
     const float RAY_EPSILON = 0.001;
-    // 注意：TraceAlphaShadowRGB 需要减去一点距离防止击中光源本身
     float3 visibility = TraceAlphaShadowRGB(hitPos + normal * RAY_EPSILON, lightDir, dist - RAY_EPSILON, seed);
     
     if (max(max(visibility.r, visibility.g), visibility.b) < 0.001) {
+        pdf_light = 0.0;
         return float3(0,0,0);
     }
     
     // 4. 辐射度计算 (Monte Carlo Integration)
-    // 几何因子 = (cosTheta_Surface * cosTheta_Light * Area) / dist^2
     float area = light.width * light.height;
-    float geometryFactor = (NdotL * LdotLn * area) / distSq;
-    
-    // 基础辐射度
     float3 Le = light.color * light.strength; 
+    
+    // *************************************************************
+    // [MIS 核心] 计算光源采样的 PDF (pdf_light)
+    // p(w_i) = p_A(x_i) * |(x_i - x_0)|^2 / |n_i . (x_i - x_0)|
+    // p_A(x_i) 是面光源表面上的均匀采样密度 = 1 / Area
+    float pdf_area = 1.0 / area;
+    pdf_light = pdf_area * distSq / LdotLn; // LdotLn 是 |n_light . L_vec| / dist
+    // *************************************************************
 
     // 5. BRDF 计算 - 使用纹理颜色
-    float3 brdf = float3(0,0,0);
-    
-    // 准备 PBR 参数 - 使用纹理颜色替代base_color
     float3 baseColor = GetMaterialBaseColor(material, uv);
-    float3 diffuseAlbedo = baseColor * (1.0 - material.metallic);
-    float3 F0 = lerp(float3(0.04, 0.04, 0.04), baseColor, material.metallic);
-    float3 halfVec = normalize(lightDir + viewDir);
-    float NdotH = max(dot(normal, halfVec), 0.0);
-    float VdotH = max(dot(viewDir, halfVec), 0.0);
-    float NdotV = max(dot(normal, viewDir), 0.0);
+    float3 F0_unused;
+    float3 brdf = CookTorranceBRDF(lightDir, viewDir, normal, baseColor, material.roughness, material.metallic, F0_unused);
+
+    // 6. 最终光照贡献 = Le * BRDF * NdotL * (1/pdf_light) * visibility
+    // Monte Carlo 积分估计：f(X_i) / p(X_i)
+    // f(X_i) = Le * BRDF * NdotL * (Geometry Term * Area)
+    // p(X_i) = 1 / Area * dist^2 / LdotLn
+    // 最终贡献 = Le * BRDF * NdotL * (LdotLn * Area / distSq) * visibility / (pdf_light)
+    // 简化后：
+    float Le_pdf = (Le * NdotL * LdotLn) / distSq;
     
-    // 镜面反射项 (GGX)
-    float3 F = FresnelSchlick(VdotH, F0);
-    float alpha = material.roughness * material.roughness;
-    float alpha2 = alpha * alpha;
-    float denom = (NdotH * NdotH * (alpha2 - 1.0) + 1.0);
-    float D = alpha2 / (PI * denom * denom);
-    
-    float k = (material.roughness + 1.0) * (material.roughness + 1.0) / 8.0;
-    float G = (NdotV / (NdotV * (1.0 - k) + k)) * (NdotL / (NdotL * (1.0 - k) + k));
-    
-    float3 specular = (D * F * G) / max(4.0 * NdotV * NdotL, 0.001);
-    
-    // == 关键逻辑：根据材质类型混合 ==
-    if (material.transmission > 0.01) {
-        // [透明物体]
-        // NEE 只计算直接反射的高光(Glare)。
-        // 漫反射部分设为0 (或极低)，因为玻璃内部的亮光应由透射光线(refraction)提供。
-        // 这样避免玻璃表面看起来像磨砂或发光。
-        brdf = specular; 
-        
-        // 不再额外乘 Fresnel，因为 specular 中已经包含了 F 项
-        // float dielectricF = FresnelDielectric(dot(normal, viewDir), 1.0, material.ior);
-        // brdf *= dielectricF; 
-    } 
-    else {
-        // [不透明/金属物体]
-        float3 kD = (1.0 - F) * (1.0 - material.metallic);
-        float3 diffuse = diffuseAlbedo / PI;
-        brdf = kD * diffuse + specular;
-    }
-    
-    // 最终光照贡献 = 光源辐射 * BRDF * 几何因子 * 可见性
-    // Le 已经包含了光源的颜色和强度
-    return Le * brdf * geometryFactor * visibility;
+    return Le_pdf * brdf * area * visibility;
 }
 
 // ... (保留原有的 PointLight 计算函数) ...
@@ -412,11 +481,11 @@ float3 ComputePointLightContribution(float3 hitPos, float3 normal, float3 viewDi
 		return float3(0.0, 0.0, 0.0);
 	}
 	
-	// 计算漫反射项（Lambertian BRDF）- 使用纹理颜色
-	// 漫反射反射率 = baseColor * (1 - metallic)
-	float3 baseColor = GetMaterialBaseColor(material, uv);
-	float3 diffuseAlbedo = baseColor * (1.0 - material.metallic);
-	float3 diffuse = diffuseAlbedo * NdotL / 3.14159265359;  // Lambert BRDF = albedo/π
+    // 计算漫反射项（Lambertian BRDF）- 使用纹理颜色
+    // 漫反射反射率 = baseColor * (1 - metallic)
+    float3 baseColor = GetMaterialBaseColor(material, uv);
+    float3 diffuseAlbedo = baseColor * (1.0 - material.metallic);
+    float3 diffuse = diffuseAlbedo / 3.14159265359;  // Lambert BRDF = albedo/π (no NdotL here)
 	
 	// 计算镜面反射项（基于Cook-Torrance微表面模型的简化）
 	float3 halfVec = normalize(lightDir + viewDir);  // 半程向量
@@ -449,7 +518,7 @@ float3 ComputePointLightContribution(float3 hitPos, float3 normal, float3 viewDi
 	float3 kD = (1.0 - F) * (1.0 - material.metallic);
 	float3 brdf = kD * diffuse + specular;
 	
-	// 最终光照 = BRDF * 光源颜色 * 衰减 * NdotL * 可见性
+    // 最终光照 = BRDF * 光源颜色 * 衰减 * NdotL * 可见性
 	float3 radiance = brdf * light.color * attenuation * NdotL * lightVisibility * SHADOW_DEBUG_BOOST;
 	
 	return radiance;
@@ -540,20 +609,24 @@ float3 ComputePointLightContribution(float3 hitPos, float3 normal, float3 viewDi
     RayPayload payload;
         float3 radiance = float3(0,0,0);
         float3 throughput = float3(1,1,1);
+        // BSDF sampling metadata for MIS and throughput updates
+        float pdf_bsdf = 1.0;
+        float3 f_bsdf = float3(1.0, 1.0, 1.0);
     
     for (int bounce = 0; bounce < MAX_BOUNCES; ++bounce) {
-        // 初始化 payload
-        payload.hit = false;
-        payload.material_idx = 0;
-        payload.hit_pos = float3(0,0,0);
-        payload.normal = float3(0,1,0);
+        // --- 俄罗斯轮盘赌 (Russian Roulette) 终止路径 ---
+        if (bounce > 3) {
+            float p = max(max(throughput.r, throughput.g), throughput.b);
+            float continuationProb = max(0.05, p); // 最小概率 0.05，防止过度终止
+            if (Rand01(seed) > continuationProb) break;
+            throughput /= continuationProb;
+        }
         
         RayDesc ray;
         ray.Origin = rayOrigin;
         ray.Direction = rayDir;
         ray.TMin = 0.001;
         ray.TMax = 10000.0;
-        
         TraceRay(as, RAY_FLAG_NONE, 0xFF, 0, 1, 0, ray, payload);
         
         if (!payload.hit) {
@@ -606,10 +679,23 @@ float3 ComputePointLightContribution(float3 hitPos, float3 normal, float3 viewDi
                 AreaLight al = area_lights[j];
                 if (al.strength <= 0.0) continue;
                 
-                float3 areaLightContrib = ComputeAreaLightContribution(hitPos, N, V, mat, uv, al, seed);
-                radiance += throughput * areaLightContrib;
+                float pdf_light_area = 0.0;
+                float3 sampledDir = float3(0,0,0);
+                float3 areaLightContrib = ComputeAreaLightContribution(hitPos, N, V, mat, uv, al, seed, pdf_light_area, sampledDir);
+                if (pdf_light_area <= 0.0) continue;
+
+                // 计算对应的 BSDF pdf（即：如果我们用 BSDF 采样，会采到该方向的概率）
+                float3 F0_for_pdf = lerp(float3(0.04, 0.04, 0.04), GetMaterialBaseColor(mat, uv), mat.metallic);
+                float pdf_bsdf_for_light = CalculateBSDFPdf(sampledDir, V, N, mat.roughness, mat.metallic, F0_for_pdf, false);
+
+                // MIS 权重（Power heuristic）
+                float w_light = 1.0;
+                float denom = pdf_light_area * pdf_light_area + pdf_bsdf_for_light * pdf_bsdf_for_light;
+                if (denom > 0.0) w_light = (pdf_light_area * pdf_light_area) / denom;
+
+                radiance += throughput * areaLightContrib * w_light;
             }
-        }
+        } 
 
         // ===== 间接光照 (BSDF Sampling / 递归) =====
         
@@ -629,6 +715,9 @@ float3 ComputePointLightContribution(float3 hitPos, float3 normal, float3 viewDi
                 // 反射
                 rayDir = reflect(-V, normal);
                 rayOrigin = hitPos + normal * 0.001;
+                // 反射为 delta（镜面）采样，pdf = Fr
+                pdf_bsdf = Fr;
+                f_bsdf = float3(Fr, Fr, Fr);
             } else {
                 // 折射
                 float3 refracted;
@@ -637,19 +726,30 @@ float3 ComputePointLightContribution(float3 hitPos, float3 normal, float3 viewDi
                     rayOrigin = hitPos - normal * 0.001;
                     // Beer's Law 吸收 - 使用纹理颜色
                     if (entering) throughput *= baseColor; // 使用纹理颜色而不是mat.transmission_color
+                    // 透射也为 delta 分布(pdf = 1-Fr)
+                    pdf_bsdf = 1.0 - Fr;
+                    f_bsdf = float3(1.0 - Fr, 1.0 - Fr, 1.0 - Fr) / (etaT * etaT);
                 } else {
                     rayDir = reflect(-V, normal); // 全反射
                     rayOrigin = hitPos + normal * 0.001;
+                    pdf_bsdf = 1.0;
+                    f_bsdf = float3(1.0,1.0,1.0);
                 }
             }
+            // 透明材质的 throughput 更新（delta BSDF）
+            float NdotL_delta = abs(dot(N, rayDir));
+            throughput *= (f_bsdf * NdotL_delta) / max(pdf_bsdf, 1e-6);
         } 
         // [不透明材质逻辑]
         else {
-            float3 F0 = lerp(0.04, baseColor, mat.metallic);
+            float3 F0 = lerp(float3(0.04, 0.04, 0.04), baseColor, mat.metallic);
             float3 F = FresnelSchlick(max(dot(N, V), 0.0), F0);
             float specularProb = lerp(max(F.x, max(F.y, F.z)), 1.0, mat.metallic);
             specularProb = clamp(specularProb, 0.1, 0.9);
             
+            pdf_bsdf = 1.0;
+            f_bsdf = float3(1.0, 1.0, 1.0);
+            float3 F0_bsdf = lerp(float3(0.04, 0.04, 0.04), baseColor, mat.metallic);
             if (Rand01(seed) < specularProb) {
                 // 镜面反射/金属
                 if (mat.roughness < 0.05) rayDir = reflect(-V, N);
@@ -658,12 +758,61 @@ float3 ComputePointLightContribution(float3 hitPos, float3 normal, float3 viewDi
                 rayOrigin = hitPos + N * 0.001;
                 
                 float NdotL_next = max(dot(N, rayDir), 0.0);
-                if(NdotL_next > 0) throughput *= F; // 简单的能量近似
+                if (NdotL_next > 0.0) {
+                    // 计算 BRDF 和 pdf
+                    float3 specF0_col;
+                    f_bsdf = CookTorranceBRDF(rayDir, V, N, baseColor, mat.roughness, mat.metallic, specF0_col);
+                    pdf_bsdf = CalculateBSDFPdf(rayDir, V, N, mat.roughness, mat.metallic, F0_bsdf, true);
+                    // MIS: 估计光源采样（总和）在该方向上的概率
+                    float p_light_total = 0.0;
+                    for (int k = 0; k < 8; ++k) {
+                        AreaLight al2 = area_lights[k];
+                        if (al2.strength <= 0.0) continue;
+                        float3 lightVec2 = al2.position - hitPos;
+                        float distSq2 = dot(lightVec2, lightVec2);
+                        float dist2 = sqrt(distSq2);
+                        float LdotLn2 = max(dot(-rayDir, al2.direction), 0.0);
+                        if (LdotLn2 > 0.0001) {
+                            float pdf_area2 = 1.0 / (al2.width * al2.height);
+                            float pdf_light_area2 = pdf_area2 * distSq2 / LdotLn2;
+                            p_light_total += pdf_light_area2;
+                        }
+                    }
+                    // power heuristic
+                    float w_bsdf = 1.0;
+                    float denom_bsdf = pdf_bsdf * pdf_bsdf + p_light_total * p_light_total;
+                    if (denom_bsdf > 0.0) w_bsdf = (pdf_bsdf * pdf_bsdf) / denom_bsdf;
+
+                    throughput *= (f_bsdf * NdotL_next) / max(pdf_bsdf, 1e-6);
+                }
             } else {
                 // 漫反射
                 rayDir = SampleCosineHemisphere(N, seed);
                 rayOrigin = hitPos + N * 0.001;
-                throughput *= baseColor * (1.0 - mat.metallic); // 金属没有漫反射,使用纹理颜色
+                // 漫反射采样 - 计算pdf和brdf
+                float3 diffuseF0;
+                float3 f_bsdf_local = CookTorranceBRDF(rayDir, V, N, baseColor, mat.roughness, mat.metallic, diffuseF0);
+                float pdf_bsdf_local = CalculateBSDFPdf(rayDir, V, N, mat.roughness, mat.metallic, F0_bsdf, false);
+                // 计算所有面光源对该方向的采样概率总和
+                float p_light_total_d = 0.0;
+                for (int k = 0; k < 8; ++k) {
+                    AreaLight al2 = area_lights[k];
+                    if (al2.strength <= 0.0) continue;
+                    float3 lightVec2 = al2.position - hitPos;
+                    float distSq2 = dot(lightVec2, lightVec2);
+                    float dist2 = sqrt(distSq2);
+                    float LdotLn2 = max(dot(-rayDir, al2.direction), 0.0);
+                    if (LdotLn2 > 0.0001) {
+                        float pdf_area2 = 1.0 / (al2.width * al2.height);
+                        float pdf_light_area2 = pdf_area2 * distSq2 / LdotLn2;
+                        p_light_total_d += pdf_light_area2;
+                    }
+                }
+                float w_bsdf_d = 1.0;
+                float denom_d = pdf_bsdf_local * pdf_bsdf_local + p_light_total_d * p_light_total_d;
+                if (denom_d > 0.0) w_bsdf_d = (pdf_bsdf_local * pdf_bsdf_local) / denom_d;
+
+                throughput *= (f_bsdf_local * max(dot(N, rayDir), 0.0)) / max(pdf_bsdf_local, 1e-6);
             }
         }
 

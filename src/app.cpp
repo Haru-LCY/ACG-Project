@@ -305,29 +305,29 @@ void Application::OnInit() {
     }
 
     // Transparent blue glass cube (背景)
-    // {
-    //     auto blue_cube = std::make_shared<Entity>(
-    //         "meshes/cube.obj",
-    //         Material(glm::vec3(0.3f, 0.3f, 1.0f), 0.05f, 0.0f, 0.95f, 1.5f), // 蓝色玻璃：明显的蓝色色调
-    //         // Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.3f, 0.9f),  // 白色基础,金属
-    //         // 将蓝色玻璃放在稍微靠后的背景位置
-    //         glm::translate(glm::mat4(1.0f), glm::vec3(2.0f, 0.5f, -2.0f)),
-    //         "textures/sakura.png"
-    //     );
-    //     scene_->AddEntity(blue_cube);
-    // }
-
     {
         auto blue_cube = std::make_shared<Entity>(
             "meshes/cube.obj",
-            // Material(glm::vec3(0.3f, 0.3f, 1.0f), 0.05f, 0.0f, 0.95f, 1.5f), // 蓝色玻璃：明显的蓝色色调
-            Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.3f, 0.9f),  // 白色基础,金属
+            Material(glm::vec3(0.3f, 0.3f, 1.0f), 0.05f, 0.0f, 0.95f, 1.5f), // 蓝色玻璃：明显的蓝色色调
+            // Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.3f, 0.9f),  // 白色基础,金属
             // 将蓝色玻璃放在稍微靠后的背景位置
             glm::translate(glm::mat4(1.0f), glm::vec3(2.0f, 0.5f, -2.0f)),
             "textures/sakura.png"
         );
         scene_->AddEntity(blue_cube);
     }
+
+    // {
+    //     auto blue_cube = std::make_shared<Entity>(
+    //         "meshes/cube.obj",
+    //         // Material(glm::vec3(0.3f, 0.3f, 1.0f), 0.05f, 0.0f, 0.95f, 1.5f), // 蓝色玻璃：明显的蓝色色调
+    //         Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.3f, 0.9f),  // 白色基础,金属
+    //         // 将蓝色玻璃放在稍微靠后的背景位置
+    //         glm::translate(glm::mat4(1.0f), glm::vec3(2.0f, 0.5f, -2.0f)),
+    //         "textures/sakura.png"
+    //     );
+    //     scene_->AddEntity(blue_cube);
+    // }
 
     // Foreground specular sphere (近景 - 应该被模糊)
     {
@@ -371,7 +371,7 @@ void Application::OnInit() {
     // 添加一个主光源（强白光）- 正上方偏右后方（更自然的布光）
     point_lights_[0].position = glm::vec3(2.0f, 8.0f, 5.0f);
     point_lights_[0].color = glm::vec3(1.0f, 1.0f, 1.0f);
-    point_lights_[0].strength = 40.0f; // 增强主光源强度
+    point_lights_[0].strength = 0.0f; // 增强主光源强度
     point_lights_[0].radius = 0.1f;
     
     // 添加一个补光光源（柔和白光）- 左上方，避免产生强反光
@@ -383,13 +383,13 @@ void Application::OnInit() {
     // 添加一个环境光（模拟天空反射）
     point_lights_[2].position = glm::vec3(0.0f, 0.5f, 6.0f);
     point_lights_[2].color = glm::vec3(0.95f, 0.95f, 1.0f);
-    point_lights_[2].strength = 6.0f; // 增加一点环境照明
+    point_lights_[2].strength = 0.0f; // 增加一点环境照明
     point_lights_[2].radius = 0.1f;
 
     // 添加一个背景高亮点光源用于产生远处的bokeh高光
     point_lights_[3].position = glm::vec3(0.0f, 1.2f, -7.0f);
     point_lights_[3].color = glm::vec3(1.0f, 0.9f, 0.7f);
-    point_lights_[3].strength = 200.0f; // 很亮，用于产生明显的bokeh
+    point_lights_[3].strength = 20.0f; // 很亮，用于产生明显的bokeh
     point_lights_[3].radius = 0.05f;    // 小半径产生更集中的高光
     
     // 其余光源强度设为0（未使用）
