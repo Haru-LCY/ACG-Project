@@ -9,7 +9,8 @@ struct CameraObject {
     glm::mat4 camera_to_world;
     float aperture;        // 光圈大小(模拟真实相机光圈)
     float focus_distance;  // 焦距(聚焦平面距离)
-    float padding[2];      // 对齐到16字节
+    int samples_per_pixel; // 每帧发射的样本数，用于减少闪烁
+    int padding[1];      // 对齐到16字节
 };
 
 class Application {
@@ -115,15 +116,20 @@ private:
     // Depth of Field parameters
     float aperture_;        // 光圈大小 (0 = 无景深效果)
     float focus_distance_;  // 焦距 (聚焦平面距离)
+    int samples_per_frame_; // 每帧为每像素发射的样本数量（用于降低闪烁）
     
     // Mouse hovering
     double mouse_x_;
     double mouse_y_;
     int hovered_entity_id_; // -1 if no entity hovered
     glm::vec4 hovered_pixel_color_; // Color value at hovered pixel
+    int hover_candidate_id_; // 临时候选id
+    int hover_consistency_count_; // 候选id连续帧计数
+    int hover_consistency_threshold_; // 需要连续多少帧才确认（默认2帧）
     
     // Entity selection
     int selected_entity_id_; // -1 if no entity selected
+    int focused_entity_id_; // -1 if no focus locked to an entity
 
     // 添加这些成员变量用于检测相机变化
     glm::mat4 prev_camera_to_world_;

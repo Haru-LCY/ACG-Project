@@ -155,9 +155,13 @@ void Application::OnMouseButton(int button, int action, int mods, double xpos, d
         // Select the currently hovered entity
         if (hovered_entity_id_ >= 0) {
             selected_entity_id_ = hovered_entity_id_;
-            grassland::LogInfo("Selected Entity #{}", selected_entity_id_);
+            // Lock focus to this entity
+            focused_entity_id_ = selected_entity_id_;
+            if (film_) film_->Reset();
+            grassland::LogInfo("Selected Entity #{} and focused on it", selected_entity_id_);
         } else {
             selected_entity_id_ = -1;
+            // Do not change existing focus; keep focusing on previous entity until another is selected
             grassland::LogInfo("Deselected entity");
         }
     }
@@ -260,7 +264,8 @@ void Application::OnInit() {
             "meshes/cube.obj",
             Material(glm::vec3(0.9f, 0.9f, 0.9f), 0.9f, 0.0f),
             glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 2.0f, -5.0f)), 
-                      glm::vec3(10.0f, 4.0f, 0.1f))
+                      glm::vec3(10.0f, 4.0f, 0.1f)),
+            "textures/sakura.png"
         );
         scene_->AddEntity(back_wall);
     }
@@ -300,11 +305,23 @@ void Application::OnInit() {
     }
 
     // Transparent blue glass cube (背景)
+    // {
+    //     auto blue_cube = std::make_shared<Entity>(
+    //         "meshes/cube.obj",
+    //         Material(glm::vec3(0.3f, 0.3f, 1.0f), 0.05f, 0.0f, 0.95f, 1.5f), // 蓝色玻璃：明显的蓝色色调
+    //         // Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.3f, 0.9f),  // 白色基础,金属
+    //         // 将蓝色玻璃放在稍微靠后的背景位置
+    //         glm::translate(glm::mat4(1.0f), glm::vec3(2.0f, 0.5f, -2.0f)),
+    //         "textures/sakura.png"
+    //     );
+    //     scene_->AddEntity(blue_cube);
+    // }
+
     {
         auto blue_cube = std::make_shared<Entity>(
             "meshes/cube.obj",
-            Material(glm::vec3(0.3f, 0.3f, 1.0f), 0.05f, 0.0f, 0.95f, 1.5f), // 蓝色玻璃：明显的蓝色色调
-            // Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.3f, 0.9f),  // 白色基础,金属
+            // Material(glm::vec3(0.3f, 0.3f, 1.0f), 0.05f, 0.0f, 0.95f, 1.5f), // 蓝色玻璃：明显的蓝色色调
+            Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.3f, 0.9f),  // 白色基础,金属
             // 将蓝色玻璃放在稍微靠后的背景位置
             glm::translate(glm::mat4(1.0f), glm::vec3(2.0f, 0.5f, -2.0f)),
             "textures/sakura.png"
@@ -457,10 +474,16 @@ void Application::OnInit() {
     last_y_ = (float)window_->GetHeight() / 2.0f;
     mouse_sensitivity_ = 0.1f;
     first_mouse_ = true;
+    // Initialize hover stability variables
+    hover_candidate_id_ = -2; // invalid
+    hover_consistency_count_ = 0;
+    hover_consistency_threshold_ = 2; // default 2 frames consistency
     
     // Initialize depth of field parameters
     aperture_ = 0.12f;        // 默认开启景深，这个值比较明显（可在UI调整）
     focus_distance_ = 6.0f;  // 默认焦距6米 -> focal plane at z=2 (camera z=8)
+        samples_per_frame_ = 2;  // 每帧每像素多采样次数，默认为2，能显著降低闪烁
+        focused_entity_id_ = -1; // no focus locked initially
 
     // Calculate initial camera_front_ based on yaw and pitch
     glm::vec3 front;
@@ -477,8 +500,8 @@ void Application::OnInit() {
         glm::inverse(glm::lookAt(camera_pos_, camera_pos_ + camera_front_, camera_up_));
     camera_object.aperture = aperture_;
     camera_object.focus_distance = focus_distance_;
-    camera_object.padding[0] = 0.0f;
-    camera_object.padding[1] = 0.0f;
+    camera_object.samples_per_pixel = samples_per_frame_;
+    camera_object.padding[0] = 0;
     camera_object_buffer_->UploadData(&camera_object, sizeof(CameraObject));
 
     core_->CreateImage(window_->GetWidth(), window_->GetHeight(), grassland::graphics::IMAGE_FORMAT_R32G32B32A32_SFLOAT,
@@ -574,7 +597,17 @@ void Application::UpdateHoveredEntity() {
     // The entity_id_image_ stores the entity index (-1 for no entity)
     int32_t entity_id = -1;
     entity_id_image_->DownloadData(&entity_id, offset, extent);
-    hovered_entity_id_ = entity_id;
+
+    // Hover smoothing: update only if the same candidate appears consistently
+    if (entity_id == hover_candidate_id_) {
+        hover_consistency_count_++;
+    } else {
+        hover_candidate_id_ = entity_id;
+        hover_consistency_count_ = 1;
+    }
+    if (hover_consistency_count_ >= hover_consistency_threshold_) {
+        hovered_entity_id_ = hover_candidate_id_;
+    }
     
     // Read pixel color from accumulated buffer (before highlighting is applied)
     // Note: This is a synchronous read which may cause a GPU stall
@@ -659,9 +692,20 @@ void Application::OnUpdate() {
         // 上传当前帧的 CameraObject（使用上面计算的 current_camera_object）
         // 添加景深参数
         current_camera_object.aperture = aperture_;
+        // If focus is locked to an entity, update focus_distance_ from that entity
+        if (focused_entity_id_ >= 0 && focused_entity_id_ < (int)scene_->GetEntityCount()) {
+            auto focusedEntity = scene_->GetEntities()[focused_entity_id_];
+            if (focusedEntity) {
+                glm::mat4 transform = focusedEntity->GetTransform();
+                glm::vec3 entity_pos = glm::vec3(transform[3]);
+                float forwardDist = glm::dot(entity_pos - camera_pos_, camera_front_);
+                float dist = forwardDist > 0.001f ? forwardDist : glm::length(entity_pos - camera_pos_);
+                focus_distance_ = dist;
+            }
+        }
         current_camera_object.focus_distance = focus_distance_;
-        current_camera_object.padding[0] = 0.0f;
-        current_camera_object.padding[1] = 0.0f;
+        current_camera_object.samples_per_pixel = samples_per_frame_;
+        current_camera_object.padding[0] = 0;
         camera_object_buffer_->UploadData(&current_camera_object, sizeof(CameraObject));
         // --------------- 修改结束 ---------------
 
@@ -789,38 +833,25 @@ void Application::RenderInfoOverlay() {
     
     ImGui::Spacing();
     
-    // Focus Distance slider
-    if (ImGui::SliderFloat("Focus Distance", &focus_distance_, 0.1f, 20.0f, "%.2f")) {
-        dof_changed = true;
-    }
-    ImGui::TextWrapped("Distance to focus plane");
+    // Focus distance is determined by the selected entity - read-only display
+    ImGui::Text("Focus Distance: %.2f", focus_distance_);
+    ImGui::TextWrapped("Focus locks to the selected entity; select a different entity to change focus.");
     
     // Auto-focus button (sets focus to center of screen or explicit scene targets)
-    if (ImGui::Button("Auto-Focus (Center)", ImVec2(-1, 0))) {
-        // Basic auto-focus offset: tries to set a reasonable default (like current default)
-        focus_distance_ = 6.0f;
-        dof_changed = true;
-    }
-    if (ImGui::Button("Focus: Foreground", ImVec2(-1, 0))) {
-        // Foreground sphere at z = 4.0f (camera@z=8.0 -> distance 4.0)
-        focus_distance_ = 4.0f;
-        dof_changed = true;
-    }
-    if (ImGui::Button("Focus: Mid", ImVec2(-1, 0))) {
-        // Mid green sphere at z = 2.0f (camera@z=8.0 -> distance 6.0)
-        focus_distance_ = 6.0f;
-        dof_changed = true;
-    }
-    if (ImGui::Button("Focus: Background", ImVec2(-1, 0))) {
-        // Background sphere at z = -7.0f (camera@z=8.0 -> distance 15.0)
-        focus_distance_ = 15.0f;
-        dof_changed = true;
-    }
+    // NOTE: Removed manual focus preset buttons. Focus is now determined by entity selection only.
     
     // Reset DOF button
     if (ImGui::Button("Reset DOF", ImVec2(-1, 0))) {
         aperture_ = 0.12f;
-        focus_distance_ = 6.0f;
+        // keep focus locked if an entity is selected; otherwise reset to default
+        if (focused_entity_id_ < 0) {
+            focus_distance_ = 6.0f;
+        }
+        samples_per_frame_ = 2;
+        dof_changed = true;
+    }
+    // Samples per frame slider
+    if (ImGui::SliderInt("Samples per Frame", &samples_per_frame_, 1, 8)) {
         dof_changed = true;
     }
     
@@ -851,6 +882,13 @@ void Application::RenderInfoOverlay() {
         ImGui::Text("Selected: None");
     }
     
+    // Show focused entity (if focus is locked to an entity)
+    if (focused_entity_id_ >= 0) {
+        ImGui::TextColored(ImVec4(0.9f, 0.7f, 0.35f, 1.0f), "Focused: Entity #%d", focused_entity_id_);
+    } else {
+        ImGui::Text("Focused: None");
+    }
+    
     ImGui::Spacing();
     
     // Show hovered pixel information
@@ -874,6 +912,10 @@ void Application::RenderInfoOverlay() {
                 (int)(hovered_pixel_color_.r * 255.0f),
                 (int)(hovered_pixel_color_.g * 255.0f),
                 (int)(hovered_pixel_color_.b * 255.0f));
+
+    // Hover stability slider
+    ImGui::Spacing();
+    ImGui::SliderInt("Hover Stability (frames)", &hover_consistency_threshold_, 1, 8);
     
     // Calculate total triangles
     size_t total_triangles = 0;
@@ -972,6 +1014,9 @@ void Application::RenderEntityPanel() {
             
             if (ImGui::Selectable(label.c_str(), is_entity_selected)) {
                 selected_entity_id_ = (int)i;
+                // Lock focus to this entity
+                focused_entity_id_ = selected_entity_id_;
+                if (film_) film_->Reset();
             }
             
             if (is_entity_selected) {
@@ -1046,18 +1091,7 @@ void Application::RenderEntityPanel() {
         
         ImGui::Spacing();
         // 按钮：将 DOF 聚焦到当前选中实体
-        if (ImGui::Button("Focus DOF on this Entity", ImVec2(-1.0f, 0.0f))) {
-            // 计算实体世界坐标
-            glm::mat4 transform = entity->GetTransform();
-            glm::vec3 entity_pos = glm::vec3(transform[3]);
-            // 计算相机与实体之间的距离并设置为焦距
-            float forwardDist = glm::dot(entity_pos - camera_pos_, camera_front_);
-            float dist = forwardDist > 0.001f ? forwardDist : glm::length(entity_pos - camera_pos_);
-            focus_distance_ = dist;
-            // Reset accumulation so the DOF change takes immediate effect
-            if (film_) film_->Reset();
-            grassland::LogInfo("Set focus_distance_ = {} (distance to entity)", focus_distance_);
-        }
+        // Focus DOF is automatically locked to the selected entity. Select an entity to change focus.
 
         // 可选：让相机朝向该实体（并保留当前位置），用于更直观的查看
         if (ImGui::Button("Camera Look At Entity", ImVec2(-1.0f, 0.0f))) {

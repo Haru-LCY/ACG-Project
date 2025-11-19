@@ -3,7 +3,8 @@ struct CameraInfo {
   float4x4 camera_to_world;
   float aperture;        // 光圈大小
   float focus_distance;  // 焦距
-  float2 padding;        // 对齐
+    int samples_per_pixel; // 每帧每像素样本数
+    int padding0;          // 对齐
 };
 
 struct Material {
@@ -460,21 +461,51 @@ float3 ComputePointLightContribution(float3 hitPos, float3 normal, float3 viewDi
     uint seed = (uint)dispatchIndex.x * 1973u + (uint)dispatchIndex.y * 9277u + (uint)prev_samples * 26699u;
     seed = PCGHash(seed);
     seed = PCGHash(seed);
-    
-    float jitter_x = Rand01(seed) - 0.5;
-    float jitter_y = Rand01(seed) - 0.5;
-    float2 pixel_center = (float2)dispatchIndex + float2(0.5 + jitter_x, 0.5 + jitter_y);
-    float2 uv = pixel_center / float2(DispatchRaysDimensions().xy);
-    uv.y = 1.0 - uv.y;
-    float2 d = uv * 2.0 - 1.0;
-    
-    // 计算初始相机位置和射线方向
-    float4 origin4 = mul(camera_info.camera_to_world, float4(0, 0, 0, 1));
-    float4 target = mul(camera_info.screen_to_camera, float4(d, 1, 1));
-    float4 direction4 = mul(camera_info.camera_to_world, float4(target.xyz, 0));
-    
-    float3 rayOrigin = origin4.xyz;
-    float3 rayDir = normalize(direction4.xyz);
+
+    int spp = max(1, camera_info.samples_per_pixel);
+    float3 radianceSum = float3(0,0,0);
+    RayPayload lastPayload; // keep last payload for debug
+
+    // --- Deterministic pick ray for stable entity ID (no jitter, no DOF)
+    RayPayload pickPayload;
+    pickPayload.hit = false;
+    pickPayload.material_idx = 0;    
+    {
+        float2 pixel_center0 = (float2)dispatchIndex + float2(0.5, 0.5);
+        float2 uv0 = pixel_center0 / float2(DispatchRaysDimensions().xy);
+        uv0.y = 1.0 - uv0.y;
+        float2 d0 = uv0 * 2.0 - 1.0;
+        float4 origin40 = mul(camera_info.camera_to_world, float4(0, 0, 0, 1));
+        float4 target0 = mul(camera_info.screen_to_camera, float4(d0, 1, 1));
+        float4 direction40 = mul(camera_info.camera_to_world, float4(target0.xyz, 0));
+        float3 pickOrigin = origin40.xyz;
+        float3 pickDir = normalize(direction40.xyz);
+
+        RayDesc pickRay;
+        pickRay.Origin = pickOrigin;
+        pickRay.Direction = pickDir;
+        pickRay.TMin = 0.001;
+        pickRay.TMax = 10000.0;
+        TraceRay(as, RAY_FLAG_NONE, 0xFF, 0, 1, 0, pickRay, pickPayload);
+    }
+
+    for (int s = 0; s < spp; ++s) {
+        // advance RNG for new sample
+        seed = PCGHash(seed);
+        float jitter_x = Rand01(seed) - 0.5;
+        float jitter_y = Rand01(seed) - 0.5;
+        float2 pixel_center = (float2)dispatchIndex + float2(0.5 + jitter_x, 0.5 + jitter_y);
+        float2 uv = pixel_center / float2(DispatchRaysDimensions().xy);
+        uv.y = 1.0 - uv.y;
+        float2 d = uv * 2.0 - 1.0;
+
+        // 计算初始相机位置和射线方向
+        float4 origin4 = mul(camera_info.camera_to_world, float4(0, 0, 0, 1));
+        float4 target = mul(camera_info.screen_to_camera, float4(d, 1, 1));
+        float4 direction4 = mul(camera_info.camera_to_world, float4(target.xyz, 0));
+
+        float3 rayOrigin = origin4.xyz;
+        float3 rayDir = normalize(direction4.xyz);
     
     // ===== 景深效果 (Depth of Field) =====
     if (camera_info.aperture > 0.0001) {
@@ -496,11 +527,10 @@ float3 ComputePointLightContribution(float3 hitPos, float3 normal, float3 viewDi
         rayDir = normalize(focalPoint - rayOrigin);
     }
 
-    const int MAX_BOUNCES = 10; // 50太高了，通常 8-12 就够了，性能更好
+        const int MAX_BOUNCES = 10; // 50太高了，通常 8-12 就够了，性能更好
     RayPayload payload;
-    
-    float3 radiance = float3(0,0,0);
-    float3 throughput = float3(1,1,1);
+        float3 radiance = float3(0,0,0);
+        float3 throughput = float3(1,1,1);
     
     for (int bounce = 0; bounce < MAX_BOUNCES; ++bounce) {
         // 初始化 payload
@@ -634,6 +664,10 @@ float3 ComputePointLightContribution(float3 hitPos, float3 normal, float3 viewDi
             if (Rand01(seed) > p) break;
             throughput /= p;
         }
+        }
+        // accumulate this sample
+        radianceSum += radiance;
+        lastPayload = payload;
     }
     
     // ================== 5. 最终输出处理 (Tone Mapping) ==================
@@ -641,8 +675,8 @@ float3 ComputePointLightContribution(float3 hitPos, float3 normal, float3 viewDi
     // 累积颜色
     float4 prev_color = accumulated_color[dispatchIndex];
     // 注意：Radiance 可能非常大 (HDR)，需要累积 HDR 值
-    float4 new_sum = prev_color + float4(radiance, 1.0);
-    int new_count = prev_samples + 1;
+    float4 new_sum = prev_color + float4(radianceSum, (float)spp);
+    int new_count = prev_samples + spp;
     
     accumulated_color[dispatchIndex] = new_sum;
     accumulated_samples[dispatchIndex] = new_count;
@@ -658,7 +692,7 @@ float3 ComputePointLightContribution(float3 hitPos, float3 normal, float3 viewDi
     mappedColor = pow(mappedColor, 1.0 / 2.2);
     
     output[dispatchIndex] = float4(mappedColor, 1.0);
-    entity_id_output[dispatchIndex] = payload.hit ? (int)payload.material_idx : -1;
+    entity_id_output[dispatchIndex] = pickPayload.hit ? (int)pickPayload.material_idx : -1;
 }
 
 [shader("miss")] void MissMain(inout RayPayload payload) {
