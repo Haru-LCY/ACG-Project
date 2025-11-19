@@ -305,35 +305,35 @@ void Application::OnInit() {
     }
 
     // Transparent blue glass cube (背景)
+    // {
+    //     auto blue_cube = std::make_shared<Entity>(
+    //         "meshes/cube.obj",
+    //         // Material(glm::vec3(0.3f, 0.3f, 1.0f), 0.05f, 0.0f, 0.95f, 1.5f), // 蓝色玻璃：明显的蓝色色调
+    //         // Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.3f, 0.9f),  // 白色基础,金属
+    //         // 将蓝色玻璃放在稍微靠后的背景位置
+    //         glm::translate(glm::mat4(1.0f), glm::vec3(2.0f, 0.5f, -2.0f))
+    //         // "textures/sakura.png"
+    //     );
+    //     scene_->AddEntity(blue_cube);
+    // }
+
     {
         auto blue_cube = std::make_shared<Entity>(
             "meshes/cube.obj",
             Material(glm::vec3(0.3f, 0.3f, 1.0f), 0.05f, 0.0f, 0.95f, 1.5f), // 蓝色玻璃：明显的蓝色色调
             // Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.3f, 0.9f),  // 白色基础,金属
             // 将蓝色玻璃放在稍微靠后的背景位置
-            glm::translate(glm::mat4(1.0f), glm::vec3(2.0f, 0.5f, -2.0f))
-            // "textures/sakura.png"
+            glm::translate(glm::mat4(1.0f), glm::vec3(2.0f, 0.5f, -2.0f)),
+            "textures/sakura.png"
         );
         scene_->AddEntity(blue_cube);
     }
-
-    // {
-    //     auto blue_cube = std::make_shared<Entity>(
-    //         "meshes/cube.obj",
-    //         // Material(glm::vec3(0.3f, 0.3f, 1.0f), 0.05f, 0.0f, 0.95f, 1.5f), // 蓝色玻璃：明显的蓝色色调
-    //         Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.3f, 0.9f),  // 白色基础,金属
-    //         // 将蓝色玻璃放在稍微靠后的背景位置
-    //         glm::translate(glm::mat4(1.0f), glm::vec3(2.0f, 0.5f, -2.0f)),
-    //         "textures/sakura.png"
-    //     );
-    //     scene_->AddEntity(blue_cube);
-    // }
 
     // Foreground specular sphere (近景 - 应该被模糊)
     {
         auto fg_sphere = std::make_shared<Entity>(
             "meshes/octahedron.obj",
-            Material(glm::vec3(1.0f, 0.9f, 0.6f), 0.05f, 1.0f), // 高金属低粗糙突出高光
+            Material(glm::vec3(0.3f, 0.3f, 1.0f), 0.05f, 0.0f, 0.95f, 1.5f), // 蓝色玻璃：明显的蓝色色调
             glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.35f, 4.0f)), glm::vec3(0.5f))
         );
         scene_->AddEntity(fg_sphere);
@@ -371,25 +371,25 @@ void Application::OnInit() {
     // 添加一个主光源（强白光）- 正上方偏右后方（更自然的布光）
     point_lights_[0].position = glm::vec3(2.0f, 8.0f, 5.0f);
     point_lights_[0].color = glm::vec3(1.0f, 1.0f, 1.0f);
-    point_lights_[0].strength = 0.0f; // 增强主光源强度
+    point_lights_[0].strength = 50.0f; // 暂时关闭，测试面光源效果
     point_lights_[0].radius = 0.1f;
     
     // 添加一个补光光源（柔和白光）- 左上方，避免产生强反光
     point_lights_[1].position = glm::vec3(-5.0f, 5.0f, 3.0f);
     point_lights_[1].color = glm::vec3(1.0f, 1.0f, 1.0f);
-    point_lights_[1].strength = 0.0f;
+    point_lights_[1].strength = 0.0f; // 暂时关闭
     point_lights_[1].radius = 0.1f;
     
     // 添加一个环境光（模拟天空反射）
     point_lights_[2].position = glm::vec3(0.0f, 0.5f, 6.0f);
     point_lights_[2].color = glm::vec3(0.95f, 0.95f, 1.0f);
-    point_lights_[2].strength = 0.0f; // 增加一点环境照明
+    point_lights_[2].strength = 0.0f; // 暂时关闭
     point_lights_[2].radius = 0.1f;
 
     // 添加一个背景高亮点光源用于产生远处的bokeh高光
     point_lights_[3].position = glm::vec3(0.0f, 1.2f, -7.0f);
     point_lights_[3].color = glm::vec3(1.0f, 0.9f, 0.7f);
-    point_lights_[3].strength = 20.0f; // 很亮，用于产生明显的bokeh
+    point_lights_[3].strength = 0.0f; // 暂时关闭
     point_lights_[3].radius = 0.05f;    // 小半径产生更集中的高光
     
     // 其余光源强度设为0（未使用）
@@ -408,11 +408,11 @@ void Application::OnInit() {
     // 初始化面光源数组（最多8个）
     area_lights_.resize(8);
     // 配置主光源 - 天花板白光
-    area_lights_[0].position = glm::vec3(0.0f, 4.0f, 0.0f);      // 上方4米
+    area_lights_[0].position = glm::vec3(0.0f, 4.8f, 0.0f);      // 接近天花板
     area_lights_[0].color = glm::vec3(1.0f, 1.0f, 1.0f);         // 白色
-    area_lights_[0].strength = 6.0f;                             // 增加强度以更好照亮室内并产生高光
-    area_lights_[0].width = 2.0f;                                 // 减小尺寸
-    area_lights_[0].height = 2.0f;                                // 减小尺寸
+    area_lights_[0].strength = 5.0f;                            // 较强的主光源
+    area_lights_[0].width = 3.0f;                                 // 较大面积
+    area_lights_[0].height = 3.0f;                                
     area_lights_[0].direction = glm::normalize(glm::vec3(0.0f, -1.0f, 0.0f));  // 向下
     area_lights_[0].u_axis = glm::normalize(glm::vec3(1.0f, 0.0f, 0.0f));      // X轴
     area_lights_[0].v_axis = glm::normalize(glm::vec3(0.0f, 0.0f, 1.0f));      // Z轴
@@ -420,11 +420,11 @@ void Application::OnInit() {
     area_lights_[0].pad2 = 0.0f;
     
     // 配置左侧光
-    area_lights_[1].position = glm::vec3(-5.0f, 2.0f, 0.0f);     // 左侧
-    area_lights_[1].color = glm::vec3(0.3f, 0.3f, 1.0f);         // 蓝色
-    area_lights_[1].strength = 0.0f;                             // 降低强度
-    area_lights_[1].width = 1.0f;                                 // 1米宽
-    area_lights_[1].height = 2.0f;                                // 2米高
+    area_lights_[1].position = glm::vec3(-4.9f, 2.0f, 0.0f);     // 靠近左墙
+    area_lights_[1].color = glm::vec3(0.4f, 0.4f, 1.0f);         // 柔和蓝色
+    area_lights_[1].strength = 8.0f;                             // 中等强度
+    area_lights_[1].width = 0.5f;                                 // 窄条
+    area_lights_[1].height = 2.5f;                                // 高条
     area_lights_[1].direction = glm::normalize(glm::vec3(1.0f, 0.0f, 0.0f));   // 向右
     area_lights_[1].u_axis = glm::normalize(glm::vec3(0.0f, 1.0f, 0.0f));      // Y轴
     area_lights_[1].v_axis = glm::normalize(glm::vec3(0.0f, 0.0f, 1.0f));      // Z轴
@@ -432,11 +432,11 @@ void Application::OnInit() {
     area_lights_[1].pad2 = 0.0f;
     
     // 配置右侧光
-    area_lights_[2].position = glm::vec3(5.0f, 2.0f, 0.0f);      // 右侧
-    area_lights_[2].color = glm::vec3(0.3f, 1.0f, 0.3f);         // 绿色
-    area_lights_[2].strength = 0.0f;                             // 降低强度
-    area_lights_[2].width = 1.0f;                                 // 1米宽
-    area_lights_[2].height = 2.0f;                                // 2米高
+    area_lights_[2].position = glm::vec3(4.9f, 2.0f, 0.0f);      // 靠近右墙
+    area_lights_[2].color = glm::vec3(1.0f, 0.6f, 0.4f);         // 暖橙色
+    area_lights_[2].strength = 8.0f;                             // 中等强度
+    area_lights_[2].width = 0.5f;                                 // 窄条
+    area_lights_[2].height = 2.5f;                                // 高条
     area_lights_[2].direction = glm::normalize(glm::vec3(-1.0f, 0.0f, 0.0f));  // 向左
     area_lights_[2].u_axis = glm::normalize(glm::vec3(0.0f, 1.0f, 0.0f));      // Y轴
     area_lights_[2].v_axis = glm::normalize(glm::vec3(0.0f, 0.0f, 1.0f));      // Z轴
