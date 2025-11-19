@@ -7,6 +7,9 @@
 struct CameraObject {
     glm::mat4 screen_to_camera;
     glm::mat4 camera_to_world;
+    float aperture;        // 光圈大小(模拟真实相机光圈)
+    float focus_distance;  // 焦距(聚焦平面距离)
+    float padding[2];      // 对齐到16字节
 };
 
 class Application {
@@ -108,6 +111,10 @@ private:
     bool camera_enabled_; // Whether camera movement is enabled
     bool last_camera_enabled_; // Track camera state changes to reset accumulation
     bool ui_hidden_; // Whether UI panels are hidden (Tab key toggle)
+    
+    // Depth of Field parameters
+    float aperture_;        // 光圈大小 (0 = 无景深效果)
+    float focus_distance_;  // 焦距 (聚焦平面距离)
     
     // Mouse hovering
     double mouse_x_;

@@ -1,6 +1,9 @@
 struct CameraInfo {
   float4x4 screen_to_camera;
   float4x4 camera_to_world;
+  float aperture;        // 光圈大小
+  float focus_distance;  // 焦距
+  float2 padding;        // 对齐
 };
 
 struct Material {
@@ -184,6 +187,14 @@ float3 SampleGGX(float3 N, float3 V, float roughness, inout uint seed) {
 	
 	H = normalize(T * H.x + N * H.y + B * H.z);
 	return normalize(2.0 * dot(V, H) * H - V);
+}
+
+// 在光圈上均匀采样一个点(用于景深效果)
+// 返回一个在单位圆盘内的随机点
+float2 SampleUnitDisk(inout uint seed) {
+    float r = sqrt(Rand01(seed));
+    float theta = 2.0 * PI * Rand01(seed);
+    return float2(r * cos(theta), r * sin(theta));
 }
 
 // Alpha shadow 阴影射线追踪（非递归版本，返回 RGB 可见度，支持有色透射 Beer–Lambert 衰减）
@@ -457,12 +468,33 @@ float3 ComputePointLightContribution(float3 hitPos, float3 normal, float3 viewDi
     uv.y = 1.0 - uv.y;
     float2 d = uv * 2.0 - 1.0;
     
+    // 计算初始相机位置和射线方向
     float4 origin4 = mul(camera_info.camera_to_world, float4(0, 0, 0, 1));
     float4 target = mul(camera_info.screen_to_camera, float4(d, 1, 1));
     float4 direction4 = mul(camera_info.camera_to_world, float4(target.xyz, 0));
     
     float3 rayOrigin = origin4.xyz;
     float3 rayDir = normalize(direction4.xyz);
+    
+    // ===== 景深效果 (Depth of Field) =====
+    if (camera_info.aperture > 0.0001) {
+        // 计算焦点位置(沿着原始光线方向在焦距处的点)
+        float3 focalPoint = rayOrigin + rayDir * camera_info.focus_distance;
+        
+        // 在光圈上随机采样一个偏移
+        float2 diskSample = SampleUnitDisk(seed);
+        float2 lensOffset = diskSample * camera_info.aperture;
+        
+        // 计算相机的右向量和上向量
+        float3 cameraRight = normalize(mul(camera_info.camera_to_world, float4(1, 0, 0, 0)).xyz);
+        float3 cameraUp = normalize(mul(camera_info.camera_to_world, float4(0, 1, 0, 0)).xyz);
+        
+        // 偏移光线原点(模拟从光圈不同位置发出)
+        rayOrigin = rayOrigin + cameraRight * lensOffset.x + cameraUp * lensOffset.y;
+        
+        // 重新计算光线方向使其指向焦点
+        rayDir = normalize(focalPoint - rayOrigin);
+    }
 
     const int MAX_BOUNCES = 10; // 50太高了，通常 8-12 就够了，性能更好
     RayPayload payload;

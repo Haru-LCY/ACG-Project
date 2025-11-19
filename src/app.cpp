@@ -276,37 +276,60 @@ void Application::OnInit() {
         scene_->AddEntity(ceiling);
     }
 
-      // Green metallic sphere
+    // Green metallic sphere (中景 - 作为焦平面目标)
      {
          auto green_sphere = std::make_shared<Entity>(
              "meshes/octahedron.obj",
              Material(glm::vec3(0.2f, 1.0f, 0.2f), 0.2f, 0.8f),
-             glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.5f, 0.0f))
+             // 放在 z=2 作为中景焦点
+             glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.5f, 2.0f))
          );
          scene_->AddEntity(green_sphere);
      }
      
-    // Textured copper sphere
+    // Textured copper sphere (幕后/中景)
     {
         auto copper_sphere = std::make_shared<Entity>(
             "meshes/octahedron.obj",
             Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.3f, 0.9f),  // 白色基础,金属
+            // 将铜球移到中景靠后位置，增加前后景深变化
             glm::translate(glm::mat4(1.0f), glm::vec3(-2.5f, 0.5f, 0.0f)),
             "textures/copper/Sphere_Base_color.png"
         );
         scene_->AddEntity(copper_sphere);
     }
 
-    // Transparent blue glass cube
+    // Transparent blue glass cube (背景)
     {
         auto blue_cube = std::make_shared<Entity>(
             "meshes/cube.obj",
             Material(glm::vec3(0.3f, 0.3f, 1.0f), 0.05f, 0.0f, 0.95f, 1.5f), // 蓝色玻璃：明显的蓝色色调
             // Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.3f, 0.9f),  // 白色基础,金属
-            glm::translate(glm::mat4(1.0f), glm::vec3(2.0f, 0.5f, 0.0f)),
+            // 将蓝色玻璃放在稍微靠后的背景位置
+            glm::translate(glm::mat4(1.0f), glm::vec3(2.0f, 0.5f, -2.0f)),
             "textures/sakura.png"
         );
         scene_->AddEntity(blue_cube);
+    }
+
+    // Foreground specular sphere (近景 - 应该被模糊)
+    {
+        auto fg_sphere = std::make_shared<Entity>(
+            "meshes/octahedron.obj",
+            Material(glm::vec3(1.0f, 0.9f, 0.6f), 0.05f, 1.0f), // 高金属低粗糙突出高光
+            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.35f, 4.0f)), glm::vec3(0.5f))
+        );
+        scene_->AddEntity(fg_sphere);
+    }
+
+    // Background ornamental sphere (远景 - 强烈模糊形成bokeh高光)
+    {
+        auto bg_sphere = std::make_shared<Entity>(
+            "meshes/octahedron.obj",
+            Material(glm::vec3(1.0f, 1.0f, 0.85f), 0.05f, 1.0f),
+            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.4f, -7.0f)), glm::vec3(0.6f))
+        );
+        scene_->AddEntity(bg_sphere);
     }
     
 
@@ -331,7 +354,7 @@ void Application::OnInit() {
     // 添加一个主光源（强白光）- 正上方偏右后方（更自然的布光）
     point_lights_[0].position = glm::vec3(2.0f, 8.0f, 5.0f);
     point_lights_[0].color = glm::vec3(1.0f, 1.0f, 1.0f);
-    point_lights_[0].strength = 0.0f;
+    point_lights_[0].strength = 40.0f; // 增强主光源强度
     point_lights_[0].radius = 0.1f;
     
     // 添加一个补光光源（柔和白光）- 左上方，避免产生强反光
@@ -343,8 +366,14 @@ void Application::OnInit() {
     // 添加一个环境光（模拟天空反射）
     point_lights_[2].position = glm::vec3(0.0f, 0.5f, 6.0f);
     point_lights_[2].color = glm::vec3(0.95f, 0.95f, 1.0f);
-    point_lights_[2].strength = 0.0f;
+    point_lights_[2].strength = 6.0f; // 增加一点环境照明
     point_lights_[2].radius = 0.1f;
+
+    // 添加一个背景高亮点光源用于产生远处的bokeh高光
+    point_lights_[3].position = glm::vec3(0.0f, 1.2f, -7.0f);
+    point_lights_[3].color = glm::vec3(1.0f, 0.9f, 0.7f);
+    point_lights_[3].strength = 200.0f; // 很亮，用于产生明显的bokeh
+    point_lights_[3].radius = 0.05f;    // 小半径产生更集中的高光
     
     // 其余光源强度设为0（未使用）
     for (int i = 3; i < 16; ++i) {
@@ -364,7 +393,7 @@ void Application::OnInit() {
     // 配置主光源 - 天花板白光
     area_lights_[0].position = glm::vec3(0.0f, 4.0f, 0.0f);      // 上方4米
     area_lights_[0].color = glm::vec3(1.0f, 1.0f, 1.0f);         // 白色
-    area_lights_[0].strength = 5.0f;                             // 增加强度
+    area_lights_[0].strength = 6.0f;                             // 增加强度以更好照亮室内并产生高光
     area_lights_[0].width = 2.0f;                                 // 减小尺寸
     area_lights_[0].height = 2.0f;                                // 减小尺寸
     area_lights_[0].direction = glm::normalize(glm::vec3(0.0f, -1.0f, 0.0f));  // 向下
@@ -417,7 +446,7 @@ void Application::OnInit() {
     grassland::LogInfo("初始化了 {} 个面光源", 3);
 
     // Initialize camera state member variables
-    camera_pos_ = glm::vec3{ 0.0f, 1.0f, 5.0f };
+    camera_pos_ = glm::vec3{ 0.0f, 1.0f, 8.0f }; // 远离一些以扩展景深距离
     camera_up_ = glm::vec3{ 0.0f, 1.0f, 0.0f }; // World up
     camera_speed_ = 0.01f;
 
@@ -428,6 +457,10 @@ void Application::OnInit() {
     last_y_ = (float)window_->GetHeight() / 2.0f;
     mouse_sensitivity_ = 0.1f;
     first_mouse_ = true;
+    
+    // Initialize depth of field parameters
+    aperture_ = 0.12f;        // 默认开启景深，这个值比较明显（可在UI调整）
+    focus_distance_ = 6.0f;  // 默认焦距6米 -> focal plane at z=2 (camera z=8)
 
     // Calculate initial camera_front_ based on yaw and pitch
     glm::vec3 front;
@@ -442,6 +475,10 @@ void Application::OnInit() {
         glm::perspective(glm::radians(60.0f), (float)window_->GetWidth() / (float)window_->GetHeight(), 0.1f, 10.0f));
     camera_object.camera_to_world =
         glm::inverse(glm::lookAt(camera_pos_, camera_pos_ + camera_front_, camera_up_));
+    camera_object.aperture = aperture_;
+    camera_object.focus_distance = focus_distance_;
+    camera_object.padding[0] = 0.0f;
+    camera_object.padding[1] = 0.0f;
     camera_object_buffer_->UploadData(&camera_object, sizeof(CameraObject));
 
     core_->CreateImage(window_->GetWidth(), window_->GetHeight(), grassland::graphics::IMAGE_FORMAT_R32G32B32A32_SFLOAT,
@@ -620,6 +657,11 @@ void Application::OnUpdate() {
 
         // --------------- 修改开始 ---------------
         // 上传当前帧的 CameraObject（使用上面计算的 current_camera_object）
+        // 添加景深参数
+        current_camera_object.aperture = aperture_;
+        current_camera_object.focus_distance = focus_distance_;
+        current_camera_object.padding[0] = 0.0f;
+        current_camera_object.padding[1] = 0.0f;
         camera_object_buffer_->UploadData(&current_camera_object, sizeof(CameraObject));
         // --------------- 修改结束 ---------------
 
@@ -732,6 +774,60 @@ void Application::RenderInfoOverlay() {
     ImGui::Text("Yaw: %.1f°  Pitch: %.1f°", yaw_, pitch_);
     ImGui::Text("Speed: %.3f", camera_speed_);
     ImGui::Text("Sensitivity: %.2f", mouse_sensitivity_);
+    
+    ImGui::Spacing();
+    
+    // Depth of Field controls
+    ImGui::SeparatorText("Depth of Field");
+    bool dof_changed = false;
+    
+    // Aperture slider
+    if (ImGui::SliderFloat("Aperture", &aperture_, 0.0f, 1.0f, "%.3f")) {
+        dof_changed = true;
+    }
+    ImGui::TextWrapped("Controls blur amount (0 = no blur)");
+    
+    ImGui::Spacing();
+    
+    // Focus Distance slider
+    if (ImGui::SliderFloat("Focus Distance", &focus_distance_, 0.1f, 20.0f, "%.2f")) {
+        dof_changed = true;
+    }
+    ImGui::TextWrapped("Distance to focus plane");
+    
+    // Auto-focus button (sets focus to center of screen or explicit scene targets)
+    if (ImGui::Button("Auto-Focus (Center)", ImVec2(-1, 0))) {
+        // Basic auto-focus offset: tries to set a reasonable default (like current default)
+        focus_distance_ = 6.0f;
+        dof_changed = true;
+    }
+    if (ImGui::Button("Focus: Foreground", ImVec2(-1, 0))) {
+        // Foreground sphere at z = 4.0f (camera@z=8.0 -> distance 4.0)
+        focus_distance_ = 4.0f;
+        dof_changed = true;
+    }
+    if (ImGui::Button("Focus: Mid", ImVec2(-1, 0))) {
+        // Mid green sphere at z = 2.0f (camera@z=8.0 -> distance 6.0)
+        focus_distance_ = 6.0f;
+        dof_changed = true;
+    }
+    if (ImGui::Button("Focus: Background", ImVec2(-1, 0))) {
+        // Background sphere at z = -7.0f (camera@z=8.0 -> distance 15.0)
+        focus_distance_ = 15.0f;
+        dof_changed = true;
+    }
+    
+    // Reset DOF button
+    if (ImGui::Button("Reset DOF", ImVec2(-1, 0))) {
+        aperture_ = 0.12f;
+        focus_distance_ = 6.0f;
+        dof_changed = true;
+    }
+    
+    // If DOF parameters changed, reset accumulation
+    if (dof_changed && film_) {
+        film_->Reset();
+    }
 
     ImGui::Spacing();
 
@@ -946,6 +1042,31 @@ void Application::RenderEntityPanel() {
             ImGui::Text("BLAS: Built");
         } else {
             ImGui::Text("BLAS: Not built");
+        }
+        
+        ImGui::Spacing();
+        // 按钮：将 DOF 聚焦到当前选中实体
+        if (ImGui::Button("Focus DOF on this Entity", ImVec2(-1.0f, 0.0f))) {
+            // 计算实体世界坐标
+            glm::mat4 transform = entity->GetTransform();
+            glm::vec3 entity_pos = glm::vec3(transform[3]);
+            // 计算相机与实体之间的距离并设置为焦距
+            float forwardDist = glm::dot(entity_pos - camera_pos_, camera_front_);
+            float dist = forwardDist > 0.001f ? forwardDist : glm::length(entity_pos - camera_pos_);
+            focus_distance_ = dist;
+            // Reset accumulation so the DOF change takes immediate effect
+            if (film_) film_->Reset();
+            grassland::LogInfo("Set focus_distance_ = {} (distance to entity)", focus_distance_);
+        }
+
+        // 可选：让相机朝向该实体（并保留当前位置），用于更直观的查看
+        if (ImGui::Button("Camera Look At Entity", ImVec2(-1.0f, 0.0f))) {
+            glm::mat4 transform = entity->GetTransform();
+            glm::vec3 entity_pos = glm::vec3(transform[3]);
+            camera_front_ = glm::normalize(entity_pos - camera_pos_);
+            // 重置累积
+            if (film_) film_->Reset();
+            grassland::LogInfo("Camera now looks at Entity #{}", selected_entity_id_);
         }
     } else {
         ImGui::TextDisabled("No entity selected");
