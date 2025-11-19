@@ -54,6 +54,18 @@ StructuredBuffer<PointLight> point_lights : register(t0, space8);  // 点光源�
 StructuredBuffer<AreaLight> area_lights : register(t0, space9);  // 面光源数组
 Texture2D textures[16] : register(t0, space10);  // 纹理数组 (最多16个)
 SamplerState texSampler : register(s0, space11);  // 纹理采样器
+// Global geometry buffers
+struct EntityOffset {
+    uint vertex_offset;
+    uint index_offset;
+    uint padding0;
+    uint padding1;
+};
+StructuredBuffer<float3> global_vertices : register(t0, space12);
+StructuredBuffer<float3> global_normals : register(t0, space13);
+StructuredBuffer<uint> global_indices : register(t0, space14);
+StructuredBuffer<EntityOffset> entity_offsets : register(t0, space15);
+StructuredBuffer<float2> global_uvs : register(t0, space16);
 //t，u，space分别表示纹理寄存器、采样器寄存器和常量缓冲区寄存器的空间索引
 
 struct RayPayload {
@@ -688,9 +700,27 @@ float3 ComputePointLightContribution(float3 hitPos, float3 normal, float3 viewDi
 		payload.normal = -payload.normal;
 	}
 	
-	// 计算UV坐标 - 使用球面映射
-	float3 normalizedPos = normalize(objectPos);
-	float u = 0.5 + atan2(normalizedPos.z, normalizedPos.x) / (2.0 * 3.14159265359);
-	float v = 0.5 - asin(normalizedPos.y) / 3.14159265359;
-	payload.uv = float2(u, v);
+    // 计算UV坐标 - 优先使用模型顶点 UV, 若不存在则使用球面映射作为回退
+    uint entity_id_local = InstanceID();
+    uint prim_id = PrimitiveIndex();
+    // Use global UVs and offsets (guaranteed to exist if uploaded by Scene)
+    if (entity_id_local < 1024) { // safe-guard: reasonable upper bound of entities
+        uint index_offset = entity_offsets[entity_id_local].index_offset;
+        uint tri_start = index_offset + prim_id * 3;
+        uint i0 = global_indices[tri_start + 0];
+        uint i1 = global_indices[tri_start + 1];
+        uint i2 = global_indices[tri_start + 2];
+        float2 uv0 = global_uvs[i0];
+        float2 uv1 = global_uvs[i1];
+        float2 uv2 = global_uvs[i2];
+        float2 bary = payload.barycentrics;
+        float w0 = 1.0 - bary.x - bary.y;
+        payload.uv = uv0 * w0 + uv1 * bary.x + uv2 * bary.y;
+    } else {
+        // Spherical fallback
+        float3 normalizedPos = normalize(objectPos);
+        float u = 0.5 + atan2(normalizedPos.z, normalizedPos.x) / (2.0 * 3.14159265359);
+        float v = 0.5 - asin(normalizedPos.y) / 3.14159265359;
+        payload.uv = float2(u, v);
+    }
 }

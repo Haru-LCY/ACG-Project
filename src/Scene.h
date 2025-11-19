@@ -40,6 +40,7 @@ public:
     grassland::graphics::Buffer* GetGlobalVertexBuffer() const { return global_vertex_buffer_.get(); }
     grassland::graphics::Buffer* GetGlobalNormalBuffer() const { return global_normal_buffer_.get(); }
     grassland::graphics::Buffer* GetGlobalIndexBuffer() const { return global_index_buffer_.get(); }
+    grassland::graphics::Buffer* GetGlobalUVBuffer() const { return global_uv_buffer_.get(); }
     
     // Get entity offset buffer (stores vertex/index offsets for each entity)
     grassland::graphics::Buffer* GetEntityOffsetsBuffer() const { return entity_offsets_buffer_.get(); }
@@ -68,6 +69,7 @@ private:
     std::unique_ptr<grassland::graphics::Buffer> global_vertex_buffer_;
     std::unique_ptr<grassland::graphics::Buffer> global_normal_buffer_;
     std::unique_ptr<grassland::graphics::Buffer> global_index_buffer_;
+    std::unique_ptr<grassland::graphics::Buffer> global_uv_buffer_;
     std::unique_ptr<grassland::graphics::Buffer> entity_offsets_buffer_;
     
     // Texture array (raw pointers owned by entities)

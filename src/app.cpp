@@ -293,10 +293,22 @@ void Application::OnInit() {
     {
         auto blue_cube = std::make_shared<Entity>(
             "meshes/cube.obj",
-            Material(glm::vec3(0.3f, 0.3f, 1.0f), 0.05f, 0.0f, 0.95f, 1.5f), // 蓝色玻璃：明显的蓝色色调
+            Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.05f, 0.0f, 0.95f, glm::vec3(1.0f), 1.5f), // 透明无色玻璃
             glm::translate(glm::mat4(1.0f), glm::vec3(2.0f, 0.5f, 0.0f))
         );
         scene_->AddEntity(blue_cube);
+    }
+
+    // Textured plane showing a custom face image
+    {
+            // Put your custom texture in the project at src/assets/custom_face.png
+        auto textured_plane = std::make_shared<Entity>(
+            "meshes/cube.obj",
+            Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.8f, 0.0f),
+            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.75f, -2.0f)), glm::vec3(1.5f, 0.01f, 1.5f)),
+            "textures/sakura.png"
+        );
+        scene_->AddEntity(textured_plane);
     }
     
 
@@ -471,6 +483,11 @@ void Application::OnInit() {
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space9 - area lights
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_IMAGE, 16);                  // space10 - texture array
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_SAMPLER, 1);                 // space10 - texture sampler
+    program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space12 - global vertices
+    program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space13 - global normals
+    program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space14 - global indices
+    program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space15 - entity offsets
+    program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space16 - global uvs
     // 暂时注释掉全局几何缓冲区绑定
     // program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space9 - global vertices
     // program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space10 - global normals
@@ -978,6 +995,22 @@ void Application::OnRender() {
     if (scene_->GetTextureCount() > 0) {
         command_context->CmdBindResources(10, scene_->GetTextures(), grassland::graphics::BIND_POINT_RAYTRACING);
         command_context->CmdBindResources(11, { texture_sampler_.get() }, grassland::graphics::BIND_POINT_RAYTRACING);
+    }
+    // Bind global geometry buffers
+    if (scene_->GetGlobalVertexBuffer()) {
+        command_context->CmdBindResources(12, { scene_->GetGlobalVertexBuffer() }, grassland::graphics::BIND_POINT_RAYTRACING);
+    }
+    if (scene_->GetGlobalNormalBuffer()) {
+        command_context->CmdBindResources(13, { scene_->GetGlobalNormalBuffer() }, grassland::graphics::BIND_POINT_RAYTRACING);
+    }
+    if (scene_->GetGlobalIndexBuffer()) {
+        command_context->CmdBindResources(14, { scene_->GetGlobalIndexBuffer() }, grassland::graphics::BIND_POINT_RAYTRACING);
+    }
+    if (scene_->GetEntityOffsetsBuffer()) {
+        command_context->CmdBindResources(15, { scene_->GetEntityOffsetsBuffer() }, grassland::graphics::BIND_POINT_RAYTRACING);
+    }
+    if (scene_->GetGlobalUVBuffer()) {
+        command_context->CmdBindResources(16, { scene_->GetGlobalUVBuffer() }, grassland::graphics::BIND_POINT_RAYTRACING);
     }
     
     // 暂时注释掉全局几何缓冲区绑定

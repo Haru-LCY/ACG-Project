@@ -1,4 +1,5 @@
 #include "Entity.h"
+#include <filesystem>
 
 Entity::Entity(const std::string& obj_file_path, 
                const Material& material,
@@ -91,8 +92,23 @@ bool Entity::LoadTexture(grassland::graphics::Core* core, const std::string& tex
         return false;
     }
     
-    // Try to find the texture file
-    std::string full_path = grassland::FindAssetFile(texture_path);
+    // Try to use the supplied path directly (absolute or relative).
+    // If the file doesn't exist, also try src/assets/<texture_path>, then fall back to FindAssetFile
+    std::string full_path = texture_path;
+    if (!std::filesystem::is_regular_file(full_path)) {
+        // Try local src/assets folder (prefer project-local assets)
+        std::filesystem::path local_asset = std::filesystem::current_path() / "src" / "assets" / texture_path;
+        if (std::filesystem::is_regular_file(local_asset)) {
+            full_path = local_asset.string();
+            grassland::LogInfo("Using local src/assets path for texture: {}", full_path);
+        } else {
+            // Fallback to the framework's asset search
+            full_path = grassland::FindAssetFile(texture_path);
+            grassland::LogInfo("Texture {} not found directly; using FindAssetFile -> {}", texture_path, full_path);
+        }
+    } else {
+        grassland::LogInfo("Using direct texture path: {}", full_path);
+    }
     
     // Use the framework's LoadImageFromFile function
     if (grassland::graphics::LoadImageFromFile(core, full_path, &texture_) != 0) {

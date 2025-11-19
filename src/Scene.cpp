@@ -1,4 +1,5 @@
 #include "Scene.h"
+#include <cfloat>
 
 Scene::Scene(grassland::graphics::Core* core)
     : core_(core) {
@@ -28,6 +29,7 @@ void Scene::Clear() {
     global_vertex_buffer_.reset();
     global_normal_buffer_.reset();
     global_index_buffer_.reset();
+    global_uv_buffer_.reset();
     entity_offsets_buffer_.reset();
 }
 
@@ -138,6 +140,7 @@ void Scene::BuildGlobalGeometryBuffers() {
     // Collect all vertices, normals, and indices from all entities
     std::vector<glm::vec3> all_vertices;
     std::vector<glm::vec3> all_normals;
+    std::vector<glm::vec2> all_uvs; // collect UVs
     std::vector<uint32_t> all_indices;
     std::vector<EntityOffset> entity_offsets;
     
@@ -184,6 +187,31 @@ void Scene::BuildGlobalGeometryBuffers() {
         for (size_t i = 0; i < num_indices; ++i) {
             all_indices.push_back(indices[i] + current_vertex_offset);
         }
+
+        // Add UVs (if available), otherwise generate planar UVs relative to entity bounding box
+        const glm::vec2* tex_coords = reinterpret_cast<const glm::vec2*>(mesh.TexCoords());
+        if (tex_coords) {
+            for (size_t i = 0; i < num_vertices; ++i) {
+                all_uvs.push_back(tex_coords[i]);
+            }
+        } else {
+            // Planar fallback: project XZ to [0,1] using entity local bounding box
+            float min_x = FLT_MAX, max_x = -FLT_MAX, min_z = FLT_MAX, max_z = -FLT_MAX;
+            for (size_t i = 0; i < num_vertices; ++i) {
+                glm::vec3 p = positions[i];
+                min_x = std::min(min_x, p.x);
+                max_x = std::max(max_x, p.x);
+                min_z = std::min(min_z, p.z);
+                max_z = std::max(max_z, p.z);
+            }
+            float dx = max_x - min_x; if (dx == 0.0f) dx = 1.0f;
+            float dz = max_z - min_z; if (dz == 0.0f) dz = 1.0f;
+            for (size_t i = 0; i < num_vertices; ++i) {
+                glm::vec3 p = positions[i];
+                glm::vec2 uv = glm::vec2((p.x - min_x) / dx, (p.z - min_z) / dz);
+                all_uvs.push_back(uv);
+            }
+        }
         
         current_vertex_offset += static_cast<uint32_t>(num_vertices);
         current_index_offset += static_cast<uint32_t>(num_indices);
@@ -209,6 +237,13 @@ void Scene::BuildGlobalGeometryBuffers() {
                        grassland::graphics::BUFFER_TYPE_DYNAMIC, 
                        &global_index_buffer_);
     global_index_buffer_->UploadData(all_indices.data(), index_buffer_size);
+
+    // Create global UV buffer
+    size_t uv_buffer_size = all_uvs.size() * sizeof(glm::vec2);
+    core_->CreateBuffer(uv_buffer_size,
+                       grassland::graphics::BUFFER_TYPE_DYNAMIC,
+                       &global_uv_buffer_);
+    global_uv_buffer_->UploadData(all_uvs.data(), uv_buffer_size);
     
     // Create entity offsets buffer
     size_t offsets_buffer_size = entity_offsets.size() * sizeof(EntityOffset);
