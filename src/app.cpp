@@ -311,8 +311,8 @@ void Application::OnInit() {
             Material(glm::vec3(0.3f, 0.3f, 1.0f), 0.05f, 0.0f, 0.95f, 1.5f), // 蓝色玻璃：明显的蓝色色调
             // Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.3f, 0.9f),  // 白色基础,金属
             // 将蓝色玻璃放在稍微靠后的背景位置
-            glm::translate(glm::mat4(1.0f), glm::vec3(2.0f, 0.5f, -2.0f)),
-            "textures/sakura.png"
+            glm::translate(glm::mat4(1.0f), glm::vec3(2.0f, 0.5f, -2.0f))
+            // "textures/sakura.png"
         );
         scene_->AddEntity(blue_cube);
     }
@@ -1184,12 +1184,14 @@ void Application::OnRender() {
     // command_context->CmdBindResources(12, { scene_->GetEntityOffsetsBuffer() }, grassland::graphics::BIND_POINT_RAYTRACING);
     command_context->CmdDispatchRays(window_->GetWidth(), window_->GetHeight(), 1);
     
-    // When camera is disabled, increment sample count and use accumulated image
+    // When camera is disabled, increment sample count
+    // Note: shader already computes accumulated average and tone maps to color_image_
+    // so we can use color_image_ directly instead of calling DevelopToOutput
     grassland::graphics::Image* display_image = color_image_.get();
     if (!camera_enabled_) {
         film_->IncrementSampleCount();
-        film_->DevelopToOutput();
-        display_image = film_->GetOutputImage();
+        // Use shader's output directly (already tone mapped and gamma corrected)
+        display_image = color_image_.get();
     }
     
     // Apply hover highlighting as post-process (doesn't affect accumulation)

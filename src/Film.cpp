@@ -61,10 +61,37 @@ void Film::DevelopToOutput() {
     std::vector<float> accumulated_colors(width_ * height_ * 4);
     accumulated_color_image_->DownloadData(accumulated_colors.data());
 
-    // Divide by sample count to get average
+    // Divide by sample count to get average HDR color, then apply tone mapping
     std::vector<float> output_colors(width_ * height_ * 4);
-    for (int i = 0; i < width_ * height_ * 4; i++) {
-        output_colors[i] = accumulated_colors[i] / static_cast<float>(sample_count_);
+    for (int i = 0; i < width_ * height_; i++) {
+        // 计算平均HDR颜色
+        float r = accumulated_colors[i * 4 + 0] / static_cast<float>(sample_count_);
+        float g = accumulated_colors[i * 4 + 1] / static_cast<float>(sample_count_);
+        float b = accumulated_colors[i * 4 + 2] / static_cast<float>(sample_count_);
+        
+        // ACES Tone Mapping (与shader中的算法一致)
+        auto ACESFilm = [](float x) -> float {
+            float a = 2.51f;
+            float b = 0.03f;
+            float c = 2.43f;
+            float d = 0.59f;
+            float e = 0.14f;
+            return std::max(0.0f, std::min(1.0f, (x * (a * x + b)) / (x * (c * x + d) + e)));
+        };
+        
+        r = ACESFilm(r);
+        g = ACESFilm(g);
+        b = ACESFilm(b);
+        
+        // Gamma 校正 (2.2)
+        r = std::pow(r, 1.0f / 2.2f);
+        g = std::pow(g, 1.0f / 2.2f);
+        b = std::pow(b, 1.0f / 2.2f);
+        
+        output_colors[i * 4 + 0] = r;
+        output_colors[i * 4 + 1] = g;
+        output_colors[i * 4 + 2] = b;
+        output_colors[i * 4 + 3] = 1.0f; // Alpha
     }
 
     // Upload to output image
