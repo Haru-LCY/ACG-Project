@@ -688,9 +688,55 @@ float3 ComputePointLightContribution(float3 hitPos, float3 normal, float3 viewDi
 		payload.normal = -payload.normal;
 	}
 	
-	// 计算UV坐标 - 使用球面映射
-	float3 normalizedPos = normalize(objectPos);
-	float u = 0.5 + atan2(normalizedPos.z, normalizedPos.x) / (2.0 * 3.14159265359);
-	float v = 0.5 - asin(normalizedPos.y) / 3.14159265359;
+	// 计算UV坐标
+	float u, v;
+	if (entity_id == 3) {
+		// 立方体：使用平面UV映射
+		float3 absNormal = abs(payload.normal);
+		if (absNormal.x > absNormal.y && absNormal.x > absNormal.z) {
+			// X面
+			if (payload.normal.x > 0) {
+				// +X面
+				u = (objectPos.z + 1.0) / 2.0;
+				v = 1.0 - (objectPos.y + 1.0) / 2.0;  // 垂直翻转
+			} else {
+				// -X面
+				u = (1.0 - objectPos.z) / 2.0;
+				v = 1.0 - (objectPos.y + 1.0) / 2.0;  // 垂直翻转
+			}
+		} else if (absNormal.y > absNormal.z) {
+			// Y面
+			if (payload.normal.y > 0) {
+				// +Y面
+				u = (objectPos.x + 1.0) / 2.0;
+				v = 1.0 - (1.0 - objectPos.z) / 2.0;  // 垂直翻转
+			} else {
+				// -Y面
+				u = (objectPos.x + 1.0) / 2.0;
+				v = 1.0 - (objectPos.z + 1.0) / 2.0;  // 垂直翻转
+			}
+		} else {
+			// Z面
+			if (payload.normal.z > 0) {
+				// +Z面
+				u = (objectPos.x + 1.0) / 2.0;
+				v = 1.0 - (objectPos.y + 1.0) / 2.0;  // 垂直翻转
+			} else {
+				// -Z面
+				u = (1.0 - objectPos.x) / 2.0;
+				v = 1.0 - (objectPos.y + 1.0) / 2.0;  // 垂直翻转
+			}
+		}
+		// 调整纹理尺寸：乘以缩放因子以控制纹理在面上的大小
+		// 例如：0.5 表示纹理显示为原来的一半大小（更大），2.0 表示显示为原来的两倍大小（更小）
+		float scale = 1.0; // 可以调整这个值来改变纹理尺寸
+		u *= scale;
+		v *= scale;
+	} else {
+		// 其他物体：使用球面映射
+		float3 normalizedPos = normalize(objectPos);
+		u = 0.5 + atan2(normalizedPos.z, normalizedPos.x) / (2.0 * 3.14159265359);
+		v = 0.5 - asin(normalizedPos.y) / 3.14159265359;
+	}
 	payload.uv = float2(u, v);
 }
