@@ -645,38 +645,36 @@ float3 ComputePointLightContribution(float3 hitPos, float3 normal, float3 viewDi
 	float t = RayTCurrent();
 	payload.hit_pos = WorldRayOrigin() + WorldRayDirection() * t;
 	
-	// 暂时回到更简单但更正确的几何法线计算方法
-	// 使用命中点位置来推断法线，但针对不同几何体类型进行优化
-	
+	// 使用物体空间位置计算几何法线
 	float3 worldPos = payload.hit_pos;
 	float3 objectPos = mul(WorldToObject3x4(), float4(worldPos, 1.0)).xyz;
 	float3 objectNormal;
 	
 	// 根据实体ID来判断几何体类型
+	// Entity 0-4: 房间墙壁（立方体，需要平面法线）
+	// Entity 5-6: 八面体（需要平滑法线）
+	// Entity 7: 玻璃立方体（需要平面法线）
 	uint entity_id = InstanceID();
 	
-	if (entity_id == 0) {
-		// 地面（第一个实体）- 始终使用向上的法线
-		objectNormal = float3(0, 1, 0);
-	}
-	else {
-		// 对于八面体和立方体，使用更智能的法线计算
-		// 计算到物体中心的方向作为法线的起点
-		objectNormal = normalize(objectPos);
+	// 对墙壁(0-4)和玻璃立方体(7)使用面法线
+	if (entity_id <= 4 || entity_id == 7) {
+		// 立方体面法线计算
+		float3 absPos = abs(objectPos);
+		float maxComp = max(max(absPos.x, absPos.y), absPos.z);
 		
-		// 对于立方体（最后一个实体），使用面法线
-		if (entity_id == 3) { // 蓝色立方体
-			float3 absPos = abs(objectPos);
-			float maxComp = max(max(absPos.x, absPos.y), absPos.z);
-			
-			if (abs(absPos.x - maxComp) < 0.01) {
-				objectNormal = float3(sign(objectPos.x), 0, 0);
-			} else if (abs(absPos.y - maxComp) < 0.01) {
-				objectNormal = float3(0, sign(objectPos.y), 0);
-			} else if (abs(absPos.z - maxComp) < 0.01) {
-				objectNormal = float3(0, 0, sign(objectPos.z));
-			}
+		// 找到最大分量对应的面，使用该面的法线
+		if (abs(absPos.x - maxComp) < 0.01) {
+			objectNormal = float3(sign(objectPos.x), 0, 0);
+		} else if (abs(absPos.y - maxComp) < 0.01) {
+			objectNormal = float3(0, sign(objectPos.y), 0);
+		} else if (abs(absPos.z - maxComp) < 0.01) {
+			objectNormal = float3(0, 0, sign(objectPos.z));
+		} else {
+			objectNormal = normalize(objectPos);
 		}
+	} else {
+		// 八面体(5-6)：使用平滑的归一化法线（金属质感）
+		objectNormal = normalize(objectPos);
 	}
 	
 	// 转换到世界空间
@@ -690,53 +688,47 @@ float3 ComputePointLightContribution(float3 hitPos, float3 normal, float3 viewDi
 	
 	// 计算UV坐标
 	float u, v;
-	if (entity_id == 3) {
-		// 立方体：使用平面UV映射
+	
+	// 立方体(0-4, 7)：使用平面UV映射
+	if (entity_id <= 4 || entity_id == 7) {
 		float3 absNormal = abs(payload.normal);
 		if (absNormal.x > absNormal.y && absNormal.x > absNormal.z) {
 			// X面
 			if (payload.normal.x > 0) {
-				// +X面
 				u = (objectPos.z + 1.0) / 2.0;
-				v = 1.0 - (objectPos.y + 1.0) / 2.0;  // 垂直翻转
+				v = 1.0 - (objectPos.y + 1.0) / 2.0;
 			} else {
-				// -X面
 				u = (1.0 - objectPos.z) / 2.0;
-				v = 1.0 - (objectPos.y + 1.0) / 2.0;  // 垂直翻转
+				v = 1.0 - (objectPos.y + 1.0) / 2.0;
 			}
 		} else if (absNormal.y > absNormal.z) {
 			// Y面
 			if (payload.normal.y > 0) {
-				// +Y面
 				u = (objectPos.x + 1.0) / 2.0;
-				v = 1.0 - (1.0 - objectPos.z) / 2.0;  // 垂直翻转
+				v = 1.0 - (1.0 - objectPos.z) / 2.0;
 			} else {
-				// -Y面
 				u = (objectPos.x + 1.0) / 2.0;
-				v = 1.0 - (objectPos.z + 1.0) / 2.0;  // 垂直翻转
+				v = 1.0 - (objectPos.z + 1.0) / 2.0;
 			}
 		} else {
 			// Z面
 			if (payload.normal.z > 0) {
-				// +Z面
 				u = (objectPos.x + 1.0) / 2.0;
-				v = 1.0 - (objectPos.y + 1.0) / 2.0;  // 垂直翻转
+				v = 1.0 - (objectPos.y + 1.0) / 2.0;
 			} else {
-				// -Z面
 				u = (1.0 - objectPos.x) / 2.0;
-				v = 1.0 - (objectPos.y + 1.0) / 2.0;  // 垂直翻转
+				v = 1.0 - (objectPos.y + 1.0) / 2.0;
 			}
 		}
-		// 调整纹理尺寸：乘以缩放因子以控制纹理在面上的大小
-		// 例如：0.5 表示纹理显示为原来的一半大小（更大），2.0 表示显示为原来的两倍大小（更小）
-		float scale = 1.0; // 可以调整这个值来改变纹理尺寸
+		float scale = 1.0;
 		u *= scale;
 		v *= scale;
 	} else {
-		// 其他物体：使用球面映射
+		// 八面体(5-6)：使用球面映射
 		float3 normalizedPos = normalize(objectPos);
 		u = 0.5 + atan2(normalizedPos.z, normalizedPos.x) / (2.0 * 3.14159265359);
 		v = 0.5 - asin(normalizedPos.y) / 3.14159265359;
 	}
+	
 	payload.uv = float2(u, v);
 }

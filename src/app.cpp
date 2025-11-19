@@ -221,7 +221,7 @@ void Application::OnInit() {
     scene_ = std::make_unique<Scene>(core_.get());
 
     // Add entities to the scene
-    // Ground plane - a cube scaled to be flat
+    // Ground plane
     {
         auto ground = std::make_shared<Entity>(
             "meshes/cube.obj",
@@ -232,43 +232,51 @@ void Application::OnInit() {
         scene_->AddEntity(ground);
     }
 
-    // 三个红色玻璃球，展示不同的透明度
-    // transmission 越小 = 越不透明，越能看到颜色
-    // 从左到右：不透明(0.1) -> 半透明(0.5) -> 高透明(0.9)
-    // {
-    //     // 最右：不透明的红色玻璃（类似宝石，深红色）
-    //     auto red_glass_low = std::make_shared<Entity>(
-    //         "meshes/octahedron.obj",
-    //         Material(glm::vec3(1.0f, 0.4f, 0.3f), 0.05f, 0.0f, 0.1f, glm::vec3(1.0f, 0.4f, 0.3f), 1.5f),
-    //         // glm::translate(glm::mat4(1.0f), glm::vec3(-4.0f, 0.5f, 0.0f))
-    //         glm::translate(glm::mat4(1.0f), glm::vec3(-1.0f, 0.5f, 0.0f))
+    // Left wall
+    {
+        auto left_wall = std::make_shared<Entity>(
+            "meshes/cube.obj",
+            Material(glm::vec3(0.9f, 0.9f, 0.9f), 0.9f, 0.0f),
+            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(-5.0f, 2.0f, 0.0f)), 
+                      glm::vec3(0.1f, 4.0f, 10.0f))
+        );
+        scene_->AddEntity(left_wall);
+    }
 
-    //     );
-    //     scene_->AddEntity(red_glass_low);
-    // }
+    // Right wall
+    {
+        auto right_wall = std::make_shared<Entity>(
+            "meshes/cube.obj",
+            Material(glm::vec3(0.9f, 0.9f, 0.9f), 0.9f, 0.0f),
+            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(5.0f, 2.0f, 0.0f)), 
+                      glm::vec3(0.1f, 4.0f, 10.0f))
+        );
+        scene_->AddEntity(right_wall);
+    }
 
-    // {
-    //     // 中间：半透明红色玻璃
-    //     auto red_glass_mid = std::make_shared<Entity>(
-    //         "meshes/octahedron.obj",
-    //         Material(glm::vec3(0.98f, 0.35f, 0.28f), 0.05f, 0.0f, 0.5f, glm::vec3(0.98f, 0.35f, 0.28f), 1.5f),
-    //         glm::translate(glm::mat4(1.0f), glm::vec3(-2.5f, 0.5f, 0.0f))
-    //     );
-    //     scene_->AddEntity(red_glass_mid);
-    // }
+    // Back wall
+    {
+        auto back_wall = std::make_shared<Entity>(
+            "meshes/cube.obj",
+            Material(glm::vec3(0.9f, 0.9f, 0.9f), 0.9f, 0.0f),
+            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 2.0f, -5.0f)), 
+                      glm::vec3(10.0f, 4.0f, 0.1f))
+        );
+        scene_->AddEntity(back_wall);
+    }
 
-    // {
-    // //     // 最左：高透明红色玻璃（应该看起来几乎透明）
-    //     auto red_glass_high = std::make_shared<Entity>(
-    //         "meshes/octahedron.obj",
-    //         Material(glm::vec3(0.95f, 0.3f, 0.25f), 0.05f, 0.0f, 0.9f, glm::vec3(0.95f, 0.3f, 0.25f), 1.5f),
-    //         // glm::translate(glm::mat4(1.0f), glm::vec3(-1.0f, 0.5f, 0.0f))
-    //         glm::translate(glm::mat4(1.0f), glm::vec3(-4.0f, 0.5f, 0.0f))
-    //     );
-    //     scene_->AddEntity(red_glass_high);
-    // }
+    // Ceiling
+    {
+        auto ceiling = std::make_shared<Entity>(
+            "meshes/cube.obj",
+            Material(glm::vec3(0.9f, 0.9f, 0.9f), 0.9f, 0.0f),
+            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 5.0f, 0.0f)), 
+                      glm::vec3(10.0f, 0.1f, 10.0f))
+        );
+        scene_->AddEntity(ceiling);
+    }
 
-    // Green metallic sphere
+      // Green metallic sphere
      {
          auto green_sphere = std::make_shared<Entity>(
              "meshes/octahedron.obj",
@@ -353,23 +361,22 @@ void Application::OnInit() {
 
     // 初始化面光源数组（最多8个）
     area_lights_.resize(8);
-    // 配置主光源 - 红色天花板光
+    // 配置主光源 - 天花板白光
     area_lights_[0].position = glm::vec3(0.0f, 4.0f, 0.0f);      // 上方4米
-    area_lights_[0].color = glm::vec3(1.0f, 0.3f, 0.3f);         // 红色
-    area_lights_[0].strength = 10.0f;                             // 100瓦
-    area_lights_[0].width = 3.0f;                                 // 3米宽
-    area_lights_[0].height = 3.0f;                                // 3米高
+    area_lights_[0].color = glm::vec3(1.0f, 1.0f, 1.0f);         // 白色
+    area_lights_[0].strength = 5.0f;                             // 增加强度
+    area_lights_[0].width = 2.0f;                                 // 减小尺寸
+    area_lights_[0].height = 2.0f;                                // 减小尺寸
     area_lights_[0].direction = glm::normalize(glm::vec3(0.0f, -1.0f, 0.0f));  // 向下
     area_lights_[0].u_axis = glm::normalize(glm::vec3(1.0f, 0.0f, 0.0f));      // X轴
     area_lights_[0].v_axis = glm::normalize(glm::vec3(0.0f, 0.0f, 1.0f));      // Z轴
     area_lights_[0].pad1 = 0.0f;
     area_lights_[0].pad2 = 0.0f;
     
-    // 配置红色侧光 - 左侧
+    // 配置左侧光
     area_lights_[1].position = glm::vec3(-5.0f, 2.0f, 0.0f);     // 左侧
-    // area_lights_[1].color = glm::vec3(1.0f, 0.3f, 0.3f);         
     area_lights_[1].color = glm::vec3(0.3f, 0.3f, 1.0f);         // 蓝色
-    area_lights_[1].strength = 10.0f;                             // 25瓦
+    area_lights_[1].strength = 0.0f;                             // 降低强度
     area_lights_[1].width = 1.0f;                                 // 1米宽
     area_lights_[1].height = 2.0f;                                // 2米高
     area_lights_[1].direction = glm::normalize(glm::vec3(1.0f, 0.0f, 0.0f));   // 向右
@@ -378,12 +385,10 @@ void Application::OnInit() {
     area_lights_[1].pad1 = 0.0f;
     area_lights_[1].pad2 = 0.0f;
     
-    // 配置蓝色侧光 - 右侧
+    // 配置右侧光
     area_lights_[2].position = glm::vec3(5.0f, 2.0f, 0.0f);      // 右侧
-    // area_lights_[2].color = glm::vec3(0.3f, 0.3f, 1.0f);         // 蓝色
-    //绿色
-    area_lights_[2].color = glm::vec3(0.3f, 1.0f, 0.3f);
-    area_lights_[2].strength = 10.0f;                             // 25瓦
+    area_lights_[2].color = glm::vec3(0.3f, 1.0f, 0.3f);         // 绿色
+    area_lights_[2].strength = 0.0f;                             // 降低强度
     area_lights_[2].width = 1.0f;                                 // 1米宽
     area_lights_[2].height = 2.0f;                                // 2米高
     area_lights_[2].direction = glm::normalize(glm::vec3(-1.0f, 0.0f, 0.0f));  // 向左
