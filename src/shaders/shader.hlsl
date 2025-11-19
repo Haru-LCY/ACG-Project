@@ -54,6 +54,7 @@ ConstantBuffer<HoverInfo> hover_info : register(b0, space4);
 RWTexture2D<int> entity_id_output : register(u0, space5);
 RWTexture2D<float4> accumulated_color : register(u0, space6);
 RWTexture2D<int> accumulated_samples : register(u0, space7);
+RWTexture2D<float> depth_output : register(u0, space12);
 StructuredBuffer<PointLight> point_lights : register(t0, space8);  // 点光源数组
 StructuredBuffer<AreaLight> area_lights : register(t0, space9);  // 面光源数组
 Texture2D textures[16] : register(t0, space10);  // 纹理数组 (最多16个)
@@ -487,6 +488,14 @@ float3 ComputePointLightContribution(float3 hitPos, float3 normal, float3 viewDi
         pickRay.TMin = 0.001;
         pickRay.TMax = 10000.0;
         TraceRay(as, RAY_FLAG_NONE, 0xFF, 0, 1, 0, pickRay, pickPayload);
+        // Write depth (distance) into the depth buffer (0.0 if no hit)
+        float dval = 0.0;
+        if (pickPayload.hit) {
+            // origin4 is camera world origin for this pixel
+            float3 origin = origin40.xyz;
+            dval = length(pickPayload.hit_pos - origin);
+        }
+        depth_output[dispatchIndex] = dval;
     }
 
     for (int s = 0; s < spp; ++s) {

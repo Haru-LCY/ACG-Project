@@ -510,6 +510,8 @@ void Application::OnInit() {
     // Create entity ID buffer for accurate picking (R32_SINT to store entity indices)
     core_->CreateImage(window_->GetWidth(), window_->GetHeight(), grassland::graphics::IMAGE_FORMAT_R32_SINT,
         &entity_id_image_);
+    core_->CreateImage(window_->GetWidth(), window_->GetHeight(), grassland::graphics::IMAGE_FORMAT_R32_SFLOAT,
+        &depth_image_);
 
     core_->CreateShader(GetShaderCode("shaders/shader.hlsl"), "RayGenMain", "lib_6_3", &raygen_shader_);
     core_->CreateShader(GetShaderCode("shaders/shader.hlsl"), "MissMain", "lib_6_3", &miss_shader_);
@@ -538,6 +540,7 @@ void Application::OnInit() {
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space9 - area lights
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_IMAGE, 16);                  // space10 - texture array
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_SAMPLER, 1);                 // space10 - texture sampler
+    program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_WRITABLE_IMAGE, 1);          // space12 - depth image
     // 暂时注释掉全局几何缓冲区绑定
     // program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space9 - global vertices
     // program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space10 - global normals
@@ -563,6 +566,7 @@ void Application::OnClose() {
     point_lights_buffer_.reset();  // 清理点光源缓冲区
     area_lights_buffer_.reset();   // 清理面光源缓冲区
     texture_sampler_.reset();      // 清理纹理采样器
+    depth_image_.reset(); // 清理深度图像
     
     // Don't call TerminateImGui - let the window destructor handle it
     // Just reset window which will clean everything up properly
@@ -1094,6 +1098,34 @@ void Application::RenderEntityPanel() {
         // Focus DOF is automatically locked to the selected entity. Select an entity to change focus.
 
         // 可选：让相机朝向该实体（并保留当前位置），用于更直观的查看
+        if (ImGui::Button("Auto-Focus (Raycast)", ImVec2(-1.0f, 0.0f))) {
+            // Auto-focus selected entity by scanning the ID buffer and reading depth
+            if (selected_entity_id_ >= 0) {
+                int width = window_->GetWidth();
+                int height = window_->GetHeight();
+                std::vector<int32_t> ids(width * height);
+                std::vector<float> depths(width * height);
+                entity_id_image_->DownloadData(ids.data());
+                depth_image_->DownloadData(depths.data());
+                int foundIndex = -1;
+                for (int i = 0; i < width * height; ++i) {
+                    if (ids[i] == selected_entity_id_) { foundIndex = i; break; }
+                }
+                if (foundIndex >= 0) {
+                    float d = depths[foundIndex];
+                    if (d > 0.0f) {
+                        focus_distance_ = d;
+                        focused_entity_id_ = selected_entity_id_;
+                        if (film_) film_->Reset();
+                        grassland::LogInfo("Auto-focused to entity #{} at depth {}", selected_entity_id_, d);
+                    } else {
+                        grassland::LogWarning("Auto-focus found entity but depth is 0");
+                    }
+                } else {
+                    grassland::LogWarning("Auto-focus failed: selected entity not visible in ID buffer");
+                }
+            }
+        }
         if (ImGui::Button("Camera Look At Entity", ImVec2(-1.0f, 0.0f))) {
             glm::mat4 transform = entity->GetTransform();
             glm::vec3 entity_pos = glm::vec3(transform[3]);
@@ -1123,6 +1155,8 @@ void Application::OnRender() {
     
     // Clear entity ID buffer with -1 (no entity)
     command_context->CmdClearImage(entity_id_image_.get(), { {-1, 0, 0, 0} });
+    // Clear depth image
+    command_context->CmdClearImage(depth_image_.get(), { {0.0f, 0.0f, 0.0f, 0.0f} });
     
     command_context->CmdBindRayTracingProgram(program_.get());
     command_context->CmdBindResources(0, scene_->GetTLAS(), grassland::graphics::BIND_POINT_RAYTRACING);
@@ -1133,6 +1167,7 @@ void Application::OnRender() {
     command_context->CmdBindResources(5, { entity_id_image_.get() }, grassland::graphics::BIND_POINT_RAYTRACING);
     command_context->CmdBindResources(6, { film_->GetAccumulatedColorImage() }, grassland::graphics::BIND_POINT_RAYTRACING);
     command_context->CmdBindResources(7, { film_->GetAccumulatedSamplesImage() }, grassland::graphics::BIND_POINT_RAYTRACING);
+    command_context->CmdBindResources(12, { depth_image_.get() }, grassland::graphics::BIND_POINT_RAYTRACING);
     command_context->CmdBindResources(8, { point_lights_buffer_.get() }, grassland::graphics::BIND_POINT_RAYTRACING);  // 绑定点光源
     command_context->CmdBindResources(9, { area_lights_buffer_.get() }, grassland::graphics::BIND_POINT_RAYTRACING);  // 绑定面光源
     

@@ -84,6 +84,7 @@ private:
     // Rendering
     std::unique_ptr<grassland::graphics::Image> color_image_;
     std::unique_ptr<grassland::graphics::Image> entity_id_image_; // Entity ID buffer for accurate picking
+    std::unique_ptr<grassland::graphics::Image> depth_image_; // Depth buffer for pick-based autofocus
     std::unique_ptr<grassland::graphics::RayTracingProgram> program_;
     std::unique_ptr<grassland::graphics::Sampler> texture_sampler_; // Texture sampler
     bool alive_{ false };
