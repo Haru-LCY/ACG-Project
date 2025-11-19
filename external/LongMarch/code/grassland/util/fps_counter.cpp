@@ -1,0 +1,35 @@
+#include "grassland/util/fps_counter.h"
+
+namespace grassland {
+
+void FPSCounter::TickFrame() {
+  auto tp = std::chrono::high_resolution_clock::now();
+  frames_.emplace(tp);
+  tp -= std::chrono::seconds(1);
+  while (frames_.size() > 2 && frames_.front() < tp) {
+    frames_.pop();
+  }
+}
+
+float FPSCounter::GetFPS() const {
+  if (frames_.size() < 2) {
+    // return nan
+    return 0.0f;
+  } else {
+    float duration_second = std::chrono::duration<float>(frames_.back() - frames_.front()).count();
+    return (frames_.size() - 1) / duration_second;
+  }
+}
+
+float FPSCounter::TickFPS() {
+  TickFrame();
+  return GetFPS();
+}
+
+void FPSCounter::Reset() {
+  while (!frames_.empty()) {
+    frames_.pop();
+  }
+}
+
+}  // namespace grassland
