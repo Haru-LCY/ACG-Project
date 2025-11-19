@@ -564,8 +564,8 @@ float3 ComputePointLightContribution(float3 hitPos, float3 normal, float3 viewDi
                 if (Refract(-V, normal, etaI/etaT, refracted)) {
                     rayDir = normalize(refracted);
                     rayOrigin = hitPos - normal * 0.001;
-                    // Beer's Law 吸收
-                    if (entering) throughput *= mat.transmission_color; // 简单模拟
+                    // Beer's Law 吸收 - 使用纹理颜色
+                    if (entering) throughput *= baseColor; // 使用纹理颜色而不是mat.transmission_color
                 } else {
                     rayDir = reflect(-V, normal); // 全反射
                     rayOrigin = hitPos + normal * 0.001;

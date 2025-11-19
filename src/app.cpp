@@ -293,8 +293,8 @@ void Application::OnInit() {
     {
         auto blue_cube = std::make_shared<Entity>(
             "meshes/cube.obj",
-            // Material(glm::vec3(0.3f, 0.3f, 1.0f), 0.05f, 0.0f, 0.95f, 1.5f), // 蓝色玻璃：明显的蓝色色调
-            Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.3f, 0.9f),  // 白色基础,金属
+            Material(glm::vec3(0.3f, 0.3f, 1.0f), 0.05f, 0.0f, 0.95f, 1.5f), // 蓝色玻璃：明显的蓝色色调
+            // Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.3f, 0.9f),  // 白色基础,金属
             glm::translate(glm::mat4(1.0f), glm::vec3(2.0f, 0.5f, 0.0f)),
             "textures/sakura.png"
         );
