@@ -1,58 +1,135 @@
 #pragma once
 #include "long_march.h"
 
-// Simple material structure for ray tracing
+// Principled BSDF material structure for ray tracing
+// Based on Disney's Principled BSDF model
 struct Material {
+    // Base properties
     glm::vec3 base_color;
     float roughness;
+    
     float metallic;
-    float transmission;  // 透射系数：0=不透光, 1=完全透光（标量，用于表示透光强度）
-    glm::vec3 transmission_color; // 透射颜色/吸收色（用于有色玻璃的 Beer–Lambert 衰减）
-    float ior;           // 折射率 (Index of Refraction)
-    float alpha_threshold; // alpha shadow 阈值：0-1，用于决定像素是否透明
-    float has_alpha_map;   // 是否有透明度贴图：0=无, 1=有
-    int texture_id;        // 纹理ID：-1=无纹理, >=0=纹理在数组中的索引
-    float padding[3];      // 对齐到16字节
+    float specular;              // Specular reflection strength (0-1)
+    float specular_tint;         // Tint specular reflection with base color (0-1)
+    float anisotropic;           // Anisotropic reflection (0-1)
+    
+    float anisotropic_rotation;  // Anisotropic rotation angle (0-1)
+    float sheen;                
+     // Sheen effect for cloth-like materials (0-1)
+    float sheen_tint;            // Tint sheen with base color (0-1)
+    float clearcoat;             // Clearcoat layer strength (0-1)
+    
+    float clearcoat_roughness;   // Clearcoat roughness (0-1)
+    float transmission;          // Glass/transparency (0-1)
+    float transmission_roughness; // Roughness of transmission (0-1)
+    float ior;                   // Index of refraction
+    
+    glm::vec3 transmission_color; // Transmission color/absorption
+    float subsurface;            // Subsurface scattering strength (0-1)
+    
+    glm::vec3 subsurface_color;  // Subsurface scattering color
+    float padding1;
+    
+    glm::vec3 subsurface_radius; // Subsurface scattering radius (RGB)
+    float padding2;
+    
+    glm::vec3 emission_color;    // Emission color
+    float emission_strength;     // Emission strength
+    
+    float alpha_threshold;       // Alpha shadow threshold (0-1)
+    float has_alpha_map;         // Has alpha map flag
+    int texture_id;              // Texture ID (-1 = no texture)
+    float padding3;
 
     Material()
         : base_color(0.8f, 0.8f, 0.8f)
         , roughness(0.5f)
         , metallic(0.0f)
+        , specular(0.5f)
+        , specular_tint(0.0f)
+        , anisotropic(0.0f)
+        , anisotropic_rotation(0.0f)
+        , sheen(0.0f)
+        , sheen_tint(0.5f)
+        , clearcoat(0.0f)
+        , clearcoat_roughness(0.03f)
         , transmission(0.0f)
+        , transmission_roughness(0.0f)
+        , ior(1.45f)
         , transmission_color(1.0f, 1.0f, 1.0f)
-        , ior(1.5f)
+        , subsurface(0.0f)
+        , subsurface_color(0.8f, 0.8f, 0.8f)
+        , padding1(0.0f)
+        , subsurface_radius(1.0f, 1.0f, 1.0f)
+        , padding2(0.0f)
+        , emission_color(0.0f, 0.0f, 0.0f)
+        , emission_strength(0.0f)
         , alpha_threshold(0.5f)
         , has_alpha_map(0.0f)
-        , texture_id(-1) {
-        padding[0] = padding[1] = padding[2] = 0.0f;
+        , texture_id(-1)
+        , padding3(0.0f) {
     }
 
-    Material(const glm::vec3& color, float rough = 0.5f, float metal = 0.0f, float trans = 0.0f, const glm::vec3& trans_color = glm::vec3(1.0f), float index_of_refraction = 1.5f, float alpha_thresh = 0.5f, float has_alpha = 0.0f)
+    // Constructor for common use case: color, roughness, metallic
+    Material(const glm::vec3& color, float rough, float metal)
         : base_color(color)
-        , roughness(glm::clamp(rough, 0.01f, 1.0f))  // 避免除零
+        , roughness(glm::clamp(rough, 0.001f, 1.0f))
         , metallic(glm::clamp(metal, 0.0f, 1.0f))
-        , transmission(glm::clamp(trans, 0.0f, 1.0f))
-        , transmission_color(trans_color)
-        , ior(glm::clamp(index_of_refraction, 1.0f, 3.0f))
-        , alpha_threshold(glm::clamp(alpha_thresh, 0.0f, 1.0f))
-        , has_alpha_map(has_alpha)
-        , texture_id(-1) {
-        padding[0] = padding[1] = padding[2] = 0.0f;
+        , specular(0.5f)
+        , specular_tint(0.0f)
+        , anisotropic(0.0f)
+        , anisotropic_rotation(0.0f)
+        , sheen(0.0f)
+        , sheen_tint(0.5f)
+        , clearcoat(0.0f)
+        , clearcoat_roughness(0.03f)
+        , transmission(0.0f)
+        , transmission_roughness(0.0f)
+        , ior(1.45f)
+        , transmission_color(1.0f, 1.0f, 1.0f)
+        , subsurface(0.0f)
+        , subsurface_color(0.8f, 0.8f, 0.8f)
+        , padding1(0.0f)
+        , subsurface_radius(1.0f, 1.0f, 1.0f)
+        , padding2(0.0f)
+        , emission_color(0.0f, 0.0f, 0.0f)
+        , emission_strength(0.0f)
+        , alpha_threshold(0.5f)
+        , has_alpha_map(0.0f)
+        , texture_id(-1)
+        , padding3(0.0f) {
     }
 
-    // 兼容旧构造签名：Material(color, rough, metal, transmission, ior)
-    // 如果没有提供 transmission_color，默认使用 base_color（有色玻璃时建议显式提供 transmission_color）
+    // Legacy constructor for backward compatibility
     Material(const glm::vec3& color, float rough, float metal, float trans, float index_of_refraction)
         : base_color(color)
-        , roughness(glm::clamp(rough, 0.01f, 1.0f))
+        , roughness(glm::clamp(rough, 0.001f, 1.0f))
         , metallic(glm::clamp(metal, 0.0f, 1.0f))
+        , specular(0.5f)
+        , specular_tint(0.0f)
+        , anisotropic(0.0f)
+        , anisotropic_rotation(0.0f)
+        , sheen(0.0f)
+        , sheen_tint(0.5f)
+        , clearcoat(0.0f)
+        , clearcoat_roughness(0.03f)
         , transmission(glm::clamp(trans, 0.0f, 1.0f))
-        , transmission_color(color)
+        , transmission_roughness(0.0f)
         , ior(glm::clamp(index_of_refraction, 1.0f, 3.0f))
+        , transmission_color(color)
+        , subsurface(0.0f)
+        , subsurface_color(0.8f, 0.8f, 0.8f)
+        , padding1(0.0f)
+        , subsurface_radius(1.0f, 1.0f, 1.0f)
+        , padding2(0.0f)
+        , emission_color(0.0f, 0.0f, 0.0f)
+        , emission_strength(0.0f)
         , alpha_threshold(0.5f)
         , has_alpha_map(0.0f)
-        , texture_id(-1) {
-        padding[0] = padding[1] = padding[2] = 0.0f;
+        , texture_id(-1)
+        , padding3(0.0f) {
     }
 };
+// Verify struct size is consistent with HLSL layout (must be 16 byte aligned per row)
+static_assert(sizeof(Material) == 144, "Material size mismatch: C++ Material must match HLSL layout (144 bytes)");
 

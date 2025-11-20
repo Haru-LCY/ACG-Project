@@ -54,6 +54,9 @@ public:
     // Get number of entities
     size_t GetEntityCount() const { return entities_.size(); }
 
+    // Update materials buffer data on GPU from CPU-side materials
+    void UpdateMaterials();
+
 private:
     void UpdateMaterialsBuffer();
     void BuildGlobalGeometryBuffers();

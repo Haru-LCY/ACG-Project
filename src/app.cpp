@@ -1110,13 +1110,44 @@ void Application::RenderEntityPanel() {
         // Material information
         ImGui::SeparatorText("Material");
         Material mat = entity->GetMaterial();
-        
+        bool material_changed = false;
+
         ImGui::Text("Base Color:");
-        ImGui::ColorEdit3("##base_color", &mat.base_color[0], ImGuiColorEditFlags_NoInputs);
+        if (ImGui::ColorEdit3("##base_color", &mat.base_color[0])) {
+            material_changed = true;
+        }
         ImGui::Text("  RGB: (%.2f, %.2f, %.2f)", mat.base_color.r, mat.base_color.g, mat.base_color.b);
-        
-        ImGui::Text("Roughness: %.2f", mat.roughness);
-        ImGui::Text("Metallic: %.2f", mat.metallic);
+
+        if (ImGui::SliderFloat("Roughness", &mat.roughness, 0.0f, 1.0f)) material_changed = true;
+        if (ImGui::SliderFloat("Metallic", &mat.metallic, 0.0f, 1.0f)) material_changed = true;
+        if (ImGui::SliderFloat("Specular", &mat.specular, 0.0f, 1.0f)) material_changed = true;
+        if (ImGui::SliderFloat("Specular Tint", &mat.specular_tint, 0.0f, 1.0f)) material_changed = true;
+        if (ImGui::SliderFloat("Anisotropic", &mat.anisotropic, 0.0f, 1.0f)) material_changed = true;
+        if (ImGui::SliderFloat("Anisotropic Rotation", &mat.anisotropic_rotation, 0.0f, 1.0f)) material_changed = true;
+        if (ImGui::SliderFloat("Sheen", &mat.sheen, 0.0f, 1.0f)) material_changed = true;
+        if (ImGui::SliderFloat("Sheen Tint", &mat.sheen_tint, 0.0f, 1.0f)) material_changed = true;
+        if (ImGui::SliderFloat("Clearcoat", &mat.clearcoat, 0.0f, 1.0f)) material_changed = true;
+        if (ImGui::SliderFloat("Clearcoat Roughness", &mat.clearcoat_roughness, 0.0f, 1.0f)) material_changed = true;
+        if (ImGui::SliderFloat("Transmission", &mat.transmission, 0.0f, 1.0f)) material_changed = true;
+        if (ImGui::SliderFloat("Transmission Roughness", &mat.transmission_roughness, 0.0f, 1.0f)) material_changed = true;
+        if (ImGui::SliderFloat("IOR", &mat.ior, 1.0f, 3.0f)) material_changed = true;
+        ImGui::Text("Transmission Color:");
+        if (ImGui::ColorEdit3("##transmission_color", &mat.transmission_color[0])) material_changed = true;
+        if (ImGui::SliderFloat("Subsurface", &mat.subsurface, 0.0f, 1.0f)) material_changed = true;
+        ImGui::Text("Subsurface Color:");
+        if (ImGui::ColorEdit3("##subsurface_color", &mat.subsurface_color[0])) material_changed = true;
+        if (ImGui::SliderFloat3("Subsurface Radius", &mat.subsurface_radius[0], 0.0f, 10.0f)) material_changed = true;
+        ImGui::Text("Emission Color:");
+        if (ImGui::ColorEdit3("##emission_color", &mat.emission_color[0])) material_changed = true;
+        if (ImGui::SliderFloat("Emission Strength", &mat.emission_strength, 0.0f, 1e6f)) material_changed = true;
+        if (ImGui::SliderFloat("Alpha Threshold", &mat.alpha_threshold, 0.0f, 1.0f)) material_changed = true;
+        {
+            bool has_alpha = (mat.has_alpha_map > 0.5f);
+            if (ImGui::Checkbox("Has Alpha Map", &has_alpha)) {
+                mat.has_alpha_map = has_alpha ? 1.0f : 0.0f;
+                material_changed = true;
+            }
+        }
         
         ImGui::Spacing();
         
@@ -1185,6 +1216,17 @@ void Application::RenderEntityPanel() {
             // 重置累积
             if (film_) film_->Reset();
             grassland::LogInfo("Camera now looks at Entity #{}", selected_entity_id_);
+        }
+
+        // 如果材质发生变化，应用并更新 GPU 缓冲
+        if (material_changed) {
+            // Apply to entity and update global materials buffer
+            Material old_mat = entity->GetMaterial();
+            entity->SetMaterial(mat);
+            // Update scene materials buffer (thin wrapper)
+            scene_->UpdateMaterials();
+            if (film_) film_->Reset();
+            grassland::LogInfo("Updated material of entity {}", selected_entity_id_);
         }
     } else {
         ImGui::TextDisabled("No entity selected");

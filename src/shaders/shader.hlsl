@@ -10,17 +10,43 @@ struct CameraInfo {
         int padding0;          // 对齐
 };
 
+// Principled BSDF Material (matches C++ struct layout)
 struct Material {
+  // Base properties
   float3 base_color;
   float roughness;
+  
   float metallic;
-  float transmission;  // 透明度
-	float3 transmission_color; // 透射颜色/吸收色（用于有色玻璃的 Beer–Lambert 衰减）
-	float ior;           // 折射率
-  float alpha_threshold; // alpha shadow 阈值
-  float has_alpha_map;   // 是否有透明度贴图
-  int texture_id;        // 纹理ID：-1=无纹理, >=0=纹理索引
-  float3 padding;        // 对齐到16字节
+  float specular;
+  float specular_tint;
+  float anisotropic;
+  
+  float anisotropic_rotation;
+  float sheen;
+  float sheen_tint;
+  float clearcoat;
+  
+  float clearcoat_roughness;
+  float transmission;
+  float transmission_roughness;
+  float ior;
+  
+  float3 transmission_color;
+  float subsurface;
+  
+  float3 subsurface_color;
+  float padding1;
+  
+  float3 subsurface_radius;
+  float padding2;
+  
+  float3 emission_color;
+  float emission_strength;
+  
+  float alpha_threshold;
+  float has_alpha_map;
+  int texture_id;
+  float padding3;
 };
 
 struct HoverInfo {
@@ -182,37 +208,311 @@ float FresnelDielectric(float cosThetaI, float etaI, float etaT) {
 	return (rParallel * rParallel + rPerpendicular * rPerpendicular) / 2.0;
 }
 
-// GGX importance sampling for specular
-float3 SampleGGX(float3 N, float3 V, float roughness, inout uint seed, out float pdf) {
-	float a = roughness * roughness;
-	a = a * a; // 平方一次以增加低粗糙度时的采样效率
+// ==================== Principled BSDF Implementation ====================
+
+// Build orthonormal basis from normal
+void BuildOrthonormalBasis(float3 N, out float3 T, out float3 B) {
+	float3 up = abs(N.z) < 0.999 ? float3(0, 0, 1) : float3(1, 0, 0);
+	T = normalize(cross(up, N));
+	B = cross(N, T);
+}
+
+// GGX Distribution (with anisotropic support)
+float GGX_D(float3 H, float3 N, float3 T, float3 B, float roughness, float anisotropic) {
+	float aspect = sqrt(1.0 - anisotropic * 0.9);
+	float alpha_x = roughness * roughness / aspect;
+	float alpha_y = roughness * roughness * aspect;
+	
+	float NdotH = dot(N, H);
+	float TdotH = dot(T, H);
+	float BdotH = dot(B, H);
+	
+	float a2 = alpha_x * alpha_y;
+	float3 v = float3(alpha_y * TdotH, alpha_x * BdotH, a2 * NdotH);
+	float v2 = dot(v, v);
+	float w2 = a2 / v2;
+	return a2 * w2 * w2 / PI;
+}
+
+// GGX Geometry term (Smith)
+float GGX_G1(float3 V, float3 N, float3 T, float3 B, float roughness, float anisotropic) {
+	float aspect = sqrt(1.0 - anisotropic * 0.9);
+	float alpha_x = roughness * roughness / aspect;
+	float alpha_y = roughness * roughness * aspect;
+	
+	float NdotV = abs(dot(N, V));
+	float TdotV = dot(T, V);
+	float BdotV = dot(B, V);
+	
+	float a2 = alpha_x * alpha_x * TdotV * TdotV + alpha_y * alpha_y * BdotV * BdotV;
+	float lambda = (-1.0 + sqrt(1.0 + a2 / (NdotV * NdotV))) * 0.5;
+	return 1.0 / (1.0 + lambda);
+}
+
+float GGX_G(float3 V, float3 L, float3 N, float3 T, float3 B, float roughness, float anisotropic) {
+	return GGX_G1(V, N, T, B, roughness, anisotropic) * GGX_G1(L, N, T, B, roughness, anisotropic);
+}
+
+// Sample GGX distribution (anisotropic)
+float3 SampleGGX(float3 N, float3 V, float roughness, float anisotropic, float anisotropic_rotation, 
+                 inout uint seed, out float pdf) {
 	float u1 = Rand01(seed);
 	float u2 = Rand01(seed);
 	
-	// 避免极端情况
-	u1 = max(u1, 0.00001);
+	// Build tangent space
+	float3 T, B;
+	BuildOrthonormalBasis(N, T, B);
 	
-	float theta = atan(a * sqrt(u1) / sqrt(max(0.00001, 1.0 - u1)));
-	float phi = 2.0 * 3.14159265359 * u2;
+	// Apply anisotropic rotation
+	float rotation_angle = anisotropic_rotation * 2.0 * PI;
+	float cos_rot = cos(rotation_angle);
+	float sin_rot = sin(rotation_angle);
+	float3 T_rot = cos_rot * T + sin_rot * B;
+	float3 B_rot = -sin_rot * T + cos_rot * B;
+	T = T_rot;
+	B = B_rot;
 	
-	float3 H;
-	H.x = sin(theta) * cos(phi);
-	H.y = cos(theta);
-	H.z = sin(theta) * sin(phi);
+	// Sample with anisotropy
+	float aspect = sqrt(1.0 - anisotropic * 0.9);
+	float alpha_x = roughness * roughness / aspect;
+	float alpha_y = roughness * roughness * aspect;
+	
+	float phi = atan2(alpha_y * sin(2.0 * PI * u2), alpha_x * cos(2.0 * PI * u2));
+	float cos_phi = cos(phi);
+	float sin_phi = sin(phi);
+	
+	float alpha_p = sqrt(cos_phi * cos_phi * alpha_x * alpha_x + sin_phi * sin_phi * alpha_y * alpha_y);
+	float tan_theta = alpha_p * sqrt(u1 / (1.0 - u1 + 1e-7));
+	float cos_theta = 1.0 / sqrt(1.0 + tan_theta * tan_theta);
+	float sin_theta = tan_theta * cos_theta;
+	
+	// Half vector in local space
+	float3 H_local = float3(sin_theta * cos_phi, sin_theta * sin_phi, cos_theta);
+	float3 H = normalize(T * H_local.x + B * H_local.y + N * H_local.z);
+	
+	// Reflect to get light direction
+	float3 L = reflect(-V, H);
+	
+	// Calculate PDF
+	float D = GGX_D(H, N, T, B, roughness, anisotropic);
+	float NdotH = max(dot(N, H), 0.0);
+	float VdotH = max(dot(V, H), 0.0);
+	pdf = D * NdotH / (4.0 * VdotH + 1e-7);
+	
+	return L;
+}
+
+// Sheen BRDF (Estevez & Kulla)
+float3 EvaluateSheen(float3 V, float3 L, float3 N, float3 base_color, float sheen, float sheen_tint) {
+	if (sheen < 1e-5) return float3(0, 0, 0);
+	
+	float3 H = normalize(V + L);
+	float VdotH = max(dot(V, H), 0.0);
+	
+	// Sheen color
+	float lum = dot(base_color, float3(0.299, 0.587, 0.114));
+	float3 tint_color = lum > 0 ? base_color / lum : float3(1, 1, 1);
+	float3 sheen_color = lerp(float3(1, 1, 1), tint_color, sheen_tint);
+	
+	// Schlick Fresnel approximation for sheen
+	float fresnel = pow(1.0 - VdotH, 5.0);
+	return sheen * sheen_color * fresnel;
+}
+
+// Clearcoat BRDF
+float3 EvaluateClearcoat(float3 V, float3 L, float3 N, float clearcoat, float clearcoat_roughness, out float pdf) {
+	if (clearcoat < 1e-5) {
+		pdf = 0.0;
+		return float3(0, 0, 0);
+	}
+	
+	float3 H = normalize(V + L);
+	float NdotH = max(dot(N, H), 0.0);
+	float NdotL = max(dot(N, L), 0.0);
+	float NdotV = max(dot(N, V), 0.0);
+	float VdotH = max(dot(V, H), 0.0);
+	
+	// Clearcoat uses a fixed IOR of 1.5
+	float F0 = 0.04; // ((1.5 - 1) / (1.5 + 1))^2
+	float F = F0 + (1.0 - F0) * pow(1.0 - VdotH, 5.0);
+	
+	// GGX distribution for clearcoat
+	float alpha = clearcoat_roughness * clearcoat_roughness;
+	float alpha2 = alpha * alpha;
+	float denom = NdotH * NdotH * (alpha2 - 1.0) + 1.0;
+	float D = alpha2 / (PI * denom * denom + 1e-7);
+	
+	// Geometry term (simplified for clearcoat)
+	float k = alpha / 2.0;
+	float G_V = NdotV / (NdotV * (1.0 - k) + k);
+	float G_L = NdotL / (NdotL * (1.0 - k) + k);
+	float G = G_V * G_L;
+	
+	pdf = D * NdotH / (4.0 * VdotH + 1e-7);
+	
+	return float3(clearcoat * 0.25 * F * D * G / (4.0 * NdotV * NdotL + 1e-7), 
+	              clearcoat * 0.25 * F * D * G / (4.0 * NdotV * NdotL + 1e-7),
+	              clearcoat * 0.25 * F * D * G / (4.0 * NdotV * NdotL + 1e-7));
+}
+
+// Sample clearcoat lobe
+float3 SampleClearcoat(float3 N, float3 V, float clearcoat_roughness, inout uint seed, out float pdf) {
+	float u1 = Rand01(seed);
+	float u2 = Rand01(seed);
+	
+	// GGX sampling for clearcoat
+	float alpha = clearcoat_roughness * clearcoat_roughness;
+	float alpha2 = alpha * alpha;
+	
+	float cos_theta = sqrt((1.0 - u1) / (u1 * (alpha2 - 1.0) + 1.0));
+	float sin_theta = sqrt(max(0.0, 1.0 - cos_theta * cos_theta));
+	float phi = 2.0 * PI * u2;
 	
 	// Build tangent space
-	float3 up = abs(N.z) < 0.999 ? float3(0, 0, 1) : float3(1, 0, 0);
-	float3 T = normalize(cross(up, N));
-	float3 B = cross(N, T);
+	float3 T, B;
+	BuildOrthonormalBasis(N, T, B);
 	
-	H = normalize(T * H.x + N * H.y + B * H.z);
-	float3 L = normalize(2.0 * dot(V, H) * H - V);
+	// Half vector
+	float3 H = normalize(sin_theta * cos(phi) * T + sin_theta * sin(phi) * B + cos_theta * N);
+	
+	// Reflect to get light direction
+	float3 L = reflect(-V, H);
 	
 	// Calculate PDF
 	float NdotH = max(dot(N, H), 0.0);
 	float VdotH = max(dot(V, H), 0.0);
-	float D = a / (PI * pow(NdotH * NdotH * (a - 1.0) + 1.0, 2.0));
-	pdf = D * NdotH / (4.0 * VdotH + 0.0001);
+	float D = alpha2 / (PI * pow(NdotH * NdotH * (alpha2 - 1.0) + 1.0, 2.0) + 1e-7);
+	pdf = D * NdotH / (4.0 * VdotH + 1e-7);
+	
+	return L;
+}
+
+// Principled BSDF evaluation
+float3 EvaluatePrincipledBSDF(Material mat, float3 V, float3 L, float3 N, float2 uv, out float pdf) {
+	float3 baseColor = GetMaterialBaseColor(mat, uv);
+	
+	float NdotL = dot(N, L);
+	float NdotV = dot(N, V);
+	
+	if (NdotL <= 0.0 || NdotV <= 0.0) {
+		pdf = 0.0;
+		return float3(0, 0, 0);
+	}
+	
+	float3 H = normalize(V + L);
+	float NdotH = max(dot(N, H), 0.0);
+	float VdotH = max(dot(V, H), 0.0);
+	
+	// Build tangent space for anisotropic
+	float3 T, B;
+	BuildOrthonormalBasis(N, T, B);
+	
+	// Specular reflection color
+	float lum = dot(baseColor, float3(0.299, 0.587, 0.114));
+	float3 tint_color = lum > 0 ? baseColor / lum : float3(1, 1, 1);
+	float3 spec_color = lerp(float3(1, 1, 1), tint_color, mat.specular_tint);
+	float3 F0 = lerp(0.08 * mat.specular * spec_color, baseColor, mat.metallic);
+	
+	// Fresnel
+	float3 F = F0 + (1.0 - F0) * pow(1.0 - VdotH, 5.0);
+	
+	// GGX specular
+	float D = GGX_D(H, N, T, B, mat.roughness, mat.anisotropic);
+	float G = GGX_G(V, L, N, T, B, mat.roughness, mat.anisotropic);
+	float3 specular = D * F * G / (4.0 * NdotV * NdotL + 1e-7);
+	
+	// Diffuse (energy-conserving)
+	float3 kD = (1.0 - F) * (1.0 - mat.metallic);
+	float3 diffuse = kD * baseColor / PI;
+	
+	// Sheen
+	float3 sheen = EvaluateSheen(V, L, N, baseColor, mat.sheen, mat.sheen_tint);
+	
+	// Clearcoat
+	float clearcoat_pdf;
+	float3 clearcoat = EvaluateClearcoat(V, L, N, mat.clearcoat, mat.clearcoat_roughness, clearcoat_pdf);
+	
+	// Combine lobes
+	float3 brdf = diffuse + specular + sheen + clearcoat;
+	
+	// Calculate combined PDF
+	float diffuse_weight = max(max(kD.x, kD.y), kD.z);
+	float specular_weight = max(max(F.x, F.y), F.z);
+	float clearcoat_weight = mat.clearcoat * 0.25;
+	
+	float total_weight = diffuse_weight + specular_weight + clearcoat_weight + 1e-7;
+	diffuse_weight /= total_weight;
+	specular_weight /= total_weight;
+	clearcoat_weight /= total_weight;
+	
+	float pdf_diffuse = NdotL / PI;
+	float pdf_specular = D * NdotH / (4.0 * VdotH + 1e-7);
+	
+	pdf = diffuse_weight * pdf_diffuse + specular_weight * pdf_specular + clearcoat_weight * clearcoat_pdf;
+	
+	return brdf * NdotL;
+}
+
+// Sample Principled BSDF
+float3 SamplePrincipledBSDF(Material mat, float3 V, float3 N, float2 uv, inout uint seed, out float pdf, out float3 weight) {
+	float3 baseColor = GetMaterialBaseColor(mat, uv);
+	
+	// Build tangent space
+	float3 T, B;
+	BuildOrthonormalBasis(N, T, B);
+	
+	// Calculate lobe weights
+	float3 H = N; // temporary
+	float VdotH_approx = max(dot(V, N), 0.0);
+	
+	float lum = dot(baseColor, float3(0.299, 0.587, 0.114));
+	float3 tint_color = lum > 0 ? baseColor / lum : float3(1, 1, 1);
+	float3 spec_color = lerp(float3(1, 1, 1), tint_color, mat.specular_tint);
+	float3 F0 = lerp(0.08 * mat.specular * spec_color, baseColor, mat.metallic);
+	float3 F_approx = F0 + (1.0 - F0) * pow(1.0 - VdotH_approx, 5.0);
+	
+	float3 kD = (1.0 - F_approx) * (1.0 - mat.metallic);
+	
+	float diffuse_weight = max(max(kD.x, kD.y), kD.z);
+	float specular_weight = max(max(F_approx.x, F_approx.y), F_approx.z);
+	float clearcoat_weight = mat.clearcoat * 0.25;
+	
+	float total_weight = diffuse_weight + specular_weight + clearcoat_weight + 1e-7;
+	diffuse_weight /= total_weight;
+	specular_weight /= total_weight;
+	clearcoat_weight /= total_weight;
+	
+	// Choose lobe to sample
+	float lobe_choice = Rand01(seed);
+	float3 L;
+	
+	if (lobe_choice < diffuse_weight) {
+		// Sample diffuse lobe
+		L = SampleCosineHemisphere(N, seed, pdf);
+		weight = float3(1, 1, 1); // Will be multiplied by BRDF evaluation
+	} else if (lobe_choice < diffuse_weight + specular_weight) {
+		// Sample specular lobe
+		L = SampleGGX(N, V, mat.roughness, mat.anisotropic, mat.anisotropic_rotation, seed, pdf);
+		weight = float3(1, 1, 1);
+	} else {
+		// Sample clearcoat lobe
+		L = SampleClearcoat(N, V, mat.clearcoat_roughness, seed, pdf);
+		weight = float3(1, 1, 1);
+	}
+	
+	// Evaluate full BSDF to get actual weight
+	float eval_pdf;
+	float3 brdf = EvaluatePrincipledBSDF(mat, V, L, N, uv, eval_pdf);
+	
+	// Update PDF to be the combined PDF
+	pdf = eval_pdf;
+	
+	// Weight is BRDF * NdotL / PDF (but BRDF already includes NdotL)
+	if (pdf > 1e-7) {
+		weight = brdf / pdf;
+	} else {
+		weight = float3(0, 0, 0);
+	}
 	
 	return L;
 }
@@ -310,16 +610,15 @@ float3 ACESFilm(float3 x) {
     return saturate((x * (a * x + b)) / (x * (c * x + d) + e));
 }
 
-// [新增] 计算面光源贡献 (包含对透明/金属的特殊处理)
+// [新增] 计算面光源贡献 (使用 Principled BSDF)
 float3 ComputeAreaLightContribution(float3 hitPos, float3 normal, float3 viewDir, Material material, float2 uv, AreaLight light, inout uint seed) {
-    // 单次采样，避免能量损失
     const int NUM_LIGHT_SAMPLES = 1;
     float3 totalContribution = float3(0, 0, 0);
     
     for (int sample_idx = 0; sample_idx < NUM_LIGHT_SAMPLES; ++sample_idx) {
         // 1. 随机采样光源表面
-        float u_base = Rand01(seed) - 0.5; // [-0.5, 0.5]
-        float v_base = Rand01(seed) - 0.5; // [-0.5, 0.5]
+        float u_base = Rand01(seed) - 0.5;
+        float v_base = Rand01(seed) - 0.5;
         
         float3 samplePos = light.position + (light.u_axis * u_base * light.width) + (light.v_axis * v_base * light.height);
         
@@ -330,10 +629,9 @@ float3 ComputeAreaLightContribution(float3 hitPos, float3 normal, float3 viewDir
         float3 lightDir = normalize(lightVec);
         
         float NdotL = dot(normal, lightDir);
-        float3 lightNormal = light.direction; // 面光源朝向
-        float LdotLn = dot(-lightDir, lightNormal); // 光源表面法线与光线的夹角
+        float3 lightNormal = light.direction;
+        float LdotLn = dot(-lightDir, lightNormal);
         
-        // 剔除：光源在背面 或 光源本身背对物体
         if (NdotL <= 0.0 || LdotLn <= 0.0) {
             continue;
         }
@@ -346,78 +644,27 @@ float3 ComputeAreaLightContribution(float3 hitPos, float3 normal, float3 viewDir
             continue;
         }
         
-        // 4. 计算光源采样PDF (立体角空间)
+        // 4. 计算光源采样PDF
         float area = light.width * light.height;
-        float pdf_light = distSq / (area * LdotLn + 1e-8); // 面积PDF转换为立体角PDF
+        float pdf_light = distSq / (area * LdotLn + 1e-8);
         
-        // 5. 辐射度计算
-        float3 Le = light.color * light.strength; 
+        // 5. 辐射度
+        float3 Le = light.color * light.strength;
         
-        // 6. BRDF 计算 - 使用纹理颜色
-        float3 baseColor = GetMaterialBaseColor(material, uv);
-        float3 diffuseAlbedo = baseColor * (1.0 - material.metallic);
-        float3 F0 = lerp(float3(0.04, 0.04, 0.04), baseColor, material.metallic);
-        
-        float3 halfVec = normalize(lightDir + viewDir);
-        float NdotH = max(dot(normal, halfVec), 0.0);
-        float VdotH = max(dot(viewDir, halfVec), 0.0);
-        float NdotV = max(dot(normal, viewDir), 0.0);
-        
-        // Fresnel
-        float3 F = FresnelSchlick(VdotH, F0);
-        
-        // GGX Distribution
-        float alpha = material.roughness * material.roughness;
-        float alpha2 = alpha * alpha;
-        float denom = (NdotH * NdotH * (alpha2 - 1.0) + 1.0);
-        float D = alpha2 / (PI * denom * denom + 1e-8);
-        
-        // Geometry term
-        float k = (material.roughness + 1.0) * (material.roughness + 1.0) / 8.0;
-        float G_V = NdotV / (NdotV * (1.0 - k) + k + 1e-8);
-        float G_L = NdotL / (NdotL * (1.0 - k) + k + 1e-8);
-        float G = G_V * G_L;
-        
-        // Specular BRDF
-        float3 specular = (D * F * G) / max(4.0 * NdotV * NdotL, 0.001);
-        
-        // 计算完整BRDF
-        float3 brdf;
+        // 6. 使用 Principled BSDF 评估
         float pdf_brdf;
+        float3 brdf_eval = EvaluatePrincipledBSDF(material, viewDir, lightDir, normal, uv, pdf_brdf);
         
-        if (material.transmission > 0.01) {
-            // [透明物体] - 只有镜面反射
-            brdf = specular;
-            // BRDF采样的PDF (GGX)
-            pdf_brdf = D * NdotH / (4.0 * VdotH + 0.0001);
-        } else {
-            // [不透明物体] - 漫反射 + 镜面反射
-            float3 kD = (1.0 - F) * (1.0 - material.metallic);
-            float3 diffuse = diffuseAlbedo / PI;
-            brdf = kD * diffuse + specular;
-            
-            // 混合PDF (根据材质属性混合漫反射和镜面反射PDF)
-            float specular_prob = max(max(F.x, F.y), F.z);
-            specular_prob = lerp(specular_prob, 1.0, material.metallic);
-            specular_prob = clamp(specular_prob, 0.1, 0.9);
-            
-            float pdf_diffuse = NdotL / PI;
-            float pdf_spec = D * NdotH / (4.0 * VdotH + 0.0001);
-            pdf_brdf = lerp(pdf_diffuse, pdf_spec, specular_prob);
-        }
-        
-        // 7. MIS权重计算 (Balance heuristic)
+        // 7. MIS权重
         float w_light = BalanceHeuristic(pdf_light, pdf_brdf);
         
-        // 8. 最终贡献 = Le * brdf * geometry_term * visibility * MIS_weight
-        // 几何因子 = (NdotL * LdotLn * Area) / distSq
+        // 8. 最终贡献
         float geometryFactor = (NdotL * LdotLn * area) / (distSq + 1e-8);
-        float3 contribution = Le * brdf * geometryFactor * visibility * w_light;
+        float3 contribution = Le * brdf_eval * visibility * w_light / (pdf_light + 1e-8);
         
         totalContribution += contribution;
     }
     
-    // 平均多次采样的结果
     return totalContribution / float(NUM_LIGHT_SAMPLES);
 }
 
@@ -425,16 +672,7 @@ float3 ComputeAreaLightContribution(float3 hitPos, float3 normal, float3 viewDir
 
 
 
-// 计算点光源的直接光照贡献 (带MIS)
-// 参数：
-//   hitPos: 着色点位置
-//   normal: 着色点法线
-//   viewDir: 视线方向（指向观察者）
-//   material: 材质属性
-//   uv: UV坐标用于纹理采样
-//   light: 点光源数据
-//   seed: 随机数种子（用于软阴影采样）
-// 返回：该点光源对着色点的光照贡献（RGB颜色）
+// 计算点光源的直接光照贡献 (使用 Principled BSDF)
 float3 ComputePointLightContribution(float3 hitPos, float3 normal, float3 viewDir, Material material, float2 uv, PointLight light, inout uint seed) {
 	// 计算光源方向和距离
 	float3 lightVec = light.position - hitPos;
@@ -459,61 +697,12 @@ float3 ComputePointLightContribution(float3 hitPos, float3 normal, float3 viewDi
 		return float3(0.0, 0.0, 0.0);
 	}
 	
-	// 获取材质颜色
-	float3 baseColor = GetMaterialBaseColor(material, uv);
-	float3 diffuseAlbedo = baseColor * (1.0 - material.metallic);
-	
-	// 计算BRDF
-	float3 halfVec = normalize(lightDir + viewDir);
-	float NdotH = max(dot(normal, halfVec), 0.0);
-	float NdotV = max(dot(normal, viewDir), 0.0);
-	float VdotH = max(dot(viewDir, halfVec), 0.0);
-	
-	// Fresnel
-	float3 F0 = lerp(float3(0.04, 0.04, 0.04), baseColor, material.metallic);
-	float3 F = FresnelSchlick(VdotH, F0);
-	
-	// GGX Distribution
-	float alpha = material.roughness * material.roughness;
-	float alpha2 = alpha * alpha;
-	float NdotH2 = NdotH * NdotH;
-	float denom = NdotH2 * (alpha2 - 1.0) + 1.0;
-	float D = alpha2 / (PI * denom * denom + 1e-8);
-	
-	// Geometry term
-	float k = (material.roughness + 1.0) * (material.roughness + 1.0) / 8.0;
-	float G_V = NdotV / (NdotV * (1.0 - k) + k + 1e-8);
-	float G_L = NdotL / (NdotL * (1.0 - k) + k + 1e-8);
-	float G = G_V * G_L;
-	
-	// Specular BRDF
-	float3 specular = (D * F * G) / max(4.0 * NdotV * NdotL, 0.001);
-	
-	// Diffuse BRDF
-	float3 diffuse = diffuseAlbedo / PI;
-	
-	// Combine diffuse and specular
-	float3 kD = (1.0 - F) * (1.0 - material.metallic);
-	float3 brdf = kD * diffuse + specular;
-	
-	// 点光源的MIS权重计算（点光源是delta分布，通常直接光照无需MIS）
-	// 但为了统一，我们保留简单的形式
-	float pdf_light = 1.0 / (4.0 * PI * lightDistance * lightDistance); // 点光源的立体角PDF近似
-	
-	// BRDF采样PDF
-	float specular_prob = max(max(F.x, F.y), F.z);
-	specular_prob = lerp(specular_prob, 1.0, material.metallic);
-	specular_prob = clamp(specular_prob, 0.1, 0.9);
-	
-	float pdf_diffuse = NdotL / PI;
-	float pdf_spec = D * NdotH / (4.0 * VdotH + 0.0001);
-	float pdf_brdf = lerp(pdf_diffuse, pdf_spec, specular_prob);
-	
-	// Power heuristic
-	float w_light = BalanceHeuristic(pdf_light, pdf_brdf);
+	// 使用 Principled BSDF 评估
+	float pdf_brdf;
+	float3 brdf_eval = EvaluatePrincipledBSDF(material, viewDir, lightDir, normal, uv, pdf_brdf);
 	
 	// 最终光照
-	float3 radiance = brdf * light.color * attenuation * NdotL * lightVisibility * SHADOW_DEBUG_BOOST;
+	float3 radiance = brdf_eval * light.color * attenuation * lightVisibility * SHADOW_DEBUG_BOOST;
 	
 	return radiance;
 }
@@ -676,6 +865,12 @@ float3 ComputePointLightContribution(float3 hitPos, float3 normal, float3 viewDi
 
         // ===== 间接光照 (BSDF Sampling / 递归) =====
         
+        // 添加自发光
+        if (mat.emission_strength > 0.0) {
+            radiance += throughput * mat.emission_color * mat.emission_strength;
+            break; // 击中发光体，终止路径
+        }
+        
         // [透明材质逻辑]
         if (mat.transmission > 0.01) {
             float etaI = 1.0;
@@ -698,57 +893,28 @@ float3 ComputePointLightContribution(float3 hitPos, float3 normal, float3 viewDi
                 if (Refract(-V, normal, etaI/etaT, refracted)) {
                     rayDir = normalize(refracted);
                     rayOrigin = hitPos - normal * 0.001;
-                    // Beer's Law 吸收 - 使用纹理颜色
-                    if (entering) throughput *= baseColor; // 使用纹理颜色而不是mat.transmission_color
+                    // Beer's Law 吸收
+                    if (entering) throughput *= mat.transmission_color;
                 } else {
                     rayDir = reflect(-V, normal); // 全反射
                     rayOrigin = hitPos + normal * 0.001;
                 }
             }
         } 
-        // [不透明材质逻辑 - 改进的BRDF采样]
+        // [不透明材质逻辑 - 使用 Principled BSDF]
         else {
-            float3 F0 = lerp(0.04, baseColor, mat.metallic);
-            float3 F = FresnelSchlick(max(dot(N, V), 0.0), F0);
+            // Sample Principled BSDF
+            float pdf_sample;
+            float3 bsdf_weight;
+            rayDir = SamplePrincipledBSDF(mat, V, N, uv, seed, pdf_sample, bsdf_weight);
             
-            // 计算镜面反射采样概率（基于Fresnel和金属度）
-            float specularProb = max(max(F.x, F.y), F.z);
-            specularProb = lerp(specularProb, 1.0, mat.metallic);
-            specularProb = clamp(specularProb, 0.1, 0.9);
-            
-            float sampleChoice = Rand01(seed);
-            bool sampleSpecular = (sampleChoice < specularProb);
-            
-            float pdf_sample = 1.0;
-            
-            if (sampleSpecular) {
-                // 镜面反射/金属采样
-                if (mat.roughness < 0.05) {
-                    // 完美镜面反射
-                    rayDir = reflect(-V, N);
-                } else {
-                    // GGX重要性采样
-                    rayDir = SampleGGX(N, V, mat.roughness, seed, pdf_sample);
-                }
-                
-                rayOrigin = hitPos + N * 0.001;
-                
-                float NdotL_next = max(dot(N, rayDir), 0.0);
-                if (NdotL_next > 0) {
-                    // 对于importance sampling，throughput乘以F即可（已经考虑了采样权重）
-                    throughput *= F / max(specularProb, 0.1);
-                } else {
-                    break; // 光线指向背面，终止路径
-                }
-            } else {
-                // 漫反射采样
-                rayDir = SampleCosineHemisphere(N, seed, pdf_sample);
-                rayOrigin = hitPos + N * 0.001;
-                
-                // 对于cosine-weighted采样，throughput直接乘以albedo
-                // (因为 brdf * NdotL / pdf = (albedo/PI) * NdotL / (NdotL/PI) = albedo)
-                throughput *= baseColor * (1.0 - mat.metallic) / max(1.0 - specularProb, 0.1);
+            // Check if sampling was successful
+            if (pdf_sample < 1e-7 || dot(N, rayDir) <= 0.0) {
+                break; // Invalid sample or ray goes below surface
             }
+            
+            rayOrigin = hitPos + N * 0.001;
+            throughput *= bsdf_weight;
         }
 
         // 俄罗斯轮盘赌 (Russian Roulette) 终止路径

@@ -104,6 +104,11 @@ void Scene::UpdateInstances() {
     tlas_->UpdateInstances(instances);
 }
 
+void Scene::UpdateMaterials() {
+    // Expose private UpdateMaterialsBuffer() functionality
+    UpdateMaterialsBuffer();
+}
+
 void Scene::UpdateMaterialsBuffer() {
     if (entities_.empty()) {
         return;
