@@ -3,8 +3,11 @@ struct CameraInfo {
   float4x4 camera_to_world;
   float aperture;        // 光圈大小
   float focus_distance;  // 焦距
-    int samples_per_pixel; // 每帧每像素样本数
-    int padding0;          // 对齐
+        float exposure;       // 曝光乘数（亮度缩放）
+        int samples_per_pixel; // 每帧每像素样本数
+        int debug_mode;        // 0=off,1=show-only-debug-point-light
+        int debug_point_index; // which point light index to debug (0..N-1)
+        int padding0;          // 对齐
 };
 
 struct Material {
@@ -783,6 +786,9 @@ float3 ComputePointLightContribution(float3 hitPos, float3 normal, float3 viewDi
     
     // 计算平均值
     float3 hdrColor = new_sum.rgb / float(new_count);
+
+    // Apply global exposure multiplier from camera settings
+    hdrColor *= camera_info.exposure;
     
     // [关键] 应用 Tone Mapping (HDR -> LDR)
     // 这将把 (20, 50, 20) 这样的亮度映射回 (0.9, 1.0, 0.9) 而不是截断

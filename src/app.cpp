@@ -333,7 +333,8 @@ void Application::OnInit() {
     {
         auto fg_sphere = std::make_shared<Entity>(
             "meshes/octahedron.obj",
-            Material(glm::vec3(0.3f, 0.3f, 1.0f), 0.05f, 0.0f, 0.95f, 1.5f), // 蓝色玻璃：明显的蓝色色调
+             Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.3f, 0.9f),
+            // Material(glm::vec3(0.3f, 0.3f, 1.0f), 0.05f, 0.0f, 0.95f, 1.5f), // 蓝色玻璃：明显的蓝色色调
             glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.35f, 4.0f)), glm::vec3(0.5f))
         );
         scene_->AddEntity(fg_sphere);
@@ -369,9 +370,10 @@ void Application::OnInit() {
     point_lights_.resize(16);  // 预留16个点光源槽位
     
     // 添加一个主光源（强白光）- 正上方偏右后方（更自然的布光）
-    point_lights_[0].position = glm::vec3(2.0f, 8.0f, 5.0f);
+    // Move main point light down so it's inside the room (y near ceiling = 4.8)
+    point_lights_[0].position = glm::vec3(2.0f, 3.8f, 5.0f);
     point_lights_[0].color = glm::vec3(1.0f, 1.0f, 1.0f);
-    point_lights_[0].strength = 50.0f; // 暂时关闭，测试面光源效果
+    point_lights_[0].strength = 2000.0f; // make it stronger for testing (can tune in UI)
     point_lights_[0].radius = 0.1f;
     
     // 添加一个补光光源（柔和白光）- 左上方，避免产生强反光
@@ -389,7 +391,7 @@ void Application::OnInit() {
     // 添加一个背景高亮点光源用于产生远处的bokeh高光
     point_lights_[3].position = glm::vec3(0.0f, 1.2f, -7.0f);
     point_lights_[3].color = glm::vec3(1.0f, 0.9f, 0.7f);
-    point_lights_[3].strength = 0.0f; // 暂时关闭
+    point_lights_[3].strength = 250.0f; // 暂时关闭
     point_lights_[3].radius = 0.05f;    // 小半径产生更集中的高光
     
     // 其余光源强度设为0（未使用）
@@ -410,7 +412,7 @@ void Application::OnInit() {
     // 配置主光源 - 天花板白光
     area_lights_[0].position = glm::vec3(0.0f, 4.8f, 0.0f);      // 接近天花板
     area_lights_[0].color = glm::vec3(1.0f, 1.0f, 1.0f);         // 白色
-    area_lights_[0].strength = 5.0f;                            // 较强的主光源
+    area_lights_[0].strength = 0.0f;                            // 较强的主光源
     area_lights_[0].width = 3.0f;                                 // 较大面积
     area_lights_[0].height = 3.0f;                                
     area_lights_[0].direction = glm::normalize(glm::vec3(0.0f, -1.0f, 0.0f));  // 向下
@@ -422,7 +424,7 @@ void Application::OnInit() {
     // 配置左侧光
     area_lights_[1].position = glm::vec3(-4.9f, 2.0f, 0.0f);     // 靠近左墙
     area_lights_[1].color = glm::vec3(0.4f, 0.4f, 1.0f);         // 柔和蓝色
-    area_lights_[1].strength = 8.0f;                             // 中等强度
+    area_lights_[1].strength = 0.0f;                             // 中等强度
     area_lights_[1].width = 0.5f;                                 // 窄条
     area_lights_[1].height = 2.5f;                                // 高条
     area_lights_[1].direction = glm::normalize(glm::vec3(1.0f, 0.0f, 0.0f));   // 向右
@@ -434,7 +436,7 @@ void Application::OnInit() {
     // 配置右侧光
     area_lights_[2].position = glm::vec3(4.9f, 2.0f, 0.0f);      // 靠近右墙
     area_lights_[2].color = glm::vec3(1.0f, 0.6f, 0.4f);         // 暖橙色
-    area_lights_[2].strength = 8.0f;                             // 中等强度
+    area_lights_[2].strength = 0.0f;                             // 中等强度
     area_lights_[2].width = 0.5f;                                 // 窄条
     area_lights_[2].height = 2.5f;                                // 高条
     area_lights_[2].direction = glm::normalize(glm::vec3(-1.0f, 0.0f, 0.0f));  // 向左
@@ -480,10 +482,12 @@ void Application::OnInit() {
     hover_consistency_threshold_ = 2; // default 2 frames consistency
     
     // Initialize depth of field parameters
-    aperture_ = 0.12f;        // 默认开启景深，这个值比较明显（可在UI调整）
+    aperture_ = 0.0f;        // 默认开启景深，这个值比较明显（可在UI调整）
     focus_distance_ = 6.0f;  // 默认焦距6米 -> focal plane at z=2 (camera z=8)
         samples_per_frame_ = 2;  // 每帧每像素多采样次数，默认为2，能显著降低闪烁
         focused_entity_id_ = -1; // no focus locked initially
+    exposure_ = 0.5f;        // Default exposure multiplier
+    lights_need_upload_ = false; // track if any light params changed
 
     // Calculate initial camera_front_ based on yaw and pitch
     glm::vec3 front;
@@ -501,6 +505,7 @@ void Application::OnInit() {
     camera_object.aperture = aperture_;
     camera_object.focus_distance = focus_distance_;
     camera_object.samples_per_pixel = samples_per_frame_;
+    camera_object.exposure = exposure_;
     camera_object.padding[0] = 0;
     camera_object_buffer_->UploadData(&camera_object, sizeof(CameraObject));
 
@@ -709,6 +714,7 @@ void Application::OnUpdate() {
         }
         current_camera_object.focus_distance = focus_distance_;
         current_camera_object.samples_per_pixel = samples_per_frame_;
+        current_camera_object.exposure = exposure_;
         current_camera_object.padding[0] = 0;
         camera_object_buffer_->UploadData(&current_camera_object, sizeof(CameraObject));
         // --------------- 修改结束 ---------------
@@ -955,6 +961,52 @@ void Application::RenderInfoOverlay() {
 
     ImGui::Spacing();
 
+    // Light controls (quick debug + adjust exposure)
+    ImGui::SeparatorText("Lights / Exposure");
+    bool lights_changed = false;
+    if (ImGui::SliderFloat("Exposure", &exposure_, 0.01f, 0.1f, "%.2f")) {
+        lights_changed = true;
+    }
+
+    // Area light 0 controls - primary ceiling light
+    if (!area_lights_.empty()) {
+        AreaLight &al0 = area_lights_[0];
+        ImGui::Text("Area Light 0 (Ceiling)");
+        if (ImGui::SliderFloat("Area Light 0 Strength", &al0.strength, 0.0f, 200.0f, "%.1f")) {
+            lights_changed = true;
+        }
+        if (ImGui::ColorEdit3("Area Light 0 Color", &al0.color.x)) {
+            lights_changed = true;
+        }
+    }
+
+    // Point light 0 controls
+    if (!point_lights_.empty()) {
+        PointLight &pl0 = point_lights_[0];
+        ImGui::Text("Point Light 0");
+        if (ImGui::SliderFloat("Point Light 0 Strength", &pl0.strength, 0.0f, 2000.0f, "%.1f")) {
+            lights_changed = true;
+        }
+        if (ImGui::ColorEdit3("Point Light 0 Color", &pl0.color.x)) {
+            lights_changed = true;
+        }
+        if (ImGui::DragFloat3("Point Light 0 Position", &pl0.position.x, 0.1f, -10.0f, 10.0f)) {
+            lights_changed = true;
+        }
+        if (ImGui::Button("Reset Point Light 0 to Room", ImVec2(-1, 0))) {
+            pl0.position = glm::vec3(2.0f, 3.8f, 5.0f);
+            pl0.strength = 2000.0f;
+            exposure_ = 1.0f;
+            lights_changed = true;
+        }
+    }
+
+    // Upload light parameters if changed
+    if (lights_changed) {
+        lights_need_upload_ = true;
+        if (film_) film_->Reset(); // reset accumulation on lighting changes
+    }
+
     // Controls hint
     ImGui::SeparatorText("Controls");
     ImGui::TextColored(ImVec4(0.5f, 1.0f, 0.5f, 1.0f), "Right Click to enable camera");
@@ -1170,6 +1222,14 @@ void Application::OnRender() {
     command_context->CmdBindResources(12, { depth_image_.get() }, grassland::graphics::BIND_POINT_RAYTRACING);
     command_context->CmdBindResources(8, { point_lights_buffer_.get() }, grassland::graphics::BIND_POINT_RAYTRACING);  // 绑定点光源
     command_context->CmdBindResources(9, { area_lights_buffer_.get() }, grassland::graphics::BIND_POINT_RAYTRACING);  // 绑定面光源
+
+    // If UI changed lights, re-upload data to GPU buffer (so shader sees changes)
+    if (lights_need_upload_) {
+        if (point_lights_buffer_) point_lights_buffer_->UploadData(point_lights_.data(), sizeof(PointLight) * point_lights_.size());
+        if (area_lights_buffer_) area_lights_buffer_->UploadData(area_lights_.data(), sizeof(AreaLight) * area_lights_.size());
+        lights_need_upload_ = false;
+        grassland::LogInfo("Light buffers updated (uploaded to GPU). PL0 pos=(%.2f, %.2f, %.2f) strength=%.1f", point_lights_[0].position.x, point_lights_[0].position.y, point_lights_[0].position.z, point_lights_[0].strength);
+    }
     
     // Bind textures and sampler (space10)
     if (scene_->GetTextureCount() > 0) {

@@ -9,6 +9,7 @@ struct CameraObject {
     glm::mat4 camera_to_world;
     float aperture;        // 光圈大小(模拟真实相机光圈)
     float focus_distance;  // 焦距(聚焦平面距离)
+    float exposure;        // 成像曝光补偿（multiplier）
     int samples_per_pixel; // 每帧发射的样本数，用于减少闪烁
     int padding[1];      // 对齐到16字节
 };
@@ -118,6 +119,8 @@ private:
     float aperture_;        // 光圈大小 (0 = 无景深效果)
     float focus_distance_;  // 焦距 (聚焦平面距离)
     int samples_per_frame_; // 每帧为每像素发射的样本数量（用于降低闪烁）
+    float exposure_;        // 全局曝光调整 (shader 内应用)
+    bool lights_need_upload_ = false; // Set true when UI changes light params
     
     // Mouse hovering
     double mouse_x_;
