@@ -3,7 +3,7 @@
 ## Core Components
 
 ### • Base (Basic)
-- Implement a path tracing algorithm that correctly handles diffuse and specular materials :white_check_mark:
+- Implement a path tracing algorithm that correctly handles diffuse and specular materials :white_check_mark: lcy
 
 ### • Scene Creation (Basic, +1pt for tidiness and attractiveness)
 - Build a custom scene with aesthetic considerations
@@ -16,18 +16,18 @@
 ## Advanced Features
 
 ### • Material (Choose one)
-- Transmissive material (Basic)
+- Transmissive material (Basic) :white_check_mark: lcy
 - **Principled BSDF (2pts)**
 - **Multi-layer material (2pts)**
 - **Rendering of fur, hair, skin, etc. (2pts)**
 
 ### • Texture (Choose one or more)
-- Color texture (Basic)
+- Color texture (Basic) :white_check_mark: lcy
 - **Normal map, height map, attribute map, or functional texture mapping (1pt each, up to 2pts)**
 - **Implement an adaptive mipmap algorithm (2pts)**
 
-### • Importance Sampling (2pts)
-- Use advanced sampling algorithms for path tracing
+### • Importance Sampling (2pts) :white_check_mark: lcy
+- Use advanced sampling algorithms for path tracing 
 - Importance sampling with Russian Roulette
 - Multiple importance sampling
 
@@ -40,13 +40,14 @@
 - **Volumetric alpha shadow (2pts)**
 
 ### • Special Visual Effects (Choose one or more)
-- Motion blur, depth of field (Basic)
-- Alpha shadow (Basic)
+- Motion blur
+-  depth of field (Basic) :white_check_mark: lcy
+- Alpha shadow (Basic) :white_check_mark: lcy
 - **Cartoon style rendering (2pts)**
 - **Chromatic dispersion (2pts)**
 
 ### • Lighting (Choose one)
-- Point light and area light (Basic)
+- Point light and area light (Basic) :white_check_mark: lcy
 - **Environment lighting with HDR, such as skybox (2pts)**
 
 ### • Anti-aliasing (Basic)
@@ -156,4 +157,5 @@ Material(
     metallic              // Metallic factor (0.0 = dielectric, 1.0 = metal)
 );
 ```
+
 
