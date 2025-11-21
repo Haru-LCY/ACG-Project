@@ -15,6 +15,9 @@ set(DEMO_SOURCES
 
 add_executable(ShortMarchDemo ${DEMO_SOURCES})
 
+target_include_directories(ShortMarchDemo PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/shaders)
+target_compile_definitions(ShortMarchDemo PUBLIC SHADER_DIR="${CMAKE_CURRENT_SOURCE_DIR}/shaders/")
+
 target_link_libraries(ShortMarchDemo LongMarch)
 
 PACK_SHADER_CODE(ShortMarchDemo)

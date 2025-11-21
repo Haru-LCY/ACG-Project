@@ -518,9 +518,10 @@ void Application::OnInit() {
     core_->CreateImage(window_->GetWidth(), window_->GetHeight(), grassland::graphics::IMAGE_FORMAT_R32_SFLOAT,
         &depth_image_);
 
-    core_->CreateShader(GetShaderCode("shaders/shader.hlsl"), "RayGenMain", "lib_6_3", &raygen_shader_);
-    core_->CreateShader(GetShaderCode("shaders/shader.hlsl"), "MissMain", "lib_6_3", &miss_shader_);
-    core_->CreateShader(GetShaderCode("shaders/shader.hlsl"), "ClosestHitMain", "lib_6_3", &closest_hit_shader_);
+    grassland::VirtualFileSystem shader_vfs = GetShaderVirtualFileSystem();
+    core_->CreateShader(shader_vfs, "shaders/shader.hlsl", "RayGenMain", "lib_6_3", &raygen_shader_);
+    core_->CreateShader(shader_vfs, "shaders/shader.hlsl", "MissMain", "lib_6_3", &miss_shader_);
+    core_->CreateShader(shader_vfs, "shaders/shader.hlsl", "ClosestHitMain", "lib_6_3", &closest_hit_shader_);
     grassland::LogInfo("Shader compiled successfully");
 
     // Create texture sampler
