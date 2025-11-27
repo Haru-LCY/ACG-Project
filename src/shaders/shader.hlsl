@@ -57,6 +57,16 @@
         // 执行路径追踪
         float3 radiance = TracePath(rayOrigin, rayDir, seed);
         
+        // 关键修复：限制单个采样radiance的最大值，防止异常采样导致亮点
+        // 即使throughput和pointLightContrib都有保护，某些极端角度组合仍可能产生异常值
+        const float MAX_SAMPLE_RADIANCE = 10000.0; // 单个采样的最大radiance值
+        float maxRadiance = max(max(radiance.r, radiance.g), radiance.b);
+        if (maxRadiance > MAX_SAMPLE_RADIANCE) {
+            // 如果radiance过大，进行裁剪（避免异常亮点污染累积结果）
+            float scale = MAX_SAMPLE_RADIANCE / maxRadiance;
+            radiance *= scale;
+        }
+        
         // accumulate this sample
         radianceSum += radiance;
         lastPayload = pickPayload;

@@ -210,6 +210,7 @@ bool TraceRayWithKDT(float3 rayOrigin, float3 rayDir, float tMin, float tMax, in
 // 执行路径追踪
 float3 TracePath(float3 rayOrigin, float3 rayDir, inout uint seed) {
     const int MAX_BOUNCES = 8; // 优化：8次弹射足够，平衡质量和性能
+    const float MAX_THROUGHPUT = 1000.0; // 合理的throughput上限值，防止累积导致数值爆炸
     RayPayload payload;
     float3 radiance = float3(0,0,0);
     float3 throughput = float3(1,1,1);
@@ -324,18 +325,34 @@ float3 TracePath(float3 rayOrigin, float3 rayDir, inout uint seed) {
             
             rayOrigin = hitPos + N * 0.001;
             throughput *= bsdf_weight;
+            
+            // 关键修复：限制throughput的最大值，防止累积导致数值爆炸
+            // 当throughput过大时，说明路径已经不稳定，应该提前终止
+            float maxThroughput = max(max(throughput.r, throughput.g), throughput.b);
+            if (maxThroughput > MAX_THROUGHPUT) {
+                // 如果throughput过大，终止路径（避免异常亮点）
+                break;
+            }
         }
 
         // 俄罗斯轮盘赌 (Russian Roulette) 终止路径
-        // 改进：使用更智能的生存概率计算
+        // 改进：使用更智能的生存概率计算，避免过度放大throughput
         if (bounce > 2) {
-            float survivalProb = max(max(throughput.r, throughput.g), throughput.b);
-            survivalProb = clamp(survivalProb, 0.1, 0.95); // 限制在合理范围
+            float maxThroughput = max(max(throughput.r, throughput.g), throughput.b);
+            // 改进：使用更大的最小生存概率，避免过度放大throughput
+            // 当throughput已经很大时，应该更倾向于终止路径
+            float survivalProb = clamp(maxThroughput, 0.3, 0.95); // 提高最小值从0.1到0.3
             
             if (Rand01(seed) > survivalProb) {
                 break; // 终止路径
             }
             throughput /= survivalProb; // 无偏估计
+            
+            // 再次检查throughput是否过大（俄罗斯轮盘赌后可能放大）
+            maxThroughput = max(max(throughput.r, throughput.g), throughput.b);
+            if (maxThroughput > MAX_THROUGHPUT) {
+                break; // 终止路径
+            }
         }
         
         // 额外的安全检查：如果throughput过小，提前终止

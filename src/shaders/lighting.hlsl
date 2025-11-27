@@ -147,8 +147,29 @@ float3 ComputePointLightContribution(float3 hitPos, float3 normal, float3 viewDi
 	float lightDistance = length(lightVec);
 	float3 lightDir = normalize(lightVec);
 	
-	// 计算光照衰减（平方反比定律）
-	float attenuation = light.strength / (4.0 * PI * lightDistance * lightDistance);
+	// 改进的距离保护：使用更大的最小距离，并考虑光源半径
+	// 如果光源半径太小或为0，使用更安全的最小距离
+	const float MIN_LIGHT_DISTANCE = 0.05; // 增加到0.05，提供更好的保护
+	const float MIN_RADIUS = 0.01; // 光源半径的最小值
+	
+	// 确保光源半径不为0或过小
+	float effectiveRadius = max(light.radius, MIN_RADIUS);
+	float safeDistance = max(lightDistance, max(effectiveRadius, MIN_LIGHT_DISTANCE));
+	
+	// 改进的衰减计算：使用平滑衰减曲线，避免硬截止
+	// 当距离接近最小距离时，使用平滑过渡
+	float distSq = safeDistance * safeDistance;
+	float baseAttenuation = light.strength / (4.0 * PI * distSq);
+	
+	// 添加额外的衰减因子，当距离很小时进一步衰减
+	// 使用平滑的衰减曲线：1 / (1 + (d_min/d)^2)
+	float distanceRatio = MIN_LIGHT_DISTANCE / safeDistance;
+	float smoothFactor = 1.0 / (1.0 + distanceRatio * distanceRatio);
+	float attenuation = baseAttenuation * smoothFactor;
+	
+	// 限制衰减的最大值，防止异常大的衰减值
+	const float MAX_ATTENUATION = 1e4; // 合理的上限值
+	attenuation = min(attenuation, MAX_ATTENUATION);
 	
 	// 检查光源是否在表面的正面
 	float NdotL = dot(normal, lightDir);
@@ -159,7 +180,9 @@ float3 ComputePointLightContribution(float3 hitPos, float3 normal, float3 viewDi
 	// 检查阴影遮挡
 	const float RAY_EPSILON = 0.001;
 	float3 shadowOrigin = hitPos + normal * RAY_EPSILON;
-	float3 lightVisibility = TraceAlphaShadowRGB(shadowOrigin, lightDir, lightDistance, seed);
+	// 修正阴影射线距离：起点已偏移RAY_EPSILON，距离应该相应减少
+	float shadowRayDistance = max(safeDistance - RAY_EPSILON, 0.0);
+	float3 lightVisibility = TraceAlphaShadowRGB(shadowOrigin, lightDir, shadowRayDistance, seed);
 	
 	if (max(max(lightVisibility.r, lightVisibility.g), lightVisibility.b) < 0.001) {
 		return float3(0.0, 0.0, 0.0);
@@ -171,6 +194,12 @@ float3 ComputePointLightContribution(float3 hitPos, float3 normal, float3 viewDi
 	
 	// 最终光照
 	float3 radiance = brdf_eval * light.color * attenuation * lightVisibility * SHADOW_DEBUG_BOOST;
+	
+	// 添加radiance上限保护，防止异常值导致过曝亮点
+	// 限制单个点光源的最大贡献，避免数值爆炸
+	// 由于衰减和BRDF都已经有了上限保护，这里使用更合理的上限值
+	const float MAX_RADIANCE_PER_LIGHT = 500.0; // 降低上限值，因为衰减和BRDF已经有保护
+	radiance = min(radiance, float3(MAX_RADIANCE_PER_LIGHT, MAX_RADIANCE_PER_LIGHT, MAX_RADIANCE_PER_LIGHT));
 	
 	return radiance;
 }

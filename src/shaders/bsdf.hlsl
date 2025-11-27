@@ -112,15 +112,31 @@ float GGX_D(float3 H, float3 N, float3 T, float3 B, float roughness, float aniso
 	float alpha_x = roughness * roughness / aspect;
 	float alpha_y = roughness * roughness * aspect;
 	
-	float NdotH = dot(N, H);
+	float NdotH = max(dot(N, H), 0.0); // 确保非负
 	float TdotH = dot(T, H);
 	float BdotH = dot(B, H);
 	
 	float a2 = alpha_x * alpha_y;
 	float3 v = float3(alpha_y * TdotH, alpha_x * BdotH, a2 * NdotH);
 	float v2 = dot(v, v);
+	
+	// 添加数值稳定性保护：防止v2过小导致w2爆炸
+	// 当v2非常小时，D项应该接近0，而不是无限大
+	const float MIN_V2 = 1e-10; // 防止除零的最小值
+	v2 = max(v2, MIN_V2);
+	
 	float w2 = a2 / v2;
-	return a2 * w2 * w2 / PI;
+	
+	// 限制w2的最大值，防止数值爆炸
+	// 理论上D项的最大值约为 1/(PI * alpha^2)，这里使用更保守的上限
+	const float MAX_W2 = 1e6; // 合理的上限，防止数值溢出
+	w2 = min(w2, MAX_W2);
+	
+	float D = a2 * w2 * w2 / PI;
+	
+	// 最终安全检查：限制D项的最大值
+	const float MAX_D = 1e4; // 防止异常大的D值
+	return min(D, MAX_D);
 }
 
 // GGX Geometry term (Smith)
@@ -308,7 +324,16 @@ float3 EvaluatePrincipledBSDF(Material mat, float3 V, float3 L, float3 N, float2
 	// GGX specular
 	float D = GGX_D(H, N, T, B, mat.roughness, mat.anisotropic);
 	float G = GGX_G(V, L, N, T, B, mat.roughness, mat.anisotropic);
-	float3 specular = D * F * G / (4.0 * NdotV * NdotL + 1e-7);
+	
+	// 改进的除零保护：使用更大的epsilon，并限制分母的最小值
+	const float MIN_DENOM = 1e-5; // 更大的最小值保护
+	float denominator = max(4.0 * NdotV * NdotL, MIN_DENOM);
+	float3 specular = D * F * G / denominator;
+	
+	// 限制specular项的最大值，防止数值爆炸
+	// 即使D、F、G都很大，specular也不应该超过合理范围
+	const float MAX_SPECULAR = 1e3; // 合理的上限值
+	specular = min(specular, float3(MAX_SPECULAR, MAX_SPECULAR, MAX_SPECULAR));
 	
 	// Diffuse (energy-conserving)
 	float3 kD = (1.0 - F) * (1.0 - mat.metallic);
@@ -397,8 +422,19 @@ float3 SamplePrincipledBSDF(Material mat, float3 V, float3 N, float2 uv, inout u
 	pdf = eval_pdf;
 	
 	// Weight is BRDF * NdotL / PDF (but BRDF already includes NdotL)
+	// 关键修复：限制weight的最大值，防止pdf过小时weight爆炸
 	if (pdf > 1e-7) {
 		weight = brdf / pdf;
+		
+		// 限制weight的最大值，防止数值爆炸
+		// 理论上weight应该接近1，但在某些极端情况下（如低粗糙度镜面反射）可能很大
+		// 这里使用合理的上限，防止单个采样导致异常亮点
+		const float MAX_WEIGHT = 100.0; // 合理的上限值
+		float maxWeight = max(max(weight.r, weight.g), weight.b);
+		if (maxWeight > MAX_WEIGHT) {
+			float scale = MAX_WEIGHT / maxWeight;
+			weight *= scale;
+		}
 	} else {
 		weight = float3(0, 0, 0);
 	}
