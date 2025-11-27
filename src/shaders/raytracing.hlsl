@@ -136,7 +136,7 @@ bool RayAABBIntersect(float3 rayOrigin, float3 rayDir, float3 aabbMin, float3 aa
     return true;
 }
 
-// KDT遍历函数：使用栈进行遍历（最基础实现，无剪枝优化）
+// KDT遍历函数：从根节点出发，递归遍历树
 // 返回是否命中
 bool TraceRayWithKDT(float3 rayOrigin, float3 rayDir, float tMin, float tMax, inout RayPayload payload) {
     // 如果KDT节点数组为空，回退到普通TraceRay
@@ -151,17 +151,17 @@ bool TraceRayWithKDT(float3 rayOrigin, float3 rayDir, float tMin, float tMax, in
         return payload.hit;
     }
     
-    // 使用栈进行遍历（最大深度限制为32）
-    int stack[32];
-    int stackTop = 0;
-    stack[stackTop++] = 0;  // 从根节点开始
-    
     bool hit = false;
     float closestT = tMax;
     RayPayload bestPayload = payload;
     bestPayload.hit = false;
     
     const float epsilon = 1e-6;
+    
+    // 使用栈模拟递归遍历（从根节点开始）
+    int stack[32];
+    int stackTop = 0;
+    stack[stackTop++] = 0;  // 根节点索引为0
     
     while (stackTop > 0 && stackTop < 32) {
         int nodeIdx = stack[--stackTop];
@@ -171,20 +171,20 @@ bool TraceRayWithKDT(float3 rayOrigin, float3 rayDir, float tMin, float tMax, in
         
         KDTNode node = kdt_nodes[nodeIdx];
         
-        // 检查光线是否与节点AABB相交（使用最基础的AABB相交测试，无剪枝）
+        // 检查光线是否与当前节点AABB相交
         float tHitAABB;
         bool intersects = RayAABBIntersect(rayOrigin, rayDir, node.aabb_min, node.aabb_max, tMin, tMax, tHitAABB);
         if (!intersects) {
             continue;  // 不相交，跳过
         }
         
-        // 如果是叶子节点，使用TraceRay进行实际的光线追踪
+        // 如果是叶子节点，处理并返回
         if (node.split_axis == -1) {
             RayDesc ray;
             ray.Origin = rayOrigin;
             ray.Direction = rayDir;
             ray.TMin = tMin;
-            ray.TMax = tMax;  // 使用原始的tMax，不使用closestT剪枝
+            ray.TMax = tMax;
             
             RayPayload nodePayload = payload;
             nodePayload.hit = false;
@@ -211,108 +211,12 @@ bool TraceRayWithKDT(float3 rayOrigin, float3 rayDir, float tMin, float tMax, in
                 }
             }
         } else {
-            // 内部节点：根据分割轴和光线方向决定遍历顺序
-            int axis = node.split_axis;
-            float splitPos = node.split_pos;
-            
-            // 如果光线方向与分割轴平行
-            if (abs(rayDir[axis]) < epsilon) {
-                // 光线与分割轴平行，检查光线起点相对于分割面的位置
-                float distToSplit = rayOrigin[axis] - splitPos;
-                
-                // 检查分割面是否在节点AABB范围内
-                float aabbMin = node.aabb_min[axis];
-                float aabbMax = node.aabb_max[axis];
-                bool splitInAABB = (splitPos >= aabbMin - epsilon) && (splitPos <= aabbMax + epsilon);
-                
-                // 检查光线起点相对于分割面的位置
-                bool originOnLeft = rayOrigin[axis] < splitPos - epsilon;
-                bool originOnRight = rayOrigin[axis] > splitPos + epsilon;
-                bool originOnSplit = !originOnLeft && !originOnRight;
-                
-                // 如果分割面在AABB内，或者起点在分割面上，检查两侧
-                if (splitInAABB || originOnSplit) {
-                    if (node.left_child_idx >= 0) {
-                        stack[stackTop++] = node.left_child_idx;
-                    }
-                    if (node.right_child_idx >= 0) {
-                        stack[stackTop++] = node.right_child_idx;
-                    }
-                } else {
-                    // 分割面不在AABB内，且起点明确在一侧，只检查那一侧
-                    int childToCheck = originOnLeft ? node.left_child_idx : node.right_child_idx;
-                    if (childToCheck >= 0) {
-                        stack[stackTop++] = childToCheck;
-                    }
-                }
-            } else {
-                // 光线与分割轴不平行，计算光线与分割平面的交点
-                float invDirAxis = 1.0 / rayDir[axis];
-                float tSplit = (splitPos - rayOrigin[axis]) * invDirAxis;
-                
-                // 判断光线方向
-                bool dirIsPositive = rayDir[axis] > 0.0;
-                
-                // 检查光线起点是否在分割面上
-                float distToSplit = rayOrigin[axis] - splitPos;
-                bool onSplitPlane = abs(distToSplit) < epsilon;
-                
-                // 确定近侧和远侧子节点
-                int nearChild, farChild;
-                if (dirIsPositive) {
-                    nearChild = node.left_child_idx;
-                    farChild = node.right_child_idx;
-                } else {
-                    nearChild = node.right_child_idx;
-                    farChild = node.left_child_idx;
-                }
-                
-                // 如果光线起点在分割面上，需要检查两侧
-                if (onSplitPlane) {
-                    if (node.left_child_idx >= 0) {
-                        stack[stackTop++] = node.left_child_idx;
-                    }
-                    if (node.right_child_idx >= 0) {
-                        stack[stackTop++] = node.right_child_idx;
-                    }
-                } else {
-                    // 光线起点不在分割面上
-                    // 确定光线起点相对于分割面的位置
-                    bool originOnNearSide = dirIsPositive ? 
-                        (rayOrigin[axis] < splitPos - epsilon) : 
-                        (rayOrigin[axis] > splitPos + epsilon);
-                    
-                    // 检查分割面是否在节点AABB范围内
-                    float aabbMin = node.aabb_min[axis];
-                    float aabbMax = node.aabb_max[axis];
-                    bool splitInAABB = (splitPos >= aabbMin - epsilon) && (splitPos <= aabbMax + epsilon);
-                    
-                    // 如果起点在近侧，检查近侧子节点
-                    if (originOnNearSide && nearChild >= 0) {
-                        stack[stackTop++] = nearChild;
-                    }
-                    
-                    // 如果起点在远侧，检查远侧子节点
-                    if (!originOnNearSide && farChild >= 0) {
-                        stack[stackTop++] = farChild;
-                    }
-                    
-                    // 检查是否需要检查另一侧：
-                    // 只有当光线会穿过分割面到达另一侧时才检查
-                    // 需要同时满足：
-                    // 1. 起点在近侧（光线从近侧出发）
-                    // 2. 分割面在节点AABB范围内
-                    // 3. tSplit在有效范围内（tMin到tMax之间，不使用closestT剪枝）
-                    bool willCrossSplit = originOnNearSide && 
-                                         splitInAABB && 
-                                         (tSplit >= tMin - epsilon) && 
-                                         (tSplit <= tMax + epsilon);
-                    
-                    // 如果起点在近侧且光线会穿过分割面，检查远侧
-                    if (willCrossSplit && farChild >= 0) {
-                        stack[stackTop++] = farChild;
-                    }
-                }
+            // 内部节点：递归检查左右子节点
+            if (node.left_child_idx >= 0) {
+                stack[stackTop++] = node.left_child_idx;
+            }
+            if (node.right_child_idx >= 0) {
+                stack[stackTop++] = node.right_child_idx;
             }
         }
     }
