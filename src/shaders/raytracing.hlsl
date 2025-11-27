@@ -136,7 +136,7 @@ bool RayAABBIntersect(float3 rayOrigin, float3 rayDir, float3 aabbMin, float3 aa
     return true;
 }
 
-// KDT遍历函数：从根节点出发，递归遍历树
+// KDT遍历函数：从根节点出发，找到所有相交的叶子节点，合并mask后执行一次TraceRay
 // 返回是否命中
 bool TraceRayWithKDT(float3 rayOrigin, float3 rayDir, float tMin, float tMax, inout RayPayload payload) {
     // 如果KDT节点数组为空，回退到普通TraceRay
@@ -151,12 +151,8 @@ bool TraceRayWithKDT(float3 rayOrigin, float3 rayDir, float tMin, float tMax, in
         return payload.hit;
     }
     
-    bool hit = false;
-    float closestT = tMax;
-    RayPayload bestPayload = payload;
-    bestPayload.hit = false;
-    
-    const float epsilon = 1e-6;
+    // 第一步：遍历树，找到所有相交的叶子节点，合并mask
+    uint mergedMask = 0;
     
     // 使用栈模拟递归遍历（从根节点开始）
     int stack[32];
@@ -178,38 +174,9 @@ bool TraceRayWithKDT(float3 rayOrigin, float3 rayDir, float tMin, float tMax, in
             continue;  // 不相交，跳过
         }
         
-        // 如果是叶子节点，处理并返回
+        // 如果是叶子节点，合并mask
         if (node.split_axis == -1) {
-            RayDesc ray;
-            ray.Origin = rayOrigin;
-            ray.Direction = rayDir;
-            ray.TMin = tMin;
-            ray.TMax = tMax;
-            
-            RayPayload nodePayload = payload;
-            nodePayload.hit = false;
-            
-            // 使用节点的mask进行TraceRay
-            TraceRay(as, RAY_FLAG_NONE, node.mask, 0, 1, 0, ray, nodePayload);
-            
-            if (nodePayload.hit) {
-                // 计算交点的t值
-                float3 toHit = nodePayload.hit_pos - rayOrigin;
-                float rayDirLenSq = dot(rayDir, rayDir);
-                float t;
-                if (rayDirLenSq > epsilon) {
-                    t = dot(toHit, rayDir) / rayDirLenSq;
-                } else {
-                    t = length(toHit);
-                }
-                
-                // 检查t值是否有效，并更新最近的交点
-                if (t >= tMin - epsilon && t <= tMax + epsilon && t < closestT) {
-                    closestT = t;
-                    bestPayload = nodePayload;
-                    hit = true;
-                }
-            }
+            mergedMask |= node.mask;
         } else {
             // 内部节点：递归检查左右子节点
             if (node.left_child_idx >= 0) {
@@ -221,14 +188,23 @@ bool TraceRayWithKDT(float3 rayOrigin, float3 rayDir, float tMin, float tMax, in
         }
     }
     
-    // 更新payload
-    if (hit) {
-        payload = bestPayload;
-    } else {
+    // 第二步：如果没有任何相交的叶子节点，返回未命中
+    if (mergedMask == 0) {
         payload.hit = false;
+        return false;
     }
     
-    return hit;
+    // 第三步：使用合并后的mask执行一次TraceRay
+    RayDesc ray;
+    ray.Origin = rayOrigin;
+    ray.Direction = rayDir;
+    ray.TMin = tMin;
+    ray.TMax = tMax;
+    
+    payload.hit = false;
+    TraceRay(as, RAY_FLAG_NONE, mergedMask, 0, 1, 0, ray, payload);
+    
+    return payload.hit;
 }
 
 // 执行路径追踪
