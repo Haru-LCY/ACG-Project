@@ -210,7 +210,7 @@ bool TraceRayWithKDT(float3 rayOrigin, float3 rayDir, float tMin, float tMax, in
 // 执行路径追踪
 float3 TracePath(float3 rayOrigin, float3 rayDir, inout uint seed) {
     const int MAX_BOUNCES = 8; // 优化：8次弹射足够，平衡质量和性能
-    const float MAX_THROUGHPUT = 1000.0; // 合理的throughput上限值，防止累积导致数值爆炸
+    const float MAX_THROUGHPUT = 100.0; // 降低throughput上限值，更严格地防止累积导致数值爆炸
     RayPayload payload;
     float3 radiance = float3(0,0,0);
     float3 throughput = float3(1,1,1);
@@ -253,12 +253,23 @@ float3 TracePath(float3 rayOrigin, float3 rayDir, inout uint seed) {
         
         if (useNEE) {
             // 1. 点光源循环
+            // 关键修复：对点光源计算时的throughput做特殊处理，防止异常放大
+            // 当throughput已经很大时，限制其对点光源贡献的影响
+            float3 effectiveThroughput = throughput;
+            float maxThroughput = max(max(throughput.r, throughput.g), throughput.b);
+            const float MAX_THROUGHPUT_FOR_LIGHT = 50.0; // 点光源计算时的throughput上限，更严格
+            if (maxThroughput > MAX_THROUGHPUT_FOR_LIGHT) {
+                float scale = MAX_THROUGHPUT_FOR_LIGHT / maxThroughput;
+                effectiveThroughput *= scale;
+            }
+            
             const int MAX_POINT_LIGHTS = 16;
             for(int i=0; i<MAX_POINT_LIGHTS; ++i) {
                 PointLight pl = point_lights[i];
                 if(pl.strength > 0.0) {
                     float3 pointLightContrib = ComputePointLightContribution(hitPos, N, V, mat, uv, pl, seed);
-                    radiance += throughput * pointLightContrib;
+                    // 使用限制后的effectiveThroughput，而不是原始的throughput
+                    radiance += effectiveThroughput * pointLightContrib;
                 }
             }
             

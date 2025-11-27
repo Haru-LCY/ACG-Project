@@ -428,8 +428,8 @@ float3 SamplePrincipledBSDF(Material mat, float3 V, float3 N, float2 uv, inout u
 		
 		// 限制weight的最大值，防止数值爆炸
 		// 理论上weight应该接近1，但在某些极端情况下（如低粗糙度镜面反射）可能很大
-		// 这里使用合理的上限，防止单个采样导致异常亮点
-		const float MAX_WEIGHT = 100.0; // 合理的上限值
+		// 这里使用更严格的上限，防止单个采样导致异常亮点
+		const float MAX_WEIGHT = 50.0; // 降低上限值，更严格地防止weight爆炸
 		float maxWeight = max(max(weight.r, weight.g), weight.b);
 		if (maxWeight > MAX_WEIGHT) {
 			float scale = MAX_WEIGHT / maxWeight;

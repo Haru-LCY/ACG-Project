@@ -197,8 +197,8 @@ float3 ComputePointLightContribution(float3 hitPos, float3 normal, float3 viewDi
 	
 	// 添加radiance上限保护，防止异常值导致过曝亮点
 	// 限制单个点光源的最大贡献，避免数值爆炸
-	// 由于衰减和BRDF都已经有了上限保护，这里使用更合理的上限值
-	const float MAX_RADIANCE_PER_LIGHT = 500.0; // 降低上限值，因为衰减和BRDF已经有保护
+	// 由于衰减和BRDF都已经有了上限保护，这里使用更严格的上限值
+	const float MAX_RADIANCE_PER_LIGHT = 100.0; // 大幅降低上限值，更严格地防止异常亮点
 	radiance = min(radiance, float3(MAX_RADIANCE_PER_LIGHT, MAX_RADIANCE_PER_LIGHT, MAX_RADIANCE_PER_LIGHT));
 	
 	return radiance;
