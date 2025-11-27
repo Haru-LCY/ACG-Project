@@ -106,11 +106,38 @@ void BuildOrthonormalBasis(float3 N, out float3 T, out float3 B) {
 	B = cross(N, T);
 }
 
+// 计算各向异性 alpha 值（减少重复计算）
+void ComputeAnisotropicAlpha(float roughness, float anisotropic, out float alpha_x, out float alpha_y) {
+	float aspect = sqrt(1.0 - anisotropic * 0.9);
+	alpha_x = roughness * roughness / aspect;
+	alpha_y = roughness * roughness * aspect;
+}
+
+// 计算镜面反射颜色和 F0（减少重复计算）
+void ComputeSpecularColor(Material mat, float3 baseColor, out float3 spec_color, out float3 F0) {
+	float lum = dot(baseColor, float3(0.299, 0.587, 0.114));
+	float3 tint_color = lum > 0 ? baseColor / lum : float3(1, 1, 1);
+	spec_color = lerp(float3(1, 1, 1), tint_color, mat.specular_tint);
+	F0 = lerp(0.08 * mat.specular * spec_color, baseColor, mat.metallic);
+}
+
+// 计算 lobe 权重（减少重复计算）
+void ComputeLobeWeights(float3 F, float3 kD, float clearcoat, 
+                         out float diffuse_weight, out float specular_weight, out float clearcoat_weight) {
+	diffuse_weight = max(max(kD.x, kD.y), kD.z);
+	specular_weight = max(max(F.x, F.y), F.z);
+	clearcoat_weight = clearcoat * 0.25;
+	
+	float total_weight = diffuse_weight + specular_weight + clearcoat_weight + 1e-7;
+	diffuse_weight /= total_weight;
+	specular_weight /= total_weight;
+	clearcoat_weight /= total_weight;
+}
+
 // GGX Distribution (with anisotropic support)
 float GGX_D(float3 H, float3 N, float3 T, float3 B, float roughness, float anisotropic) {
-	float aspect = sqrt(1.0 - anisotropic * 0.9);
-	float alpha_x = roughness * roughness / aspect;
-	float alpha_y = roughness * roughness * aspect;
+	float alpha_x, alpha_y;
+	ComputeAnisotropicAlpha(roughness, anisotropic, alpha_x, alpha_y);
 	
 	float NdotH = max(dot(N, H), 0.0); // 确保非负
 	float TdotH = dot(T, H);
@@ -141,9 +168,8 @@ float GGX_D(float3 H, float3 N, float3 T, float3 B, float roughness, float aniso
 
 // GGX Geometry term (Smith)
 float GGX_G1(float3 V, float3 N, float3 T, float3 B, float roughness, float anisotropic) {
-	float aspect = sqrt(1.0 - anisotropic * 0.9);
-	float alpha_x = roughness * roughness / aspect;
-	float alpha_y = roughness * roughness * aspect;
+	float alpha_x, alpha_y;
+	ComputeAnisotropicAlpha(roughness, anisotropic, alpha_x, alpha_y);
 	
 	float NdotV = abs(dot(N, V));
 	float TdotV = dot(T, V);
@@ -158,15 +184,11 @@ float GGX_G(float3 V, float3 L, float3 N, float3 T, float3 B, float roughness, f
 	return GGX_G1(V, N, T, B, roughness, anisotropic) * GGX_G1(L, N, T, B, roughness, anisotropic);
 }
 
-// Sample GGX distribution (anisotropic)
-float3 SampleGGX(float3 N, float3 V, float roughness, float anisotropic, float anisotropic_rotation, 
-                 inout uint seed, out float pdf) {
+// Sample GGX distribution (anisotropic) - 内部版本，接受预计算的 T, B
+float3 SampleGGX_Internal(float3 N, float3 V, float3 T, float3 B, float roughness, float anisotropic, 
+                          float anisotropic_rotation, inout uint seed, out float pdf) {
 	float u1 = Rand01(seed);
 	float u2 = Rand01(seed);
-	
-	// Build tangent space
-	float3 T, B;
-	BuildOrthonormalBasis(N, T, B);
 	
 	// Apply anisotropic rotation
 	float rotation_angle = anisotropic_rotation * 2.0 * PI;
@@ -178,9 +200,8 @@ float3 SampleGGX(float3 N, float3 V, float roughness, float anisotropic, float a
 	B = B_rot;
 	
 	// Sample with anisotropy
-	float aspect = sqrt(1.0 - anisotropic * 0.9);
-	float alpha_x = roughness * roughness / aspect;
-	float alpha_y = roughness * roughness * aspect;
+	float alpha_x, alpha_y;
+	ComputeAnisotropicAlpha(roughness, anisotropic, alpha_x, alpha_y);
 	
 	float phi = atan2(alpha_y * sin(2.0 * PI * u2), alpha_x * cos(2.0 * PI * u2));
 	float cos_phi = cos(phi);
@@ -205,6 +226,14 @@ float3 SampleGGX(float3 N, float3 V, float roughness, float anisotropic, float a
 	pdf = D * NdotH / (4.0 * VdotH + 1e-7);
 	
 	return L;
+}
+
+// Sample GGX distribution (anisotropic) - 外部接口，保持兼容性
+float3 SampleGGX(float3 N, float3 V, float roughness, float anisotropic, float anisotropic_rotation, 
+                 inout uint seed, out float pdf) {
+	float3 T, B;
+	BuildOrthonormalBasis(N, T, B);
+	return SampleGGX_Internal(N, V, T, B, roughness, anisotropic, anisotropic_rotation, seed, pdf);
 }
 
 // Sheen BRDF (Estevez & Kulla)
@@ -255,9 +284,8 @@ float3 EvaluateClearcoat(float3 V, float3 L, float3 N, float clearcoat, float cl
 	
 	pdf = D * NdotH / (4.0 * VdotH + 1e-7);
 	
-	return float3(clearcoat * 0.25 * F * D * G / (4.0 * NdotV * NdotL + 1e-7), 
-	              clearcoat * 0.25 * F * D * G / (4.0 * NdotV * NdotL + 1e-7),
-	              clearcoat * 0.25 * F * D * G / (4.0 * NdotV * NdotL + 1e-7));
+	float clearcoat_value = clearcoat * 0.25 * F * D * G / (4.0 * NdotV * NdotL + 1e-7);
+	return float3(clearcoat_value, clearcoat_value, clearcoat_value);
 }
 
 // Sample clearcoat lobe
@@ -313,10 +341,8 @@ float3 EvaluatePrincipledBSDF(Material mat, float3 V, float3 L, float3 N, float2
 	BuildOrthonormalBasis(N, T, B);
 	
 	// Specular reflection color
-	float lum = dot(baseColor, float3(0.299, 0.587, 0.114));
-	float3 tint_color = lum > 0 ? baseColor / lum : float3(1, 1, 1);
-	float3 spec_color = lerp(float3(1, 1, 1), tint_color, mat.specular_tint);
-	float3 F0 = lerp(0.08 * mat.specular * spec_color, baseColor, mat.metallic);
+	float3 spec_color, F0;
+	ComputeSpecularColor(mat, baseColor, spec_color, F0);
 	
 	// Fresnel
 	float3 F = F0 + (1.0 - F0) * pow(1.0 - VdotH, 5.0);
@@ -350,14 +376,8 @@ float3 EvaluatePrincipledBSDF(Material mat, float3 V, float3 L, float3 N, float2
 	float3 brdf = diffuse + specular + sheen + clearcoat;
 	
 	// Calculate combined PDF
-	float diffuse_weight = max(max(kD.x, kD.y), kD.z);
-	float specular_weight = max(max(F.x, F.y), F.z);
-	float clearcoat_weight = mat.clearcoat * 0.25;
-	
-	float total_weight = diffuse_weight + specular_weight + clearcoat_weight + 1e-7;
-	diffuse_weight /= total_weight;
-	specular_weight /= total_weight;
-	clearcoat_weight /= total_weight;
+	float diffuse_weight, specular_weight, clearcoat_weight;
+	ComputeLobeWeights(F, kD, mat.clearcoat, diffuse_weight, specular_weight, clearcoat_weight);
 	
 	float pdf_diffuse = NdotL / PI;
 	float pdf_specular = D * NdotH / (4.0 * VdotH + 1e-7);
@@ -371,30 +391,21 @@ float3 EvaluatePrincipledBSDF(Material mat, float3 V, float3 L, float3 N, float2
 float3 SamplePrincipledBSDF(Material mat, float3 V, float3 N, float2 uv, inout uint seed, out float pdf, out float3 weight) {
 	float3 baseColor = GetMaterialBaseColor(mat, uv);
 	
-	// Build tangent space
+	// Build tangent space (预计算，避免在采样函数中重复计算)
 	float3 T, B;
 	BuildOrthonormalBasis(N, T, B);
 	
 	// Calculate lobe weights
-	float3 H = N; // temporary
 	float VdotH_approx = max(dot(V, N), 0.0);
 	
-	float lum = dot(baseColor, float3(0.299, 0.587, 0.114));
-	float3 tint_color = lum > 0 ? baseColor / lum : float3(1, 1, 1);
-	float3 spec_color = lerp(float3(1, 1, 1), tint_color, mat.specular_tint);
-	float3 F0 = lerp(0.08 * mat.specular * spec_color, baseColor, mat.metallic);
+	float3 spec_color, F0;
+	ComputeSpecularColor(mat, baseColor, spec_color, F0);
 	float3 F_approx = F0 + (1.0 - F0) * pow(1.0 - VdotH_approx, 5.0);
 	
 	float3 kD = (1.0 - F_approx) * (1.0 - mat.metallic);
 	
-	float diffuse_weight = max(max(kD.x, kD.y), kD.z);
-	float specular_weight = max(max(F_approx.x, F_approx.y), F_approx.z);
-	float clearcoat_weight = mat.clearcoat * 0.25;
-	
-	float total_weight = diffuse_weight + specular_weight + clearcoat_weight + 1e-7;
-	diffuse_weight /= total_weight;
-	specular_weight /= total_weight;
-	clearcoat_weight /= total_weight;
+	float diffuse_weight, specular_weight, clearcoat_weight;
+	ComputeLobeWeights(F_approx, kD, mat.clearcoat, diffuse_weight, specular_weight, clearcoat_weight);
 	
 	// Choose lobe to sample
 	float lobe_choice = Rand01(seed);
@@ -405,8 +416,8 @@ float3 SamplePrincipledBSDF(Material mat, float3 V, float3 N, float2 uv, inout u
 		L = SampleCosineHemisphere(N, seed, pdf);
 		weight = float3(1, 1, 1); // Will be multiplied by BRDF evaluation
 	} else if (lobe_choice < diffuse_weight + specular_weight) {
-		// Sample specular lobe
-		L = SampleGGX(N, V, mat.roughness, mat.anisotropic, mat.anisotropic_rotation, seed, pdf);
+		// Sample specular lobe (使用预计算的 T, B)
+		L = SampleGGX_Internal(N, V, T, B, mat.roughness, mat.anisotropic, mat.anisotropic_rotation, seed, pdf);
 		weight = float3(1, 1, 1);
 	} else {
 		// Sample clearcoat lobe
