@@ -139,6 +139,9 @@ private:
     glm::mat4 prev_camera_to_world_;
     glm::mat4 prev_screen_to_camera_;
     bool has_prev_camera_ = false;
+    
+    // KDT调试信息：存储中心像素的相交信息
+    std::vector<Scene::KDTIntersectionInfo> center_pixel_intersections_;
 
     // 辅助函数：比较两个矩阵是否不同
     bool MatrixChanged(const glm::mat4& a, const glm::mat4& b, float epsilon = 1e-5f) {

@@ -19,6 +19,314 @@ float3 ACESFilm(float3 x) {
     return saturate((x * (a * x + b)) / (x * (c * x + d) + e));
 }
 
+// 光线与AABB相交检测（使用slab方法，最基础实现，严格处理边界）
+// 返回true表示相交，false表示不相交
+// 如果相交，tHit返回相交的t值（进入AABB的点，如果起点在AABB内则返回tMin）
+bool RayAABBIntersect(float3 rayOrigin, float3 rayDir, float3 aabbMin, float3 aabbMax, float tMin, float tMax, out float tHit) {
+    const float epsilon = 1e-7;
+    
+    // 首先严格检查光线起点是否在AABB内（这是关键！）
+    bool originInside = (rayOrigin.x >= aabbMin.x - epsilon) && (rayOrigin.x <= aabbMax.x + epsilon) &&
+                         (rayOrigin.y >= aabbMin.y - epsilon) && (rayOrigin.y <= aabbMax.y + epsilon) &&
+                         (rayOrigin.z >= aabbMin.z - epsilon) && (rayOrigin.z <= aabbMax.z + epsilon);
+    
+    // 如果起点在AABB内，直接返回相交（使用tMin作为起始点）
+    if (originInside) {
+        tHit = tMin;
+        // tMin应该在有效范围内（由调用者保证），直接返回true
+        return true;
+    }
+    
+    // 起点在AABB外，使用标准的slab方法
+    // 计算每个轴的相交区间
+    float3 t0 = float3(0, 0, 0);
+    float3 t1 = float3(0, 0, 0);
+    
+    // X轴
+    if (abs(rayDir.x) < epsilon) {
+        // 光线与X轴平行
+        if (rayOrigin.x < aabbMin.x - epsilon || rayOrigin.x > aabbMax.x + epsilon) {
+            return false;  // 不相交
+        }
+        t0.x = -1e30;
+        t1.x = 1e30;
+    } else {
+        float invDirX = 1.0 / rayDir.x;
+        t0.x = (aabbMin.x - rayOrigin.x) * invDirX;
+        t1.x = (aabbMax.x - rayOrigin.x) * invDirX;
+        if (t0.x > t1.x) {
+            float temp = t0.x;
+            t0.x = t1.x;
+            t1.x = temp;
+        }
+    }
+    
+    // Y轴
+    if (abs(rayDir.y) < epsilon) {
+        // 光线与Y轴平行
+        if (rayOrigin.y < aabbMin.y - epsilon || rayOrigin.y > aabbMax.y + epsilon) {
+            return false;  // 不相交
+        }
+        t0.y = -1e30;
+        t1.y = 1e30;
+    } else {
+        float invDirY = 1.0 / rayDir.y;
+        t0.y = (aabbMin.y - rayOrigin.y) * invDirY;
+        t1.y = (aabbMax.y - rayOrigin.y) * invDirY;
+        if (t0.y > t1.y) {
+            float temp = t0.y;
+            t0.y = t1.y;
+            t1.y = temp;
+        }
+    }
+    
+    // Z轴
+    if (abs(rayDir.z) < epsilon) {
+        // 光线与Z轴平行
+        if (rayOrigin.z < aabbMin.z - epsilon || rayOrigin.z > aabbMax.z + epsilon) {
+            return false;  // 不相交
+        }
+        t0.z = -1e30;
+        t1.z = 1e30;
+    } else {
+        float invDirZ = 1.0 / rayDir.z;
+        t0.z = (aabbMin.z - rayOrigin.z) * invDirZ;
+        t1.z = (aabbMax.z - rayOrigin.z) * invDirZ;
+        if (t0.z > t1.z) {
+            float temp = t0.z;
+            t0.z = t1.z;
+            t1.z = temp;
+        }
+    }
+    
+    // 找到最大的tNear和最小的tFar
+    float tNearMax = max(max(t0.x, t0.y), t0.z);
+    float tFarMin = min(min(t1.x, t1.y), t1.z);
+    
+    // 检查是否相交：tNearMax <= tFarMin
+    if (tNearMax > tFarMin + epsilon) {
+        return false;  // 不相交
+    }
+    
+    // 检查相交点是否在有效范围内
+    // tNearMax是进入AABB的点
+    if (tNearMax > tMax + epsilon) {
+        return false;  // 进入点在有效范围之外
+    }
+    
+    if (tFarMin < tMin - epsilon) {
+        return false;  // AABB完全在光线起点之前
+    }
+    
+    // 确定相交的t值
+    if (tNearMax < tMin - epsilon) {
+        // 如果进入点在tMin之前，但AABB与光线相交，说明起点在AABB内（但我们已经检查过了）
+        // 这种情况不应该发生，但为了安全起见，使用tMin
+        tHit = tMin;
+    } else {
+        // 使用进入点
+        tHit = tNearMax;
+    }
+    
+    // 最终检查：确保tHit在有效范围内
+    if (tHit < tMin - epsilon || tHit > tMax + epsilon) {
+        return false;
+    }
+    
+    return true;
+}
+
+// KDT遍历函数：使用栈进行遍历（最基础实现，无剪枝优化）
+// 返回是否命中
+bool TraceRayWithKDT(float3 rayOrigin, float3 rayDir, float tMin, float tMax, inout RayPayload payload) {
+    // 如果KDT节点数组为空，回退到普通TraceRay
+    uint numNodes = kdt_info.num_nodes;
+    if (numNodes == 0) {
+        RayDesc ray;
+        ray.Origin = rayOrigin;
+        ray.Direction = rayDir;
+        ray.TMin = tMin;
+        ray.TMax = tMax;
+        TraceRay(as, RAY_FLAG_NONE, 0xFF, 0, 1, 0, ray, payload);
+        return payload.hit;
+    }
+    
+    // 使用栈进行遍历（最大深度限制为32）
+    int stack[32];
+    int stackTop = 0;
+    stack[stackTop++] = 0;  // 从根节点开始
+    
+    bool hit = false;
+    float closestT = tMax;
+    RayPayload bestPayload = payload;
+    bestPayload.hit = false;
+    
+    const float epsilon = 1e-6;
+    
+    while (stackTop > 0 && stackTop < 32) {
+        int nodeIdx = stack[--stackTop];
+        if (nodeIdx < 0 || nodeIdx >= (int)numNodes) {
+            continue;
+        }
+        
+        KDTNode node = kdt_nodes[nodeIdx];
+        
+        // 检查光线是否与节点AABB相交（使用最基础的AABB相交测试，无剪枝）
+        float tHitAABB;
+        bool intersects = RayAABBIntersect(rayOrigin, rayDir, node.aabb_min, node.aabb_max, tMin, tMax, tHitAABB);
+        if (!intersects) {
+            continue;  // 不相交，跳过
+        }
+        
+        // 如果是叶子节点，使用TraceRay进行实际的光线追踪
+        if (node.split_axis == -1) {
+            RayDesc ray;
+            ray.Origin = rayOrigin;
+            ray.Direction = rayDir;
+            ray.TMin = tMin;
+            ray.TMax = tMax;  // 使用原始的tMax，不使用closestT剪枝
+            
+            RayPayload nodePayload = payload;
+            nodePayload.hit = false;
+            
+            // 使用节点的mask进行TraceRay
+            TraceRay(as, RAY_FLAG_NONE, node.mask, 0, 1, 0, ray, nodePayload);
+            
+            if (nodePayload.hit) {
+                // 计算交点的t值
+                float3 toHit = nodePayload.hit_pos - rayOrigin;
+                float rayDirLenSq = dot(rayDir, rayDir);
+                float t;
+                if (rayDirLenSq > epsilon) {
+                    t = dot(toHit, rayDir) / rayDirLenSq;
+                } else {
+                    t = length(toHit);
+                }
+                
+                // 检查t值是否有效，并更新最近的交点
+                if (t >= tMin - epsilon && t <= tMax + epsilon && t < closestT) {
+                    closestT = t;
+                    bestPayload = nodePayload;
+                    hit = true;
+                }
+            }
+        } else {
+            // 内部节点：根据分割轴和光线方向决定遍历顺序
+            int axis = node.split_axis;
+            float splitPos = node.split_pos;
+            
+            // 如果光线方向与分割轴平行
+            if (abs(rayDir[axis]) < epsilon) {
+                // 光线与分割轴平行，检查光线起点相对于分割面的位置
+                float distToSplit = rayOrigin[axis] - splitPos;
+                
+                // 检查分割面是否在节点AABB范围内
+                float aabbMin = node.aabb_min[axis];
+                float aabbMax = node.aabb_max[axis];
+                bool splitInAABB = (splitPos >= aabbMin - epsilon) && (splitPos <= aabbMax + epsilon);
+                
+                // 检查光线起点相对于分割面的位置
+                bool originOnLeft = rayOrigin[axis] < splitPos - epsilon;
+                bool originOnRight = rayOrigin[axis] > splitPos + epsilon;
+                bool originOnSplit = !originOnLeft && !originOnRight;
+                
+                // 如果分割面在AABB内，或者起点在分割面上，检查两侧
+                if (splitInAABB || originOnSplit) {
+                    if (node.left_child_idx >= 0) {
+                        stack[stackTop++] = node.left_child_idx;
+                    }
+                    if (node.right_child_idx >= 0) {
+                        stack[stackTop++] = node.right_child_idx;
+                    }
+                } else {
+                    // 分割面不在AABB内，且起点明确在一侧，只检查那一侧
+                    int childToCheck = originOnLeft ? node.left_child_idx : node.right_child_idx;
+                    if (childToCheck >= 0) {
+                        stack[stackTop++] = childToCheck;
+                    }
+                }
+            } else {
+                // 光线与分割轴不平行，计算光线与分割平面的交点
+                float invDirAxis = 1.0 / rayDir[axis];
+                float tSplit = (splitPos - rayOrigin[axis]) * invDirAxis;
+                
+                // 判断光线方向
+                bool dirIsPositive = rayDir[axis] > 0.0;
+                
+                // 检查光线起点是否在分割面上
+                float distToSplit = rayOrigin[axis] - splitPos;
+                bool onSplitPlane = abs(distToSplit) < epsilon;
+                
+                // 确定近侧和远侧子节点
+                int nearChild, farChild;
+                if (dirIsPositive) {
+                    nearChild = node.left_child_idx;
+                    farChild = node.right_child_idx;
+                } else {
+                    nearChild = node.right_child_idx;
+                    farChild = node.left_child_idx;
+                }
+                
+                // 如果光线起点在分割面上，需要检查两侧
+                if (onSplitPlane) {
+                    if (node.left_child_idx >= 0) {
+                        stack[stackTop++] = node.left_child_idx;
+                    }
+                    if (node.right_child_idx >= 0) {
+                        stack[stackTop++] = node.right_child_idx;
+                    }
+                } else {
+                    // 光线起点不在分割面上
+                    // 确定光线起点相对于分割面的位置
+                    bool originOnNearSide = dirIsPositive ? 
+                        (rayOrigin[axis] < splitPos - epsilon) : 
+                        (rayOrigin[axis] > splitPos + epsilon);
+                    
+                    // 检查分割面是否在节点AABB范围内
+                    float aabbMin = node.aabb_min[axis];
+                    float aabbMax = node.aabb_max[axis];
+                    bool splitInAABB = (splitPos >= aabbMin - epsilon) && (splitPos <= aabbMax + epsilon);
+                    
+                    // 如果起点在近侧，检查近侧子节点
+                    if (originOnNearSide && nearChild >= 0) {
+                        stack[stackTop++] = nearChild;
+                    }
+                    
+                    // 如果起点在远侧，检查远侧子节点
+                    if (!originOnNearSide && farChild >= 0) {
+                        stack[stackTop++] = farChild;
+                    }
+                    
+                    // 检查是否需要检查另一侧：
+                    // 只有当光线会穿过分割面到达另一侧时才检查
+                    // 需要同时满足：
+                    // 1. 起点在近侧（光线从近侧出发）
+                    // 2. 分割面在节点AABB范围内
+                    // 3. tSplit在有效范围内（tMin到tMax之间，不使用closestT剪枝）
+                    bool willCrossSplit = originOnNearSide && 
+                                         splitInAABB && 
+                                         (tSplit >= tMin - epsilon) && 
+                                         (tSplit <= tMax + epsilon);
+                    
+                    // 如果起点在近侧且光线会穿过分割面，检查远侧
+                    if (willCrossSplit && farChild >= 0) {
+                        stack[stackTop++] = farChild;
+                    }
+                }
+            }
+        }
+    }
+    
+    // 更新payload
+    if (hit) {
+        payload = bestPayload;
+    } else {
+        payload.hit = false;
+    }
+    
+    return hit;
+}
+
 // 执行路径追踪
 float3 TracePath(float3 rayOrigin, float3 rayDir, inout uint seed) {
     const int MAX_BOUNCES = 8; // 优化：8次弹射足够，平衡质量和性能
@@ -33,13 +341,8 @@ float3 TracePath(float3 rayOrigin, float3 rayDir, inout uint seed) {
         payload.hit_pos = float3(0,0,0);
         payload.normal = float3(0,1,0);
         
-        RayDesc ray;
-        ray.Origin = rayOrigin;
-        ray.Direction = rayDir;
-        ray.TMin = 0.001;
-        ray.TMax = 10000.0;
-        
-        TraceRay(as, RAY_FLAG_NONE, 0xFF, 0, 1, 0, ray, payload);
+        // 使用KDT加速的光线追踪
+        TraceRayWithKDT(rayOrigin, rayDir, 0.001, 10000.0, payload);
         
         if (!payload.hit) {
             // Skybox / Environment - 提升环境光亮度

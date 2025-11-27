@@ -405,7 +405,7 @@ void Application::OnInit() {
     // 创建并上传点光源缓冲区
     core_->CreateBuffer(sizeof(PointLight) * 16, grassland::graphics::BUFFER_TYPE_DYNAMIC, &point_lights_buffer_);
     point_lights_buffer_->UploadData(point_lights_.data(), sizeof(PointLight) * 16);
-    grassland::LogInfo("初始化了 {} 个点光源", 3);
+    grassland::LogInfo("Initialized {} point lights", 3);
 
     // 初始化面光源数组（最多8个）
     area_lights_.resize(8);
@@ -462,7 +462,7 @@ void Application::OnInit() {
     // 创建并上传面光源缓冲区
     core_->CreateBuffer(sizeof(AreaLight) * 8, grassland::graphics::BUFFER_TYPE_DYNAMIC, &area_lights_buffer_);
     area_lights_buffer_->UploadData(area_lights_.data(), sizeof(AreaLight) * 8);
-    grassland::LogInfo("初始化了 {} 个面光源", 3);
+    grassland::LogInfo("Initialized {} area lights", 3);
 
     // Initialize camera state member variables
     camera_pos_ = glm::vec3{ 0.0f, 1.0f, 8.0f }; // 远离一些以扩展景深距离
@@ -545,8 +545,10 @@ void Application::OnInit() {
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space8 - point lights
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space9 - area lights
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_IMAGE, 16);                  // space10 - texture array
-    program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_SAMPLER, 1);                 // space10 - texture sampler
+    program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_SAMPLER, 1);                 // space11 - texture sampler
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_WRITABLE_IMAGE, 1);          // space12 - depth image
+    program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space13 - KDT nodes
+    program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_UNIFORM_BUFFER, 1);          // space14 - KDT info
     // 暂时注释掉全局几何缓冲区绑定
     // program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space9 - global vertices
     // program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space10 - global normals
@@ -681,11 +683,9 @@ void Application::OnUpdate() {
         if (camera_enabled_ != last_camera_enabled_) {
             if (camera_enabled_) {
                 // Camera just got enabled - will be moving, so prepare for reset when it stops
-                grassland::LogInfo("Camera enabled - accumulation will reset when camera stops");
             } else {
                 // Camera just got disabled - reset accumulation for new stationary view
                 film_->Reset();
-                grassland::LogInfo("Camera disabled - starting accumulation");
             }
             last_camera_enabled_ = camera_enabled_;
         }
@@ -697,6 +697,37 @@ void Application::OnUpdate() {
         HoverInfo hover_info{};
         hover_info.hovered_entity_id = hovered_entity_id_;
         hover_info_buffer_->UploadData(&hover_info, sizeof(HoverInfo));
+        
+        // 当摄像机不动时，计算中心像素的光线并收集KDT相交信息
+        if (!camera_enabled_ && scene_->GetKDTNodeCount() > 0) {
+            // 计算中心像素的光线方向（与shader中GenerateCameraRay相同）
+            int width = window_->GetWidth();
+            int height = window_->GetHeight();
+            glm::vec2 pixel_center = glm::vec2(width / 2.0f, height / 2.0f);
+            glm::vec2 uv = pixel_center / glm::vec2(width, height);
+            uv.y = 1.0f - uv.y;
+            glm::vec2 d = uv * 2.0f - 1.0f;
+            
+            // 使用当前的camera_to_world矩阵计算光线方向
+            CameraObject current_camera_object{};
+            current_camera_object.screen_to_camera = glm::inverse(
+                glm::perspective(glm::radians(60.0f), (float)width / (float)height, 0.1f, 10.0f));
+            current_camera_object.camera_to_world =
+                glm::inverse(glm::lookAt(camera_pos_, camera_pos_ + camera_front_, camera_up_));
+            
+            glm::vec4 target = glm::vec4(d.x, d.y, 1.0f, 1.0f);
+            glm::mat4 screen_to_camera = current_camera_object.screen_to_camera;
+            glm::vec4 target_camera = screen_to_camera * target;
+            glm::mat4 camera_to_world = current_camera_object.camera_to_world;
+            glm::vec4 direction_world = camera_to_world * glm::vec4(glm::vec3(target_camera), 0.0f);
+            glm::vec3 rayDir = glm::normalize(glm::vec3(direction_world));
+            
+            // 测试中心像素光线与所有KDT节点的相交
+            center_pixel_intersections_ = scene_->DebugTestRayAABBIntersection(
+                camera_pos_, rayDir, 0.001f, 10000.0f);
+        } else {
+            center_pixel_intersections_.clear();
+        }
 
         // --------------- 修改开始 ---------------
         // 上传当前帧的 CameraObject（使用上面计算的 current_camera_object）
@@ -1017,6 +1048,32 @@ void Application::RenderInfoOverlay() {
     ImGui::Spacing();
     ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.5f, 1.0f), "Hold Tab to hide UI");
     ImGui::TextColored(ImVec4(0.5f, 1.0f, 1.0f, 1.0f), "Ctrl+S to save screenshot");
+    
+    // KDT Intersection Debug Info (only when camera is not moving)
+    if (!camera_enabled_ && !center_pixel_intersections_.empty()) {
+        ImGui::Spacing();
+        ImGui::SeparatorText("KDT Center Pixel Intersections");
+        ImGui::Text("Center pixel ray intersections: %zu", center_pixel_intersections_.size());
+        
+        // 使用可滚动区域显示所有相交信息
+        ImGui::BeginChild("KDTIntersections", ImVec2(0, 300), true);
+        for (size_t i = 0; i < center_pixel_intersections_.size(); ++i) {
+            const auto& info = center_pixel_intersections_[i];
+            if (info.is_leaf) {
+                ImGui::TextColored(ImVec4(0.5f, 1.0f, 0.5f, 1.0f), 
+                    "Node %d [LEAF]: t=%.3f, mask=0x%02X, entities=%d",
+                    info.node_idx, info.t_hit, info.mask, info.entity_count);
+            } else {
+                ImGui::TextColored(ImVec4(0.7f, 0.7f, 1.0f, 1.0f),
+                    "Node %d [INTERNAL]: t=%.3f, axis=%d, split=%.3f, mask=0x%02X",
+                    info.node_idx, info.t_hit, info.split_axis, info.split_pos, info.mask);
+            }
+            ImGui::Text("  AABB: min=(%.2f,%.2f,%.2f) max=(%.2f,%.2f,%.2f)",
+                info.aabb_min.x, info.aabb_min.y, info.aabb_min.z,
+                info.aabb_max.x, info.aabb_max.y, info.aabb_max.z);
+        }
+        ImGui::EndChild();
+    }
 
     ImGui::End();
 }
@@ -1244,6 +1301,7 @@ void Application::OnRender() {
         return;
     }
 
+
     std::unique_ptr<grassland::graphics::CommandContext> command_context;
     core_->CreateCommandContext(&command_context);
     command_context->CmdClearImage(color_image_.get(), { {0.6, 0.7, 0.8, 1.0} });
@@ -1265,6 +1323,14 @@ void Application::OnRender() {
     command_context->CmdBindResources(12, { depth_image_.get() }, grassland::graphics::BIND_POINT_RAYTRACING);
     command_context->CmdBindResources(8, { point_lights_buffer_.get() }, grassland::graphics::BIND_POINT_RAYTRACING);  // 绑定点光源
     command_context->CmdBindResources(9, { area_lights_buffer_.get() }, grassland::graphics::BIND_POINT_RAYTRACING);  // 绑定面光源
+    
+    // 绑定KDT节点buffer和info buffer（如果存在）
+    if (scene_->GetKDTNodesBuffer()) {
+        command_context->CmdBindResources(13, { scene_->GetKDTNodesBuffer() }, grassland::graphics::BIND_POINT_RAYTRACING);
+    }
+    if (scene_->GetKDTInfoBuffer()) {
+        command_context->CmdBindResources(14, { scene_->GetKDTInfoBuffer() }, grassland::graphics::BIND_POINT_RAYTRACING);
+    }
 
     // If UI changed lights, re-upload data to GPU buffer (so shader sees changes)
     if (lights_need_upload_) {
