@@ -98,6 +98,26 @@ struct RayPayload {
 	float2 uv;  // UV坐标用于纹理采样
 };
 
+// Skybox / Environment Map 信息
+struct SkyboxInfo {
+    // 程序化天空颜色
+    float3 zenith_color;      // 天顶颜色
+    float has_environment_map; // 是否有环境贴图 (>0.5 = true)
+    
+    float3 horizon_color;     // 地平线颜色
+    float environment_intensity; // 环境光强度
+    
+    float3 ground_color;      // 地面颜色
+    float environment_rotation; // 环境贴图旋转角度（弧度）
+    
+    // 太阳/方向光设置
+    float3 sun_direction;     // 太阳方向（归一化）
+    float sun_intensity;      // 太阳强度
+    
+    float3 sun_color;         // 太阳颜色
+    float sun_angular_radius; // 太阳角半径（弧度）
+};
+
 // ==================== Resources ====================
 RaytracingAccelerationStructure as : register(t0, space0);
 RWTexture2D<float4> output : register(u0, space1);
@@ -113,6 +133,12 @@ StructuredBuffer<AreaLight> area_lights : register(t0, space9);  // 面光源数
 Texture2D textures[16] : register(t0, space10);  // 纹理数组 (最多16个)
 SamplerState texSampler : register(s0, space11);  // 纹理采样器
 StructuredBuffer<float4> entity_velocities : register(t0, space15);  // 实体速度数组 (xyz=velocity, w=padding)
+
+// Skybox / Environment Map 资源
+ConstantBuffer<SkyboxInfo> skybox_info : register(b0, space16);    // 天空盒信息
+Texture2D environment_map : register(t0, space17);                  // HDR 环境贴图
+SamplerState envSampler : register(s0, space18);                    // 环境贴图采样器
+
 //t，u，space分别表示纹理寄存器、采样器寄存器和常量缓冲区寄存器的空间索引
 
 // ==================== Constants ====================

@@ -9,6 +9,7 @@
 #include "bsdf.hlsl"
 #include "lighting.hlsl"
 #include "motion_blur.hlsl"
+#include "skybox.hlsl"
 
 // ACES Tone Mapping (解决过曝/刺眼问题的关键)
 float3 ACESFilm(float3 x) {
@@ -59,9 +60,14 @@ float3 TracePathWithObjectMotionBlur(float3 rayOrigin, float3 rayDir, float moti
         TraceRaySimple(rayOrigin, rayDir, 0.001, 10000.0, payload);
         
         if (!payload.hit) {
+            // 使用环境贴图或程序化天空
             float3 rayDirNorm = normalize(rayDir);
-            float tsky = 0.5 * (rayDirNorm.y + 1.0);
-            float3 sky = lerp(float3(0.2, 0.2, 0.25), float3(0.4, 0.5, 0.7), tsky);
+            float3 sky;
+            if (skybox_info.has_environment_map > 0.5) {
+                sky = SampleEnvironmentMap(rayDirNorm);
+            } else {
+                sky = GetProceduralSky(rayDirNorm);
+            }
             radiance += throughput * sky;
             break;
         }
@@ -318,10 +324,15 @@ float3 TracePathObjectMotionBlur(float3 rayOrigin, float3 rayDir, inout uint see
                 // 击中了其他物体
                 return TracePathWithObjectMotionBlur(adjusted_origin, rayDir, motion_time, seed);
             } else {
-                // 没有击中任何物体，返回天空色
+                // 没有击中任何物体，返回环境贴图或天空色
                 float3 skyDir = normalize(rayDir);
-                float tsky = 0.5 * (skyDir.y + 1.0);
-                return lerp(float3(0.2, 0.2, 0.25), float3(0.4, 0.5, 0.7), tsky);
+                float3 sky;
+                if (skybox_info.has_environment_map > 0.5) {
+                    sky = SampleEnvironmentMap(skyDir);
+                } else {
+                    sky = GetProceduralSky(skyDir);
+                }
+                return sky;
             }
         }
     } else {

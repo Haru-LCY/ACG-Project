@@ -17,6 +17,71 @@ namespace {
 #include "built_in_shaders.inl"
 }
 
+// 初始化 Skybox (根据 USE_HDR_SKYBOX 开关决定使用 HDR 或程序化天空)
+void Application::InitializeSkybox() {
+    if (USE_HDR_SKYBOX) {
+        // 尝试加载 HDR 环境贴图
+        std::string full_path = grassland::FindAssetFile(HDR_SKYBOX_PATH);
+        
+        if (grassland::graphics::LoadImageFromFile(core_.get(), full_path, &environment_map_) == 0) {
+            grassland::LogInfo("Loaded HDR environment map: {} ({}x{})", 
+                               HDR_SKYBOX_PATH,
+                               environment_map_->Extent().width,
+                               environment_map_->Extent().height);
+            skybox_info_.has_environment_map = 1.0f;
+            return;
+        }
+        
+        grassland::LogWarning("Failed to load HDR skybox from: {}, using procedural sky", HDR_SKYBOX_PATH);
+    }
+    
+    // 使用程序化天空
+    CreateDefaultEnvironmentMap();
+    skybox_info_.has_environment_map = 0.0f;
+    grassland::LogInfo("Using procedural sky");
+}
+
+// 创建默认的后备环境贴图（简单的渐变天空）
+void Application::CreateDefaultEnvironmentMap() {
+    const int width = 64;
+    const int height = 32;
+    std::vector<float> default_data(width * height * 4);
+    
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            int idx = (y * width + x) * 4;
+            
+            // 计算垂直位置 (0 = 底部/地面, 1 = 顶部/天顶)
+            float v = 1.0f - (float)y / (float)(height - 1);
+            
+            // 简单的渐变天空
+            glm::vec3 color;
+            if (v > 0.5f) {
+                // 天空部分: 从地平线到天顶
+                float t = (v - 0.5f) * 2.0f;
+                color = glm::mix(skybox_info_.horizon_color, skybox_info_.zenith_color, t);
+            } else {
+                // 地面部分: 从地平线到地面
+                float t = (0.5f - v) * 2.0f;
+                color = glm::mix(skybox_info_.horizon_color, skybox_info_.ground_color, t);
+            }
+            
+            default_data[idx + 0] = color.r;
+            default_data[idx + 1] = color.g;
+            default_data[idx + 2] = color.b;
+            default_data[idx + 3] = 1.0f;
+        }
+    }
+    
+    // 创建 GPU 纹理
+    core_->CreateImage(width, height, 
+                      grassland::graphics::IMAGE_FORMAT_R32G32B32A32_SFLOAT,
+                      &environment_map_);
+    environment_map_->UploadData(default_data.data());
+    
+    grassland::LogInfo("Created default environment map ({}x{})", width, height);
+}
+
 Application::Application(grassland::graphics::BackendAPI api) {
     grassland::graphics::CreateCore(api, grassland::graphics::Core::Settings{}, &core_);
     core_->InitializeLogicalDeviceAutoSelect(true);
@@ -245,11 +310,11 @@ void Application::OnInit() {
         scene_->AddEntity(left_wall);
     }
 
-    // Right wall
+    // Right wall - 镜面
     {
         auto right_wall = std::make_shared<Entity>(
             "meshes/cube.obj",
-            Material(glm::vec3(0.9f, 0.9f, 0.9f), 0.9f, 0.0f),
+            Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.02f, 1.0f),  // 镜面：白色，极低粗糙度，全金属
             glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(5.0f, 2.0f, 0.0f)), 
                       glm::vec3(0.1f, 4.0f, 10.0f))
         );
@@ -465,6 +530,40 @@ void Application::OnInit() {
     area_lights_buffer_->UploadData(area_lights_.data(), sizeof(AreaLight) * 8);
     grassland::LogInfo("Initialized {} area lights", 3);
 
+    // ==================== 初始化 Skybox / Environment Map ====================
+    // 初始化 skybox 信息
+    skybox_info_.zenith_color = glm::vec3(0.3f, 0.5f, 0.85f);    // 深蓝色天顶
+    skybox_info_.horizon_color = glm::vec3(0.7f, 0.75f, 0.85f);  // 浅蓝色地平线
+    skybox_info_.ground_color = glm::vec3(0.3f, 0.3f, 0.35f);    // 深灰色地面
+    skybox_info_.has_environment_map = 0.0f;                       // 默认无环境贴图
+    skybox_info_.environment_intensity = 1.0f;                     // 默认强度
+    skybox_info_.environment_rotation = 0.0f;                      // 无旋转
+    
+    // 太阳设置
+    skybox_info_.sun_direction = glm::normalize(glm::vec3(0.5f, 0.8f, 0.3f));
+    skybox_info_.sun_intensity = 0.0f;                             // 默认关闭太阳光
+    skybox_info_.sun_color = glm::vec3(1.0f, 0.95f, 0.85f);       // 暖色阳光
+    skybox_info_.sun_angular_radius = 0.00465f;                    // 约 0.53 度（真实太阳大小）
+    
+    // 创建 skybox info 缓冲区
+    core_->CreateBuffer(sizeof(SkyboxInfo), grassland::graphics::BUFFER_TYPE_DYNAMIC, &skybox_info_buffer_);
+    skybox_info_buffer_->UploadData(&skybox_info_, sizeof(SkyboxInfo));
+    
+    // 初始化 Skybox (根据 USE_HDR_SKYBOX 开关)
+    InitializeSkybox();
+    
+    // 重新上传 skybox info (可能被 InitializeSkybox 修改)
+    skybox_info_buffer_->UploadData(&skybox_info_, sizeof(SkyboxInfo));
+    
+    // 创建环境贴图采样器
+    grassland::graphics::SamplerInfo env_sampler_info;
+    env_sampler_info.min_filter = grassland::graphics::FILTER_MODE_LINEAR;
+    env_sampler_info.mag_filter = grassland::graphics::FILTER_MODE_LINEAR;
+    env_sampler_info.address_mode_u = grassland::graphics::ADDRESS_MODE_REPEAT;
+    env_sampler_info.address_mode_v = grassland::graphics::ADDRESS_MODE_CLAMP_TO_EDGE;
+    env_sampler_info.address_mode_w = grassland::graphics::ADDRESS_MODE_REPEAT;
+    core_->CreateSampler(env_sampler_info, &environment_sampler_);
+
     // Initialize camera state member variables
     camera_pos_ = glm::vec3{ 1.76f, 2.55f, 5.13f }; // 展览馆内部视角
     camera_up_ = glm::vec3{ 0.0f, 1.0f, 0.0f }; // World up
@@ -566,6 +665,9 @@ void Application::OnInit() {
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space13 - reserved
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_UNIFORM_BUFFER, 1);          // space14 - reserved
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space15 - entity velocities (motion blur)
+    program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_UNIFORM_BUFFER, 1);          // space16 - skybox info
+    program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_IMAGE, 1);                   // space17 - environment map
+    program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_SAMPLER, 1);                 // space18 - environment sampler
     // 暂时注释掉全局几何缓冲区绑定
     // program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space9 - global vertices
     // program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space10 - global normals
@@ -592,6 +694,11 @@ void Application::OnClose() {
     area_lights_buffer_.reset();   // 清理面光源缓冲区
     texture_sampler_.reset();      // 清理纹理采样器
     depth_image_.reset(); // 清理深度图像
+    
+    // 清理 Skybox 资源
+    skybox_info_buffer_.reset();
+    environment_map_.reset();
+    environment_sampler_.reset();
     
     // Don't call TerminateImGui - let the window destructor handle it
     // Just reset window which will clean everything up properly
@@ -991,6 +1098,54 @@ void Application::RenderInfoOverlay() {
     if (motion_blur_changed && film_) {
         film_->Reset();
         accumulated_frames_ = 0;
+    }
+    
+    // ==================== Skybox / Environment Lighting 控制 ====================
+    ImGui::SeparatorText("Environment Lighting");
+    bool skybox_changed = false;
+    
+    // 显示当前状态
+    if (skybox_info_.has_environment_map > 0.5f) {
+        ImGui::TextColored(ImVec4(0.5f, 1.0f, 0.5f, 1.0f), "Mode: HDR Environment Map");
+    } else {
+        ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.5f, 1.0f), "Mode: Procedural Sky");
+    }
+    
+    // 环境光强度
+    if (ImGui::SliderFloat("Env Intensity", &skybox_info_.environment_intensity, 0.0f, 5.0f, "%.2f")) {
+        skybox_changed = true;
+    }
+    
+    // HDR 环境贴图旋转 (仅在使用 HDR 时显示)
+    if (skybox_info_.has_environment_map > 0.5f) {
+        float rotation_deg = skybox_info_.environment_rotation * 180.0f / 3.14159265f;
+        if (ImGui::SliderFloat("Env Rotation", &rotation_deg, 0.0f, 360.0f, "%.1f deg")) {
+            skybox_info_.environment_rotation = rotation_deg * 3.14159265f / 180.0f;
+            skybox_changed = true;
+        }
+    }
+    
+    // 程序化天空颜色 (始终可调，影响后备天空)
+    if (ImGui::TreeNode("Sky Colors")) {
+        if (ImGui::ColorEdit3("Zenith", &skybox_info_.zenith_color.x)) {
+            skybox_changed = true;
+        }
+        if (ImGui::ColorEdit3("Horizon", &skybox_info_.horizon_color.x)) {
+            skybox_changed = true;
+        }
+        if (ImGui::ColorEdit3("Ground", &skybox_info_.ground_color.x)) {
+            skybox_changed = true;
+        }
+        ImGui::TreePop();
+    }
+    
+    // Skybox 参数改变时重置累积
+    if (skybox_changed) {
+        skybox_need_upload_ = true;
+        if (film_) {
+            film_->Reset();
+            accumulated_frames_ = 0;
+        }
     }
 
     // Scene Information
@@ -1394,6 +1549,12 @@ void Application::OnRender() {
     
     // 绑定实体速度缓冲区（用于物体运动模糊）- 必须总是绑定
     command_context->CmdBindResources(15, { scene_->GetVelocitiesBuffer() }, grassland::graphics::BIND_POINT_RAYTRACING);
+    
+    // 绑定 Skybox / Environment Map 资源
+    command_context->CmdBindResources(16, { skybox_info_buffer_.get() }, grassland::graphics::BIND_POINT_RAYTRACING);
+    // 环境贴图必须始终有效 (初始化时已创建默认贴图)
+    command_context->CmdBindResources(17, { environment_map_.get() }, grassland::graphics::BIND_POINT_RAYTRACING);
+    command_context->CmdBindResources(18, { environment_sampler_.get() }, grassland::graphics::BIND_POINT_RAYTRACING);
 
     // If UI changed lights, re-upload data to GPU buffer (so shader sees changes)
     if (lights_need_upload_) {
@@ -1401,6 +1562,15 @@ void Application::OnRender() {
         if (area_lights_buffer_) area_lights_buffer_->UploadData(area_lights_.data(), sizeof(AreaLight) * area_lights_.size());
         lights_need_upload_ = false;
         grassland::LogInfo("Light buffers updated (uploaded to GPU). PL0 pos=(%.2f, %.2f, %.2f) strength=%.1f", point_lights_[0].position.x, point_lights_[0].position.y, point_lights_[0].position.z, point_lights_[0].strength);
+    }
+    
+    // If skybox parameters changed, re-upload
+    if (skybox_need_upload_) {
+        if (skybox_info_buffer_) {
+            skybox_info_buffer_->UploadData(&skybox_info_, sizeof(SkyboxInfo));
+        }
+        skybox_need_upload_ = false;
+        grassland::LogInfo("Skybox info updated (uploaded to GPU)");
     }
     
     // Bind textures and sampler (space10)

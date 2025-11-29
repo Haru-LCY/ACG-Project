@@ -161,8 +161,15 @@
 }
 
 [shader("miss")] void MissMain(inout RayPayload payload) {
-	float t = 0.5 * (normalize(WorldRayDirection()).y + 1.0);
-	payload.radiance = lerp(float3(1.0, 1.0, 1.0), float3(0.5, 0.7, 1.0), t);
+	// 使用环境贴图或程序化天空
+	float3 rayDir = normalize(WorldRayDirection());
+	float3 sky;
+	if (skybox_info.has_environment_map > 0.5) {
+		sky = SampleEnvironmentMap(rayDir);
+	} else {
+		sky = GetProceduralSky(rayDir);
+	}
+	payload.radiance = sky;
 	payload.hit = false;
 	payload.material_idx = 0xFFFFFFFF;
 }

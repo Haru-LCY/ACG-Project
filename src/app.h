@@ -21,6 +21,26 @@ struct CameraObject {
     glm::vec2 motion_blur_direction; // 方向性模糊的方向
 };
 
+// Skybox / Environment Map 信息 (与 shader 中的定义匹配)
+struct SkyboxInfo {
+    // 程序化天空颜色
+    glm::vec3 zenith_color;       // 天顶颜色
+    float has_environment_map;    // 是否有环境贴图 (>0.5 = true)
+    
+    glm::vec3 horizon_color;      // 地平线颜色
+    float environment_intensity;  // 环境光强度
+    
+    glm::vec3 ground_color;       // 地面颜色
+    float environment_rotation;   // 环境贴图旋转角度（弧度）
+    
+    // 太阳/方向光设置
+    glm::vec3 sun_direction;      // 太阳方向（归一化）
+    float sun_intensity;          // 太阳强度
+    
+    glm::vec3 sun_color;          // 太阳颜色
+    float sun_angular_radius;     // 太阳角半径（弧度）
+};
+
 // MSAA 模式枚举 (与 shader 中的定义匹配)
 enum MSAAMode {
     MSAA_MODE_OFF = 0,      // 关闭 MSAA
@@ -93,6 +113,16 @@ private:
     std::unique_ptr<grassland::graphics::Buffer> area_lights_buffer_;
     std::vector<AreaLight> area_lights_;  // 面光源数组
 
+    // Skybox / Environment Map
+    static constexpr bool USE_HDR_SKYBOX = true;  // 改为 false 可禁用 HDR skybox
+    static constexpr const char* HDR_SKYBOX_PATH = "textures/environment.hdr";  // HDR 环境贴图路径
+    
+    std::unique_ptr<grassland::graphics::Buffer> skybox_info_buffer_;
+    std::unique_ptr<grassland::graphics::Image> environment_map_;
+    std::unique_ptr<grassland::graphics::Sampler> environment_sampler_;
+    SkyboxInfo skybox_info_;
+    bool skybox_need_upload_ = false;
+
     // Shaders
     std::unique_ptr<grassland::graphics::Shader> raygen_shader_;
     std::unique_ptr<grassland::graphics::Shader> miss_shader_;
@@ -107,6 +137,8 @@ private:
     bool alive_{ false };
 
     void ProcessInput(); // Helper function for keyboard input
+    void InitializeSkybox(); // Initialize skybox (HDR or procedural)
+    void CreateDefaultEnvironmentMap(); // Create a default fallback environment map
 
 
     glm::vec3 camera_pos_;
