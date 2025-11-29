@@ -27,11 +27,17 @@ public:
     const glm::mat4& GetTransform() const { return transform_; }
     grassland::graphics::AccelerationStructure* GetBLAS() const { return blas_.get(); }
     bool HasTexture() const { return texture_ != nullptr; }
+    
+    // Motion blur: 获取物体速度
+    const glm::vec3& GetVelocity() const { return velocity_; }
 
     // Setters
     void SetMaterial(const Material& material) { material_ = material; }
     void SetTransform(const glm::mat4& transform) { transform_ = transform; }
     void SetTextureId(int id) { material_.texture_id = id; }
+    
+    // Motion blur: 设置物体速度（世界空间，单位：单位/帧）
+    void SetVelocity(const glm::vec3& velocity) { velocity_ = velocity; }
 
     // Create BLAS for this entity's mesh
     void BuildBLAS(grassland::graphics::Core* core);
@@ -55,5 +61,8 @@ private:
     std::unique_ptr<grassland::graphics::AccelerationStructure> blas_;
 
     bool mesh_loaded_;
+    
+    // Motion blur: 物体速度（世界空间，单位：单位/帧）
+    glm::vec3 velocity_ = glm::vec3(0.0f);
 };
 

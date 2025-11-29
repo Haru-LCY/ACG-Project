@@ -15,6 +15,10 @@ struct CameraInfo {
   int debug_point_index; // which point light index to debug (0..N-1)
   int msaa_mode;         // MSAA 模式: 0=Off, 1=2x, 2=4x, 3=8x, 4=Random
   int accumulated_frames; // 累积帧数（用于时间累积 MSAA）
+  // Motion Blur 参数
+  int motion_blur_mode;     // 0=Off, 1=Camera, 2=Object, 3=Radial, 4=Directional
+  float motion_blur_intensity; // 运动模糊强度
+  float2 motion_blur_direction; // 方向性模糊的方向
 };
 
 // Principled BSDF Material (matches C++ struct layout)
@@ -60,12 +64,6 @@ struct HoverInfo {
     int hovered_entity_id;
 };
 
-// KDT信息结构体（用于传递节点数量）
-struct KDTInfo {
-    uint num_nodes;        // KDT节点数量
-    uint padding[3];       // 对齐填充
-};
-
 // 点光源结构体
 struct PointLight {
   float3 position;     // 光源位置
@@ -100,20 +98,6 @@ struct RayPayload {
 	float2 uv;  // UV坐标用于纹理采样
 };
 
-// KDT节点结构体（与C++中的KDTNodeGPU对应）
-struct KDTNode {
-	float3 aabb_min;        // AABB最小值
-	float3 aabb_max;        // AABB最大值
-	int split_axis;         // 分割轴：0=X, 1=Y, 2=Z, -1=叶子节点
-	float split_pos;         // 分割位置
-	int left_child_idx;     // 左子节点索引（-1表示无子节点）
-	int right_child_idx;     // 右子节点索引（-1表示无子节点）
-	int entity_start_idx;    // 实体索引列表起始位置（仅在叶子节点有效）
-	int entity_count;        // 实体数量（仅在叶子节点有效）
-	uint mask;               // 该节点对应的instance mask
-	uint padding;            // 对齐填充
-};
-
 // ==================== Resources ====================
 RaytracingAccelerationStructure as : register(t0, space0);
 RWTexture2D<float4> output : register(u0, space1);
@@ -128,8 +112,7 @@ StructuredBuffer<PointLight> point_lights : register(t0, space8);  // 点光源�
 StructuredBuffer<AreaLight> area_lights : register(t0, space9);  // 面光源数组
 Texture2D textures[16] : register(t0, space10);  // 纹理数组 (最多16个)
 SamplerState texSampler : register(s0, space11);  // 纹理采样器
-StructuredBuffer<KDTNode> kdt_nodes : register(t0, space13);  // KDT节点数组
-ConstantBuffer<KDTInfo> kdt_info : register(b0, space14);  // KDT信息（节点数量）
+StructuredBuffer<float4> entity_velocities : register(t0, space15);  // 实体速度数组 (xyz=velocity, w=padding)
 //t，u，space分别表示纹理寄存器、采样器寄存器和常量缓冲区寄存器的空间索引
 
 // ==================== Constants ====================

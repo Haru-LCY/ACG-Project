@@ -224,298 +224,399 @@ void Application::OnInit() {
     // Create scene - 展览馆场景
     scene_ = std::make_unique<Scene>(core_.get());
 
-    // ========== 建筑结构 ==========
-    // 1. 地面 - 大理石地板
+    // // ========== 建筑结构 ==========
+    // // 1. 地面 - 大理石地板
+    // {
+    //     auto floor = std::make_shared<Entity>(
+    //         "meshes/cube.obj",
+    //         Material(glm::vec3(0.85f, 0.85f, 0.9f), 0.3f, 0.1f),  // 浅灰大理石
+    //         glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, 0.0f)), 
+    //                   glm::vec3(12.0f, 0.05f, 12.0f))
+    //     );
+    //     scene_->AddEntity(floor);
+    // }
+
+    // // 2-5. 四面墙 - 白色展馆墙壁
+    // // 左墙
+    // {
+    //     auto left_wall = std::make_shared<Entity>(
+    //         "meshes/cube.obj",
+    //         Material(glm::vec3(0.95f, 0.95f, 0.97f), 0.7f, 0.0f),
+    //         glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(-6.0f, 2.5f, 0.0f)), 
+    //                   glm::vec3(0.2f, 5.0f, 12.0f))
+    //     );
+    //     scene_->AddEntity(left_wall);
+    // }
+    // // 右墙
+    // {
+    //     auto right_wall = std::make_shared<Entity>(
+    //         "meshes/cube.obj",
+    //         Material(glm::vec3(0.95f, 0.95f, 0.97f), 0.7f, 0.0f),
+    //         glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(6.0f, 2.5f, 0.0f)), 
+    //                   glm::vec3(0.2f, 5.0f, 12.0f))
+    //     );
+    //     scene_->AddEntity(right_wall);
+    // }
+    // // 后墙
+    // {
+    //     auto back_wall = std::make_shared<Entity>(
+    //         "meshes/cube.obj",
+    //         Material(glm::vec3(0.95f, 0.95f, 0.97f), 0.7f, 0.0f),
+    //         glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 2.5f, -6.0f)), 
+    //                   glm::vec3(12.0f, 5.0f, 0.2f)),
+    //         "textures/sakura.png"  // 后墙可以有装饰纹理
+    //     );
+    //     scene_->AddEntity(back_wall);
+    // }
+    // // 前墙（入口方向，留出空间）
+    // {
+    //     auto front_wall = std::make_shared<Entity>(
+    //         "meshes/cube.obj",
+    //         Material(glm::vec3(0.95f, 0.95f, 0.97f), 0.7f, 0.0f),
+    //         glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 2.5f, 6.0f)), 
+    //                   glm::vec3(12.0f, 5.0f, 0.2f))
+    //     );
+    //     scene_->AddEntity(front_wall);
+    // }
+
+    // // 6. 天花板
+    // {
+    //     auto ceiling = std::make_shared<Entity>(
+    //         "meshes/cube.obj",
+    //         Material(glm::vec3(0.98f, 0.98f, 0.99f), 0.8f, 0.0f),
+    //         glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 5.0f, 0.0f)), 
+    //                   glm::vec3(12.0f, 0.1f, 12.0f))
+    //     );
+    //     scene_->AddEntity(ceiling);
+    // }
+
+    // // ========== 支撑柱 ==========
+    // // 7-10. 四个角落的装饰柱
+    // {
+    //     auto pillar1 = std::make_shared<Entity>(
+    //         "meshes/cube.obj",
+    //         Material(glm::vec3(0.9f, 0.9f, 0.92f), 0.5f, 0.2f),
+    //         glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(-5.0f, 2.5f, -5.0f)), 
+    //                   glm::vec3(0.3f, 5.0f, 0.3f))
+    //     );
+    //     scene_->AddEntity(pillar1);
+    // }
+    // {
+    //     auto pillar2 = std::make_shared<Entity>(
+    //         "meshes/cube.obj",
+    //         Material(glm::vec3(0.9f, 0.9f, 0.92f), 0.5f, 0.2f),
+    //         glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(5.0f, 2.5f, -5.0f)), 
+    //                   glm::vec3(0.3f, 5.0f, 0.3f))
+    //     );
+    //     scene_->AddEntity(pillar2);
+    // }
+    // {
+    //     auto pillar3 = std::make_shared<Entity>(
+    //         "meshes/cube.obj",
+    //         Material(glm::vec3(0.9f, 0.9f, 0.92f), 0.5f, 0.2f),
+    //         glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(-5.0f, 2.5f, 5.0f)), 
+    //                   glm::vec3(0.3f, 5.0f, 0.3f))
+    //     );
+    //     scene_->AddEntity(pillar3);
+    // }
+    // {
+    //     auto pillar4 = std::make_shared<Entity>(
+    //         "meshes/cube.obj",
+    //         Material(glm::vec3(0.9f, 0.9f, 0.92f), 0.5f, 0.2f),
+    //         glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(5.0f, 2.5f, 5.0f)), 
+    //                   glm::vec3(0.3f, 5.0f, 0.3f))
+    //     );
+    //     scene_->AddEntity(pillar4);
+    // }
+
+    // // ========== 展台底座 ==========
+    // // 11-18. 8个展台底座，分布在展馆中
+    // // 第一排展台（靠近入口）
+    // // pedestal1 已移除（展品有运动模糊）
+    // {
+    //     auto pedestal2 = std::make_shared<Entity>(
+    //         "meshes/cube.obj",
+    //         Material(glm::vec3(0.7f, 0.7f, 0.75f), 0.4f, 0.3f),
+    //         glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.4f, 3.5f)), 
+    //                   glm::vec3(1.2f, 0.8f, 1.2f))
+    //     );
+    //     scene_->AddEntity(pedestal2);
+    // }
+    // // pedestal3 已移除（展品有运动模糊）
+    // // 第二排展台（中间）
+    // {
+    //     auto pedestal4 = std::make_shared<Entity>(
+    //         "meshes/cube.obj",
+    //         Material(glm::vec3(0.7f, 0.7f, 0.75f), 0.4f, 0.3f),
+    //         glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(-3.5f, 0.4f, 0.0f)), 
+    //                   glm::vec3(1.2f, 0.8f, 1.2f))
+    //     );
+    //     scene_->AddEntity(pedestal4);
+    // }
+    // // pedestal5 已移除（展品有运动模糊）
+    // {
+    //     auto pedestal6 = std::make_shared<Entity>(
+    //         "meshes/cube.obj",
+    //         Material(glm::vec3(0.7f, 0.7f, 0.75f), 0.4f, 0.3f),
+    //         glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(3.5f, 0.4f, 0.0f)), 
+    //                   glm::vec3(1.2f, 0.8f, 1.2f))
+    //     );
+    //     scene_->AddEntity(pedestal6);
+    // }
+    // // 第三排展台（靠近后墙）
+    // {
+    //     auto pedestal7 = std::make_shared<Entity>(
+    //         "meshes/cube.obj",
+    //         Material(glm::vec3(0.7f, 0.7f, 0.75f), 0.4f, 0.3f),
+    //         glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(-3.5f, 0.4f, -3.5f)), 
+    //                   glm::vec3(1.2f, 0.8f, 1.2f))
+    //     );
+    //     scene_->AddEntity(pedestal7);
+    // }
+    // {
+    //     auto pedestal8 = std::make_shared<Entity>(
+    //         "meshes/cube.obj",
+    //         Material(glm::vec3(0.7f, 0.7f, 0.75f), 0.4f, 0.3f),
+    //         glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(3.5f, 0.4f, -3.5f)), 
+    //                   glm::vec3(1.2f, 0.8f, 1.2f))
+    //     );
+    //     scene_->AddEntity(pedestal8);
+    // }
+
+    // // ========== 展品 ==========
+    // // 19-26. 8个主要展品（每个展台上一个）
+    // // 第一排展品
+    // {
+    //     auto exhibit1 = std::make_shared<Entity>(
+    //         "meshes/octahedron.obj",
+    //         Material(glm::vec3(0.2f, 0.8f, 0.3f), 0.2f, 0.9f),  // 绿色金属雕塑
+    //         glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(-3.5f, 1.2f, 3.5f)), glm::vec3(0.4f))
+    //     );
+    //     exhibit1->SetVelocity(glm::vec3(-3.0f, 0.0f, 0.0f));  // 向左移动
+    //     scene_->AddEntity(exhibit1);
+    // }
+    // {
+    //     auto exhibit2 = std::make_shared<Entity>(
+    //         "meshes/octahedron.obj",
+    //         Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.3f, 0.9f),  // 银色金属
+    //         glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 1.2f, 3.5f)), glm::vec3(0.5f)),
+    //         "textures/copper/Sphere_Base_color.png"
+    //     );
+    //     scene_->AddEntity(exhibit2);
+    // }
+    // {
+    //     auto exhibit3 = std::make_shared<Entity>(
+    //         "meshes/octahedron.obj",
+    //         Material(glm::vec3(0.8f, 0.2f, 0.2f), 0.3f, 0.8f),  // 红色金属
+    //         glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(3.5f, 1.2f, 3.5f)), glm::vec3(0.45f))
+    //     );
+    //     exhibit3->SetVelocity(glm::vec3(0.0f, -3.0f, 0.0f));  // 向下移动
+    //     scene_->AddEntity(exhibit3);
+    // }
+    // // 第二排展品
+    // {
+    //     auto exhibit4 = std::make_shared<Entity>(
+    //         "meshes/octahedron.obj",
+    //         Material(glm::vec3(0.3f, 0.3f, 1.0f), 0.05f, 0.0f, 0.95f, 1.5f),  // 蓝色玻璃
+    //         glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(-3.5f, 1.2f, 0.0f)), glm::vec3(0.5f))
+    //     );
+    //     scene_->AddEntity(exhibit4);
+    // }
+    // {
+    //     auto exhibit5 = std::make_shared<Entity>(
+    //         "meshes/octahedron.obj",
+    //         Material(glm::vec3(0.9f, 0.7f, 0.2f), 0.4f, 0.7f),  // 金色
+    //         glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 1.2f, 0.0f)), glm::vec3(0.6f))
+    //     );
+    //     exhibit5->SetVelocity(glm::vec3(3.0f, 0.0f, 0.0f));  // 向右移动
+    //     scene_->AddEntity(exhibit5);
+    // }
+    // {
+    //     auto exhibit6 = std::make_shared<Entity>(
+    //         "meshes/octahedron.obj",
+    //         Material(glm::vec3(0.5f, 0.3f, 0.8f), 0.3f, 0.6f),  // 紫色
+    //         glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(3.5f, 1.2f, 0.0f)), glm::vec3(0.4f))
+    //     );
+    //     scene_->AddEntity(exhibit6);
+    // }
+    // // 第三排展品
+    // {
+    //     auto exhibit7 = std::make_shared<Entity>(
+    //         "meshes/octahedron.obj",
+    //         Material(glm::vec3(1.0f, 0.8f, 0.6f), 0.2f, 0.5f),  // 陶瓷/陶土色
+    //         glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(-3.5f, 1.2f, -3.5f)), glm::vec3(0.55f))
+    //     );
+    //     scene_->AddEntity(exhibit7);
+    // }
+    // {
+    //     auto exhibit8 = std::make_shared<Entity>(
+    //         "meshes/octahedron.obj",
+    //         Material(glm::vec3(0.2f, 0.6f, 0.8f), 0.25f, 0.85f),  // 青色金属
+    //         glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(3.5f, 1.2f, -3.5f)), glm::vec3(0.5f))
+    //     );
+    //     scene_->AddEntity(exhibit8);
+    // }
+
+    // // ========== 额外展品（放在中心展台上） ==========
+    // // 27-28. 中心展台上的两个展品
+    // {
+    //     auto center_exhibit1 = std::make_shared<Entity>(
+    //         "meshes/octahedron.obj",
+    //         Material(glm::vec3(1.0f, 1.0f, 0.9f), 0.1f, 0.95f),  // 高光白色
+    //         glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 1.4f, 0.0f)), glm::vec3(0.5f))
+    //     );
+    //     scene_->AddEntity(center_exhibit1);
+    // }
+    // {
+    //     auto center_exhibit2 = std::make_shared<Entity>(
+    //         "meshes/octahedron.obj",
+    //         Material(glm::vec3(0.9f, 0.9f, 1.0f), 0.15f, 0.9f),  // 淡蓝色高光
+    //         glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.9f, 0.0f)), glm::vec3(0.35f))
+    //     );
+    //     scene_->AddEntity(center_exhibit2);
+    // }
+
+    // // ========== 展柜（可选，保护重要展品） ==========
+    // // 29-30. 两个玻璃展柜（降低透明度）
+    // // showcase1 已移除
+    // {
+    //     auto showcase2 = std::make_shared<Entity>(
+    //         "meshes/cube.obj",
+    //         Material(glm::vec3(0.95f, 0.95f, 1.0f), 0.05f, 0.0f, 0.5f, 1.5f),  // 半透明玻璃（transmission从0.9降到0.5）
+    //         glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(3.5f, 1.5f, -3.5f)), 
+    //                   glm::vec3(1.5f, 1.5f, 1.5f))
+    //     );
+    //     scene_->AddEntity(showcase2);
+    // }
+
+    // Add entities to the scene
+    // Ground plane
     {
-        auto floor = std::make_shared<Entity>(
+        auto ground = std::make_shared<Entity>(
             "meshes/cube.obj",
-            Material(glm::vec3(0.85f, 0.85f, 0.9f), 0.3f, 0.1f),  // 浅灰大理石
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, 0.0f)), 
-                      glm::vec3(12.0f, 0.05f, 12.0f))
+            Material(glm::vec3(0.8f, 0.8f, 0.8f), 0.8f, 0.0f),
+            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -1.0f, 0.0f)), 
+                      glm::vec3(10.0f, 0.1f, 10.0f))
         );
-        scene_->AddEntity(floor);
+        scene_->AddEntity(ground);
     }
 
-    // 2-5. 四面墙 - 白色展馆墙壁
-    // 左墙
+    // Left wall
     {
         auto left_wall = std::make_shared<Entity>(
             "meshes/cube.obj",
-            Material(glm::vec3(0.95f, 0.95f, 0.97f), 0.7f, 0.0f),
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(-6.0f, 2.5f, 0.0f)), 
-                      glm::vec3(0.2f, 5.0f, 12.0f))
+            Material(glm::vec3(0.9f, 0.9f, 0.9f), 0.9f, 0.0f),
+            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(-5.0f, 2.0f, 0.0f)), 
+                      glm::vec3(0.1f, 4.0f, 10.0f))
         );
         scene_->AddEntity(left_wall);
     }
-    // 右墙
+
+    // Right wall
     {
         auto right_wall = std::make_shared<Entity>(
             "meshes/cube.obj",
-            Material(glm::vec3(0.95f, 0.95f, 0.97f), 0.7f, 0.0f),
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(6.0f, 2.5f, 0.0f)), 
-                      glm::vec3(0.2f, 5.0f, 12.0f))
+            Material(glm::vec3(0.9f, 0.9f, 0.9f), 0.9f, 0.0f),
+            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(5.0f, 2.0f, 0.0f)), 
+                      glm::vec3(0.1f, 4.0f, 10.0f))
         );
         scene_->AddEntity(right_wall);
     }
-    // 后墙
+
+    // Back wall
     {
         auto back_wall = std::make_shared<Entity>(
             "meshes/cube.obj",
-            Material(glm::vec3(0.95f, 0.95f, 0.97f), 0.7f, 0.0f),
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 2.5f, -6.0f)), 
-                      glm::vec3(12.0f, 5.0f, 0.2f)),
-            "textures/sakura.png"  // 后墙可以有装饰纹理
+            Material(glm::vec3(0.9f, 0.9f, 0.9f), 0.9f, 0.0f),
+            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 2.0f, -5.0f)), 
+                      glm::vec3(10.0f, 4.0f, 0.1f)),
+            "textures/sakura.png"
         );
         scene_->AddEntity(back_wall);
     }
-    // 前墙（入口方向，留出空间）
-    {
-        auto front_wall = std::make_shared<Entity>(
-            "meshes/cube.obj",
-            Material(glm::vec3(0.95f, 0.95f, 0.97f), 0.7f, 0.0f),
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 2.5f, 6.0f)), 
-                      glm::vec3(12.0f, 5.0f, 0.2f))
-        );
-        scene_->AddEntity(front_wall);
-    }
 
-    // 6. 天花板
+    // Ceiling
     {
         auto ceiling = std::make_shared<Entity>(
             "meshes/cube.obj",
-            Material(glm::vec3(0.98f, 0.98f, 0.99f), 0.8f, 0.0f),
+            Material(glm::vec3(0.9f, 0.9f, 0.9f), 0.9f, 0.0f),
             glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 5.0f, 0.0f)), 
-                      glm::vec3(12.0f, 0.1f, 12.0f))
+                      glm::vec3(10.0f, 0.1f, 10.0f))
         );
         scene_->AddEntity(ceiling);
     }
 
-    // ========== 支撑柱 ==========
-    // 7-10. 四个角落的装饰柱
+    // Green metallic sphere (中景 - 作为焦平面目标)
+     {
+         auto green_sphere = std::make_shared<Entity>(
+             "meshes/octahedron.obj",
+             Material(glm::vec3(0.2f, 1.0f, 0.2f), 0.2f, 0.8f),
+             // 放在 z=2 作为中景焦点
+             glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.5f, 2.0f))
+         );
+         green_sphere->SetVelocity(glm::vec3(0.0f, 1.5f, 0.0f));  // 向上移动的运动模糊
+         scene_->AddEntity(green_sphere);
+     }
+     
+    // Textured copper sphere (幕后/中景)
     {
-        auto pillar1 = std::make_shared<Entity>(
-            "meshes/cube.obj",
-            Material(glm::vec3(0.9f, 0.9f, 0.92f), 0.5f, 0.2f),
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(-5.0f, 2.5f, -5.0f)), 
-                      glm::vec3(0.3f, 5.0f, 0.3f))
-        );
-        scene_->AddEntity(pillar1);
-    }
-    {
-        auto pillar2 = std::make_shared<Entity>(
-            "meshes/cube.obj",
-            Material(glm::vec3(0.9f, 0.9f, 0.92f), 0.5f, 0.2f),
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(5.0f, 2.5f, -5.0f)), 
-                      glm::vec3(0.3f, 5.0f, 0.3f))
-        );
-        scene_->AddEntity(pillar2);
-    }
-    {
-        auto pillar3 = std::make_shared<Entity>(
-            "meshes/cube.obj",
-            Material(glm::vec3(0.9f, 0.9f, 0.92f), 0.5f, 0.2f),
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(-5.0f, 2.5f, 5.0f)), 
-                      glm::vec3(0.3f, 5.0f, 0.3f))
-        );
-        scene_->AddEntity(pillar3);
-    }
-    {
-        auto pillar4 = std::make_shared<Entity>(
-            "meshes/cube.obj",
-            Material(glm::vec3(0.9f, 0.9f, 0.92f), 0.5f, 0.2f),
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(5.0f, 2.5f, 5.0f)), 
-                      glm::vec3(0.3f, 5.0f, 0.3f))
-        );
-        scene_->AddEntity(pillar4);
-    }
-
-    // ========== 展台底座 ==========
-    // 11-18. 8个展台底座，分布在展馆中
-    // 第一排展台（靠近入口）
-    {
-        auto pedestal1 = std::make_shared<Entity>(
-            "meshes/cube.obj",
-            Material(glm::vec3(0.7f, 0.7f, 0.75f), 0.4f, 0.3f),  // 深灰大理石
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(-3.5f, 0.4f, 3.5f)), 
-                      glm::vec3(1.2f, 0.8f, 1.2f))
-        );
-        scene_->AddEntity(pedestal1);
-    }
-    {
-        auto pedestal2 = std::make_shared<Entity>(
-            "meshes/cube.obj",
-            Material(glm::vec3(0.7f, 0.7f, 0.75f), 0.4f, 0.3f),
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.4f, 3.5f)), 
-                      glm::vec3(1.2f, 0.8f, 1.2f))
-        );
-        scene_->AddEntity(pedestal2);
-    }
-    {
-        auto pedestal3 = std::make_shared<Entity>(
-            "meshes/cube.obj",
-            Material(glm::vec3(0.7f, 0.7f, 0.75f), 0.4f, 0.3f),
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(3.5f, 0.4f, 3.5f)), 
-                      glm::vec3(1.2f, 0.8f, 1.2f))
-        );
-        scene_->AddEntity(pedestal3);
-    }
-    // 第二排展台（中间）
-    {
-        auto pedestal4 = std::make_shared<Entity>(
-            "meshes/cube.obj",
-            Material(glm::vec3(0.7f, 0.7f, 0.75f), 0.4f, 0.3f),
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(-3.5f, 0.4f, 0.0f)), 
-                      glm::vec3(1.2f, 0.8f, 1.2f))
-        );
-        scene_->AddEntity(pedestal4);
-    }
-    {
-        auto pedestal5 = std::make_shared<Entity>(
-            "meshes/cube.obj",
-            Material(glm::vec3(0.7f, 0.7f, 0.75f), 0.4f, 0.3f),
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.4f, 0.0f)), 
-                      glm::vec3(1.2f, 0.8f, 1.2f))
-        );
-        scene_->AddEntity(pedestal5);
-    }
-    {
-        auto pedestal6 = std::make_shared<Entity>(
-            "meshes/cube.obj",
-            Material(glm::vec3(0.7f, 0.7f, 0.75f), 0.4f, 0.3f),
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(3.5f, 0.4f, 0.0f)), 
-                      glm::vec3(1.2f, 0.8f, 1.2f))
-        );
-        scene_->AddEntity(pedestal6);
-    }
-    // 第三排展台（靠近后墙）
-    {
-        auto pedestal7 = std::make_shared<Entity>(
-            "meshes/cube.obj",
-            Material(glm::vec3(0.7f, 0.7f, 0.75f), 0.4f, 0.3f),
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(-3.5f, 0.4f, -3.5f)), 
-                      glm::vec3(1.2f, 0.8f, 1.2f))
-        );
-        scene_->AddEntity(pedestal7);
-    }
-    {
-        auto pedestal8 = std::make_shared<Entity>(
-            "meshes/cube.obj",
-            Material(glm::vec3(0.7f, 0.7f, 0.75f), 0.4f, 0.3f),
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(3.5f, 0.4f, -3.5f)), 
-                      glm::vec3(1.2f, 0.8f, 1.2f))
-        );
-        scene_->AddEntity(pedestal8);
-    }
-
-    // ========== 展品 ==========
-    // 19-26. 8个主要展品（每个展台上一个）
-    // 第一排展品
-    {
-        auto exhibit1 = std::make_shared<Entity>(
+        auto copper_sphere = std::make_shared<Entity>(
             "meshes/octahedron.obj",
-            Material(glm::vec3(0.2f, 0.8f, 0.3f), 0.2f, 0.9f),  // 绿色金属雕塑
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(-3.5f, 1.2f, 3.5f)), glm::vec3(0.4f))
-        );
-        scene_->AddEntity(exhibit1);
-    }
-    {
-        auto exhibit2 = std::make_shared<Entity>(
-            "meshes/octahedron.obj",
-            Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.3f, 0.9f),  // 银色金属
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 1.2f, 3.5f)), glm::vec3(0.5f)),
+            Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.3f, 0.9f),  // 白色基础,金属
+            // 将铜球移到中景靠后位置，增加前后景深变化
+            glm::translate(glm::mat4(1.0f), glm::vec3(-2.5f, 0.5f, 0.0f)),
             "textures/copper/Sphere_Base_color.png"
         );
-        scene_->AddEntity(exhibit2);
-    }
-    {
-        auto exhibit3 = std::make_shared<Entity>(
-            "meshes/octahedron.obj",
-            Material(glm::vec3(0.8f, 0.2f, 0.2f), 0.3f, 0.8f),  // 红色金属
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(3.5f, 1.2f, 3.5f)), glm::vec3(0.45f))
-        );
-        scene_->AddEntity(exhibit3);
-    }
-    // 第二排展品
-    {
-        auto exhibit4 = std::make_shared<Entity>(
-            "meshes/octahedron.obj",
-            Material(glm::vec3(0.3f, 0.3f, 1.0f), 0.05f, 0.0f, 0.95f, 1.5f),  // 蓝色玻璃
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(-3.5f, 1.2f, 0.0f)), glm::vec3(0.5f))
-        );
-        scene_->AddEntity(exhibit4);
-    }
-    {
-        auto exhibit5 = std::make_shared<Entity>(
-            "meshes/octahedron.obj",
-            Material(glm::vec3(0.9f, 0.7f, 0.2f), 0.4f, 0.7f),  // 金色
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 1.2f, 0.0f)), glm::vec3(0.6f))
-        );
-        scene_->AddEntity(exhibit5);
-    }
-    {
-        auto exhibit6 = std::make_shared<Entity>(
-            "meshes/octahedron.obj",
-            Material(glm::vec3(0.5f, 0.3f, 0.8f), 0.3f, 0.6f),  // 紫色
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(3.5f, 1.2f, 0.0f)), glm::vec3(0.4f))
-        );
-        scene_->AddEntity(exhibit6);
-    }
-    // 第三排展品
-    {
-        auto exhibit7 = std::make_shared<Entity>(
-            "meshes/octahedron.obj",
-            Material(glm::vec3(1.0f, 0.8f, 0.6f), 0.2f, 0.5f),  // 陶瓷/陶土色
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(-3.5f, 1.2f, -3.5f)), glm::vec3(0.55f))
-        );
-        scene_->AddEntity(exhibit7);
-    }
-    {
-        auto exhibit8 = std::make_shared<Entity>(
-            "meshes/octahedron.obj",
-            Material(glm::vec3(0.2f, 0.6f, 0.8f), 0.25f, 0.85f),  // 青色金属
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(3.5f, 1.2f, -3.5f)), glm::vec3(0.5f))
-        );
-        scene_->AddEntity(exhibit8);
+        copper_sphere->SetVelocity(glm::vec3(0.0f, 0.0f, 2.0f));  // 向前移动的运动模糊
+        scene_->AddEntity(copper_sphere);
     }
 
-    // ========== 额外展品（放在中心展台上） ==========
-    // 27-28. 中心展台上的两个展品
+    // Transparent blue glass cube (背景)
+    // {
+    //     auto blue_cube = std::make_shared<Entity>(
+    //         "meshes/cube.obj",
+    //         // Material(glm::vec3(0.3f, 0.3f, 1.0f), 0.05f, 0.0f, 0.95f, 1.5f), // 蓝色玻璃：明显的蓝色色调
+    //         // Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.3f, 0.9f),  // 白色基础,金属
+    //         // 将蓝色玻璃放在稍微靠后的背景位置
+    //         glm::translate(glm::mat4(1.0f), glm::vec3(2.0f, 0.5f, -2.0f))
+    //         // "textures/sakura.png"
+    //     );
+    //     scene_->AddEntity(blue_cube);
+    // }
+
     {
-        auto center_exhibit1 = std::make_shared<Entity>(
-            "meshes/octahedron.obj",
-            Material(glm::vec3(1.0f, 1.0f, 0.9f), 0.1f, 0.95f),  // 高光白色
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 1.4f, 0.0f)), glm::vec3(0.5f))
+        auto blue_cube = std::make_shared<Entity>(
+            "meshes/cube.obj",
+            Material(glm::vec3(0.3f, 0.3f, 1.0f), 0.05f, 0.0f, 0.95f, 1.5f), // 蓝色玻璃：明显的蓝色色调
+            // Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.3f, 0.9f),  // 白色基础,金属
+            // 将蓝色玻璃放在稍微靠后的背景位置
+            glm::translate(glm::mat4(1.0f), glm::vec3(2.0f, 0.5f, -2.0f)),
+            "textures/sakura.png"
         );
-        scene_->AddEntity(center_exhibit1);
-    }
-    {
-        auto center_exhibit2 = std::make_shared<Entity>(
-            "meshes/octahedron.obj",
-            Material(glm::vec3(0.9f, 0.9f, 1.0f), 0.15f, 0.9f),  // 淡蓝色高光
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.9f, 0.0f)), glm::vec3(0.35f))
-        );
-        scene_->AddEntity(center_exhibit2);
+        blue_cube->SetVelocity(glm::vec3(2.0f, 0.0f, 0.0f));  // 向右移动的运动模糊
+        scene_->AddEntity(blue_cube);
     }
 
-    // ========== 展柜（可选，保护重要展品） ==========
-    // 29-30. 两个玻璃展柜（降低透明度）
+    // Foreground specular sphere (近景 - 应该被模糊)
     {
-        auto showcase1 = std::make_shared<Entity>(
-            "meshes/cube.obj",
-            Material(glm::vec3(0.95f, 0.95f, 1.0f), 0.05f, 0.0f, 0.5f, 1.5f),  // 半透明玻璃（transmission从0.9降到0.5）
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(-3.5f, 1.5f, 3.5f)), 
-                      glm::vec3(1.5f, 1.5f, 1.5f))
+        auto fg_sphere = std::make_shared<Entity>(
+            "meshes/octahedron.obj",
+             Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.3f, 0.9f),
+            // Material(glm::vec3(0.3f, 0.3f, 1.0f), 0.05f, 0.0f, 0.95f, 1.5f), // 蓝色玻璃：明显的蓝色色调
+            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.35f, 4.0f)), glm::vec3(0.5f))
         );
-        scene_->AddEntity(showcase1);
+        fg_sphere->SetVelocity(glm::vec3(-1.5f, 1.0f, 0.0f));  // 斜向左上方移动的运动模糊
+        scene_->AddEntity(fg_sphere);
     }
+
+    // Background ornamental sphere (远景 - 强烈模糊形成bokeh高光)
     {
-        auto showcase2 = std::make_shared<Entity>(
-            "meshes/cube.obj",
-            Material(glm::vec3(0.95f, 0.95f, 1.0f), 0.05f, 0.0f, 0.5f, 1.5f),  // 半透明玻璃（transmission从0.9降到0.5）
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(3.5f, 1.5f, -3.5f)), 
-                      glm::vec3(1.5f, 1.5f, 1.5f))
+        auto bg_sphere = std::make_shared<Entity>(
+            "meshes/octahedron.obj",
+            Material(glm::vec3(1.0f, 1.0f, 0.85f), 0.05f, 1.0f),
+            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.4f, -7.0f)), glm::vec3(0.6f))
         );
-        scene_->AddEntity(showcase2);
+        scene_->AddEntity(bg_sphere);
     }
 
     // Build acceleration structures
@@ -659,6 +760,11 @@ void Application::OnInit() {
     // Initialize MSAA parameters
     msaa_mode_ = MSAA_MODE_4X;  // 默认使用 4x MSAA
     accumulated_frames_ = 0;    // 累积帧计数
+    
+    // Initialize Motion Blur parameters
+    motion_blur_mode_ = 0;          // 默认关闭运动模糊
+    motion_blur_intensity_ = 0.5f;  // 默认强度
+    motion_blur_direction_ = glm::vec2(1.0f, 0.0f); // 默认水平方向
 
     // Calculate initial camera_front_ based on yaw and pitch
     glm::vec3 front;
@@ -681,6 +787,9 @@ void Application::OnInit() {
     camera_object.debug_point_index = 0;
     camera_object.msaa_mode = msaa_mode_;
     camera_object.accumulated_frames = accumulated_frames_;
+    camera_object.motion_blur_mode = motion_blur_mode_;
+    camera_object.motion_blur_intensity = motion_blur_intensity_;
+    camera_object.motion_blur_direction = motion_blur_direction_;
     camera_object_buffer_->UploadData(&camera_object, sizeof(CameraObject));
 
     core_->CreateImage(window_->GetWidth(), window_->GetHeight(), grassland::graphics::IMAGE_FORMAT_R32G32B32A32_SFLOAT,
@@ -721,8 +830,9 @@ void Application::OnInit() {
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_IMAGE, 16);                  // space10 - texture array
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_SAMPLER, 1);                 // space11 - texture sampler
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_WRITABLE_IMAGE, 1);          // space12 - depth image
-    program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space13 - KDT nodes
-    program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_UNIFORM_BUFFER, 1);          // space14 - KDT info
+    program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space13 - reserved
+    program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_UNIFORM_BUFFER, 1);          // space14 - reserved
+    program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space15 - entity velocities (motion blur)
     // 暂时注释掉全局几何缓冲区绑定
     // program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space9 - global vertices
     // program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space10 - global normals
@@ -873,37 +983,6 @@ void Application::OnUpdate() {
         HoverInfo hover_info{};
         hover_info.hovered_entity_id = hovered_entity_id_;
         hover_info_buffer_->UploadData(&hover_info, sizeof(HoverInfo));
-        
-        // 当摄像机不动时，计算中心像素的光线并收集KDT相交信息
-        if (!camera_enabled_ && scene_->GetKDTNodeCount() > 0) {
-            // 计算中心像素的光线方向（与shader中GenerateCameraRay相同）
-            int width = window_->GetWidth();
-            int height = window_->GetHeight();
-            glm::vec2 pixel_center = glm::vec2(width / 2.0f, height / 2.0f);
-            glm::vec2 uv = pixel_center / glm::vec2(width, height);
-            uv.y = 1.0f - uv.y;
-            glm::vec2 d = uv * 2.0f - 1.0f;
-            
-            // 使用当前的camera_to_world矩阵计算光线方向
-            CameraObject current_camera_object{};
-            current_camera_object.screen_to_camera = glm::inverse(
-                glm::perspective(glm::radians(60.0f), (float)width / (float)height, 0.1f, 10.0f));
-            current_camera_object.camera_to_world =
-                glm::inverse(glm::lookAt(camera_pos_, camera_pos_ + camera_front_, camera_up_));
-            
-            glm::vec4 target = glm::vec4(d.x, d.y, 1.0f, 1.0f);
-            glm::mat4 screen_to_camera = current_camera_object.screen_to_camera;
-            glm::vec4 target_camera = screen_to_camera * target;
-            glm::mat4 camera_to_world = current_camera_object.camera_to_world;
-            glm::vec4 direction_world = camera_to_world * glm::vec4(glm::vec3(target_camera), 0.0f);
-            glm::vec3 rayDir = glm::normalize(glm::vec3(direction_world));
-            
-            // 测试中心像素光线与所有KDT节点的相交
-            center_pixel_intersections_ = scene_->DebugTestRayAABBIntersection(
-                camera_pos_, rayDir, 0.001f, 10000.0f);
-        } else {
-            center_pixel_intersections_.clear();
-        }
 
         // --------------- 修改开始 ---------------
         // 上传当前帧的 CameraObject（使用上面计算的 current_camera_object）
@@ -927,6 +1006,9 @@ void Application::OnUpdate() {
         current_camera_object.debug_point_index = 0;
         current_camera_object.msaa_mode = msaa_mode_;
         current_camera_object.accumulated_frames = accumulated_frames_;
+        current_camera_object.motion_blur_mode = motion_blur_mode_;
+        current_camera_object.motion_blur_intensity = motion_blur_intensity_;
+        current_camera_object.motion_blur_direction = motion_blur_direction_;
         camera_object_buffer_->UploadData(&current_camera_object, sizeof(CameraObject));
         // --------------- 修改结束 ---------------
 
@@ -1121,6 +1203,62 @@ void Application::RenderInfoOverlay() {
         film_->Reset();
         accumulated_frames_ = 0;
     };
+    
+    // ==================== Motion Blur 控制 ====================
+    ImGui::SeparatorText("Motion Blur");
+    bool motion_blur_changed = false;
+    
+    // Motion Blur 模式下拉菜单
+    const char* motion_blur_modes[] = { "Off", "Camera", "Object", "Radial", "Directional" };
+    if (ImGui::Combo("Motion Blur Mode", &motion_blur_mode_, motion_blur_modes, IM_ARRAYSIZE(motion_blur_modes))) {
+        motion_blur_changed = true;
+    }
+    
+    // 显示当前模式说明
+    switch (motion_blur_mode_) {
+        case 0: // Off
+            ImGui::TextWrapped("No motion blur. Standard rendering.");
+            break;
+        case 1: // Camera
+            ImGui::TextWrapped("Camera motion blur. Simulates shutter time during camera movement.");
+            break;
+        case 2: // Object
+            ImGui::TextWrapped("Object motion blur. Blurs objects with velocity (green/red/gold exhibits).");
+            break;
+        case 3: // Radial
+            ImGui::TextWrapped("Radial blur from screen center. Creates zoom effect.");
+            break;
+        case 4: // Directional
+            ImGui::TextWrapped("Directional blur along specified direction.");
+            break;
+    }
+    
+    // 强度滑块（只在开启运动模糊时显示）
+    if (motion_blur_mode_ > 0) {
+        if (ImGui::SliderFloat("Blur Intensity", &motion_blur_intensity_, 0.0f, 0.3f, "%.2f")) {
+            motion_blur_changed = true;
+        }
+        
+        // 方向控制（只在方向性模糊时显示）
+        if (motion_blur_mode_ == 4) {
+            float dir[2] = { motion_blur_direction_.x, motion_blur_direction_.y };
+            if (ImGui::SliderFloat2("Blur Direction", dir, -1.0f, 1.0f)) {
+                motion_blur_direction_ = glm::vec2(dir[0], dir[1]);
+                motion_blur_changed = true;
+            }
+            // 归一化方向
+            float len = glm::length(motion_blur_direction_);
+            if (len > 0.001f) {
+                motion_blur_direction_ /= len;
+            }
+        }
+    }
+    
+    // Motion Blur 参数改变时重置累积
+    if (motion_blur_changed && film_) {
+        film_->Reset();
+        accumulated_frames_ = 0;
+    }
 
     // Scene Information
     ImGui::SeparatorText("Scene");
@@ -1266,32 +1404,6 @@ void Application::RenderInfoOverlay() {
     ImGui::Spacing();
     ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.5f, 1.0f), "Hold Tab to hide UI");
     ImGui::TextColored(ImVec4(0.5f, 1.0f, 1.0f, 1.0f), "Ctrl+S to save screenshot");
-    
-    // KDT Intersection Debug Info (only when camera is not moving)
-    if (!camera_enabled_ && !center_pixel_intersections_.empty()) {
-        ImGui::Spacing();
-        ImGui::SeparatorText("KDT Center Pixel Intersections");
-        ImGui::Text("Center pixel ray intersections: %zu", center_pixel_intersections_.size());
-        
-        // 使用可滚动区域显示所有相交信息
-        ImGui::BeginChild("KDTIntersections", ImVec2(0, 300), true);
-        for (size_t i = 0; i < center_pixel_intersections_.size(); ++i) {
-            const auto& info = center_pixel_intersections_[i];
-            if (info.is_leaf) {
-                ImGui::TextColored(ImVec4(0.5f, 1.0f, 0.5f, 1.0f), 
-                    "Node %d [LEAF]: t=%.3f, mask=0x%02X, entities=%d",
-                    info.node_idx, info.t_hit, info.mask, info.entity_count);
-            } else {
-                ImGui::TextColored(ImVec4(0.7f, 0.7f, 1.0f, 1.0f),
-                    "Node %d [INTERNAL]: t=%.3f, axis=%d, split=%.3f, mask=0x%02X",
-                    info.node_idx, info.t_hit, info.split_axis, info.split_pos, info.mask);
-            }
-            ImGui::Text("  AABB: min=(%.2f,%.2f,%.2f) max=(%.2f,%.2f,%.2f)",
-                info.aabb_min.x, info.aabb_min.y, info.aabb_min.z,
-                info.aabb_max.x, info.aabb_max.y, info.aabb_max.z);
-        }
-        ImGui::EndChild();
-    }
 
     ImGui::End();
 }
@@ -1542,13 +1654,13 @@ void Application::OnRender() {
     command_context->CmdBindResources(8, { point_lights_buffer_.get() }, grassland::graphics::BIND_POINT_RAYTRACING);  // 绑定点光源
     command_context->CmdBindResources(9, { area_lights_buffer_.get() }, grassland::graphics::BIND_POINT_RAYTRACING);  // 绑定面光源
     
-    // 绑定KDT节点buffer和info buffer（如果存在）
-    if (scene_->GetKDTNodesBuffer()) {
-        command_context->CmdBindResources(13, { scene_->GetKDTNodesBuffer() }, grassland::graphics::BIND_POINT_RAYTRACING);
-    }
-    if (scene_->GetKDTInfoBuffer()) {
-        command_context->CmdBindResources(14, { scene_->GetKDTInfoBuffer() }, grassland::graphics::BIND_POINT_RAYTRACING);
-    }
+    // 绑定 reserved 空间（space13, space14）- 使用现有缓冲区作为占位符
+    // D3D12 要求所有声明的资源槽都必须被绑定
+    command_context->CmdBindResources(13, { scene_->GetMaterialsBuffer() }, grassland::graphics::BIND_POINT_RAYTRACING);  // space13 placeholder
+    command_context->CmdBindResources(14, { camera_object_buffer_.get() }, grassland::graphics::BIND_POINT_RAYTRACING);   // space14 placeholder
+    
+    // 绑定实体速度缓冲区（用于物体运动模糊）- 必须总是绑定
+    command_context->CmdBindResources(15, { scene_->GetVelocitiesBuffer() }, grassland::graphics::BIND_POINT_RAYTRACING);
 
     // If UI changed lights, re-upload data to GPU buffer (so shader sees changes)
     if (lights_need_upload_) {

@@ -15,6 +15,10 @@ struct CameraObject {
     int debug_point_index; // 调试点光源索引
     int msaa_mode;         // MSAA 模式: 0=Off, 1=2x, 2=4x, 3=8x, 4=Random
     int accumulated_frames; // 累积帧数（用于时间累积 MSAA）
+    // Motion Blur 参数
+    int motion_blur_mode;     // 0=Off, 1=Camera, 2=Object, 3=Radial, 4=Directional
+    float motion_blur_intensity; // 运动模糊强度
+    glm::vec2 motion_blur_direction; // 方向性模糊的方向
 };
 
 // MSAA 模式枚举 (与 shader 中的定义匹配)
@@ -138,6 +142,11 @@ private:
     int msaa_mode_;         // 当前 MSAA 模式
     int accumulated_frames_; // 累积帧计数（用于时间累积 MSAA）
     
+    // Motion Blur 参数
+    int motion_blur_mode_;        // 运动模糊模式
+    float motion_blur_intensity_; // 运动模糊强度
+    glm::vec2 motion_blur_direction_; // 方向性模糊的方向
+    
     // Mouse hovering
     double mouse_x_;
     double mouse_y_;
@@ -155,9 +164,6 @@ private:
     glm::mat4 prev_camera_to_world_;
     glm::mat4 prev_screen_to_camera_;
     bool has_prev_camera_ = false;
-    
-    // KDT调试信息：存储中心像素的相交信息
-    std::vector<Scene::KDTIntersectionInfo> center_pixel_intersections_;
 
     // 辅助函数：比较两个矩阵是否不同
     bool MatrixChanged(const glm::mat4& a, const glm::mat4& b, float epsilon = 1e-5f) {
