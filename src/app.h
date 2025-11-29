@@ -11,7 +11,19 @@ struct CameraObject {
     float focus_distance;  // 焦距(聚焦平面距离)
     float exposure;        // 成像曝光补偿（multiplier）
     int samples_per_pixel; // 每帧发射的样本数，用于减少闪烁
-    int padding[1];      // 对齐到16字节
+    int debug_mode;        // 调试模式
+    int debug_point_index; // 调试点光源索引
+    int msaa_mode;         // MSAA 模式: 0=Off, 1=2x, 2=4x, 3=8x, 4=Random
+    int accumulated_frames; // 累积帧数（用于时间累积 MSAA）
+};
+
+// MSAA 模式枚举 (与 shader 中的定义匹配)
+enum MSAAMode {
+    MSAA_MODE_OFF = 0,      // 关闭 MSAA
+    MSAA_MODE_2X = 1,       // 2x MSAA
+    MSAA_MODE_4X = 2,       // 4x MSAA
+    MSAA_MODE_8X = 3,       // 8x MSAA
+    MSAA_MODE_RANDOM = 4    // 随机抖动
 };
 
 class Application {
@@ -121,6 +133,10 @@ private:
     int samples_per_frame_; // 每帧为每像素发射的样本数量（用于降低闪烁）
     float exposure_;        // 全局曝光调整 (shader 内应用)
     bool lights_need_upload_ = false; // Set true when UI changes light params
+    
+    // MSAA 参数
+    int msaa_mode_;         // 当前 MSAA 模式
+    int accumulated_frames_; // 累积帧计数（用于时间累积 MSAA）
     
     // Mouse hovering
     double mouse_x_;

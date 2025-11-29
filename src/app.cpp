@@ -655,6 +655,10 @@ void Application::OnInit() {
         focused_entity_id_ = -1; // no focus locked initially
     exposure_ = 0.5f;        // Default exposure multiplier
     lights_need_upload_ = false; // track if any light params changed
+    
+    // Initialize MSAA parameters
+    msaa_mode_ = MSAA_MODE_4X;  // 默认使用 4x MSAA
+    accumulated_frames_ = 0;    // 累积帧计数
 
     // Calculate initial camera_front_ based on yaw and pitch
     glm::vec3 front;
@@ -673,7 +677,10 @@ void Application::OnInit() {
     camera_object.focus_distance = focus_distance_;
     camera_object.samples_per_pixel = samples_per_frame_;
     camera_object.exposure = exposure_;
-    camera_object.padding[0] = 0;
+    camera_object.debug_mode = 0;
+    camera_object.debug_point_index = 0;
+    camera_object.msaa_mode = msaa_mode_;
+    camera_object.accumulated_frames = accumulated_frames_;
     camera_object_buffer_->UploadData(&camera_object, sizeof(CameraObject));
 
     core_->CreateImage(window_->GetWidth(), window_->GetHeight(), grassland::graphics::IMAGE_FORMAT_R32G32B32A32_SFLOAT,
@@ -843,6 +850,7 @@ void Application::OnUpdate() {
         // 如果相机移动，清空累积缓冲区
         if (camera_moved && film_) {
             film_->Reset();  // Film::Reset() 负责清空 GPU 累积贴图
+            accumulated_frames_ = 0;  // 重置累积帧计数
         }
 
         
@@ -853,6 +861,7 @@ void Application::OnUpdate() {
             } else {
                 // Camera just got disabled - reset accumulation for new stationary view
                 film_->Reset();
+                accumulated_frames_ = 0;  // 重置累积帧计数
             }
             last_camera_enabled_ = camera_enabled_;
         }
@@ -914,7 +923,10 @@ void Application::OnUpdate() {
         current_camera_object.focus_distance = focus_distance_;
         current_camera_object.samples_per_pixel = samples_per_frame_;
         current_camera_object.exposure = exposure_;
-        current_camera_object.padding[0] = 0;
+        current_camera_object.debug_mode = 0;
+        current_camera_object.debug_point_index = 0;
+        current_camera_object.msaa_mode = msaa_mode_;
+        current_camera_object.accumulated_frames = accumulated_frames_;
         camera_object_buffer_->UploadData(&current_camera_object, sizeof(CameraObject));
         // --------------- 修改结束 ---------------
 
@@ -1067,9 +1079,48 @@ void Application::RenderInfoOverlay() {
     // If DOF parameters changed, reset accumulation
     if (dof_changed && film_) {
         film_->Reset();
+        accumulated_frames_ = 0;  // 重置累积帧计数
     }
 
     ImGui::Spacing();
+    
+    // ==================== MSAA 控制 ====================
+    ImGui::SeparatorText("Anti-Aliasing (MSAA)");
+    bool msaa_changed = false;
+    
+    // MSAA 模式下拉菜单
+    const char* msaa_modes[] = { "Off", "2x MSAA", "4x MSAA", "8x MSAA", "Random" };
+    if (ImGui::Combo("MSAA Mode", &msaa_mode_, msaa_modes, IM_ARRAYSIZE(msaa_modes))) {
+        msaa_changed = true;
+    }
+    
+    // 显示当前模式说明
+    switch (msaa_mode_) {
+        case MSAA_MODE_OFF:
+            ImGui::TextWrapped("No anti-aliasing. Fastest but may show jagged edges.");
+            break;
+        case MSAA_MODE_2X:
+            ImGui::TextWrapped("2 samples per pixel using standard D3D pattern.");
+            break;
+        case MSAA_MODE_4X:
+            ImGui::TextWrapped("4 samples per pixel (rotated grid). Good balance.");
+            break;
+        case MSAA_MODE_8X:
+            ImGui::TextWrapped("8 samples per pixel. Best quality, slower.");
+            break;
+        case MSAA_MODE_RANDOM:
+            ImGui::TextWrapped("Random jitter sampling. Best for path tracing convergence.");
+            break;
+    }
+    
+    // 显示累积帧数
+    ImGui::Text("Accumulated Frames: %d", accumulated_frames_);
+    
+    // MSAA 参数改变时重置累积
+    if (msaa_changed && film_) {
+        film_->Reset();
+        accumulated_frames_ = 0;
+    };
 
     // Scene Information
     ImGui::SeparatorText("Scene");
@@ -1526,6 +1577,7 @@ void Application::OnRender() {
     grassland::graphics::Image* display_image = color_image_.get();
     if (!camera_enabled_) {
         film_->IncrementSampleCount();
+        accumulated_frames_++;  // 递增累积帧计数（用于时间累积 MSAA）
         // Use shader's output directly (already tone mapped and gamma corrected)
         display_image = color_image_.get();
     }

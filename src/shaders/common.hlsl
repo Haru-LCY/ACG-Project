@@ -13,7 +13,8 @@ struct CameraInfo {
   int samples_per_pixel; // 每帧每像素样本数
   int debug_mode;        // 0=off,1=show-only-debug-point-light
   int debug_point_index; // which point light index to debug (0..N-1)
-  int padding0;          // 对齐
+  int msaa_mode;         // MSAA 模式: 0=Off, 1=2x, 2=4x, 3=8x, 4=Random
+  int accumulated_frames; // 累积帧数（用于时间累积 MSAA）
 };
 
 // Principled BSDF Material (matches C++ struct layout)

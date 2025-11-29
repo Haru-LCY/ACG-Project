@@ -4,6 +4,7 @@
 // 包含所有模块
 #include "common.hlsl"
 #include "rng.hlsl"
+#include "msaa.hlsl"
 #include "bsdf.hlsl"
 #include "lighting.hlsl"
 #include "raytracing.hlsl"
@@ -17,7 +18,16 @@
     seed = PCGHash(seed);
     seed = PCGHash(seed);
 
-    int spp = max(1, camera_info.samples_per_pixel);
+    // 获取 MSAA 模式和采样数
+    int msaa_mode = camera_info.msaa_mode;
+    int msaa_sample_count = GetMSAASampleCount(msaa_mode);
+    
+    // 计算实际采样数：MSAA 采样数 * 用户设置的 SPP
+    int user_spp = max(1, camera_info.samples_per_pixel);
+    int total_spp = (msaa_mode == MSAA_MODE_OFF || msaa_mode == MSAA_MODE_RANDOM) 
+                    ? user_spp 
+                    : msaa_sample_count * max(1, user_spp / msaa_sample_count);
+    
     float3 radianceSum = float3(0,0,0);
     RayPayload lastPayload; // keep last payload for debug
 
@@ -43,12 +53,36 @@
         depth_output[dispatchIndex] = dval;
     }
 
-    for (int s = 0; s < spp; ++s) {
-        // advance RNG for new sample
-        seed = PCGHash(seed);
-        float jitter_x = Rand01(seed) - 0.5;
-        float jitter_y = Rand01(seed) - 0.5;
-        float2 jitter = float2(jitter_x, jitter_y);
+    // 主采样循环
+    for (int s = 0; s < total_spp; ++s) {
+        // 根据 MSAA 模式获取子像素偏移
+        float2 jitter;
+        if (msaa_mode == MSAA_MODE_RANDOM) {
+            // 随机抖动模式（原有行为）
+            seed = PCGHash(seed);
+            float jitter_x = Rand01(seed) - 0.5;
+            float jitter_y = Rand01(seed) - 0.5;
+            jitter = float2(jitter_x, jitter_y);
+        } else if (msaa_mode == MSAA_MODE_OFF) {
+            // 无 MSAA，单采样时使用随机抖动
+            if (total_spp > 1) {
+                seed = PCGHash(seed);
+                float jitter_x = Rand01(seed) - 0.5;
+                float jitter_y = Rand01(seed) - 0.5;
+                jitter = float2(jitter_x, jitter_y);
+            } else {
+                jitter = float2(0.0, 0.0);
+            }
+        } else {
+            // 标准 MSAA 模式 (2x, 4x, 8x)
+            // 使用时间累积 MSAA：结合固定模式和帧间偏移
+            jitter = GetTemporalMSAASampleOffset(
+                msaa_mode, 
+                s % msaa_sample_count, 
+                camera_info.accumulated_frames + s / msaa_sample_count,
+                seed
+            );
+        }
 
         // 生成带景深效果的相机光线
         float3 rayOrigin, rayDir;
@@ -77,8 +111,8 @@
     // 累积颜色
     float4 prev_color = accumulated_color[dispatchIndex];
     // 注意：Radiance 可能非常大 (HDR)，需要累积 HDR 值
-    float4 new_sum = prev_color + float4(radianceSum, (float)spp);
-    int new_count = prev_samples + spp;
+    float4 new_sum = prev_color + float4(radianceSum, (float)total_spp);
+    int new_count = prev_samples + total_spp;
     
     accumulated_color[dispatchIndex] = new_sum;
     accumulated_samples[dispatchIndex] = new_count;
