@@ -11,7 +11,7 @@
 #include "motion_blur.hlsl"
 #include "skybox.hlsl"
 
-// ACES Tone Mapping (解决过曝/刺眼问题的关键)
+// ACES 色调映射（解决过曝/刺眼问题的关键，将HDR值映射到LDR范围）
 float3 ACESFilm(float3 x) {
     float a = 2.51f;
     float b = 0.03f;
@@ -21,7 +21,7 @@ float3 ACESFilm(float3 x) {
     return saturate((x * (a * x + b)) / (x * (c * x + d) + e));
 }
 
-// 简单的光线追踪函数，直接使用硬件加速的 TraceRay
+// 简单的光线追踪函数，直接使用硬件加速的 TraceRay API
 bool TraceRaySimple(float3 rayOrigin, float3 rayDir, float tMin, float tMax, inout RayPayload payload) {
     RayDesc ray;
     ray.Origin = rayOrigin;
@@ -60,7 +60,7 @@ float3 TracePathWithObjectMotionBlur(float3 rayOrigin, float3 rayDir, float moti
         TraceRaySimple(rayOrigin, rayDir, 0.001, 10000.0, payload);
         
         if (!payload.hit) {
-            // 使用环境贴图或程序化天空
+            // 光线未击中任何物体，使用环境贴图或程序化天空
             float3 rayDirNorm = normalize(rayDir);
             float3 sky;
             if (skybox_info.has_environment_map > 0.5) {
@@ -68,8 +68,8 @@ float3 TracePathWithObjectMotionBlur(float3 rayOrigin, float3 rayDir, float moti
             } else {
                 sky = GetProceduralSky(rayDirNorm);
             }
-            radiance += throughput * sky;
-            break;
+            radiance += throughput * sky; // 累积环境光照贡献
+            break; // 终止路径追踪
         }
         
         Material mat = materials[payload.material_idx];
@@ -108,11 +108,11 @@ float3 TracePathWithObjectMotionBlur(float3 rayOrigin, float3 rayDir, float moti
         
         float3 baseColor = GetMaterialBaseColor(mat, uv);
         
-        // ===== 直接光照计算 (Direct Lighting / NEE) =====
-        bool useNEE = true; // 开启直接光照采样
+        // ===== 直接光照计算 (Direct Lighting / Next Event Estimation) =====
+        bool useNEE = true; // 开启直接光照采样（重要性采样光源）
         
         if (useNEE) {
-            // 1. 点光源循环
+            // 1. 遍历所有点光源并计算直接光照贡献
             // 关键修复：对点光源计算时的throughput做特殊处理，防止异常放大
             // 当throughput已经很大时，限制其对点光源贡献的影响
             float3 effectiveThroughput = throughput;
@@ -133,8 +133,8 @@ float3 TracePathWithObjectMotionBlur(float3 rayOrigin, float3 rayDir, float moti
                 }
             }
             
-            // 2. 面光源循环
-            const int MAX_AREA_LIGHTS = 8; // 假设最多8个
+            // 2. 遍历所有面光源并计算直接光照贡献
+            const int MAX_AREA_LIGHTS = 8; // 假设最多8个面光源
             for (int j = 0; j < MAX_AREA_LIGHTS; ++j) {
                 AreaLight al = area_lights[j];
                 if (al.strength <= 0.0) continue;
@@ -144,15 +144,15 @@ float3 TracePathWithObjectMotionBlur(float3 rayOrigin, float3 rayDir, float moti
             }
         }
 
-        // ===== 间接光照 (BSDF Sampling / 递归) =====
+        // ===== 间接光照 (BSDF Sampling / 递归路径追踪) =====
         
-        // 添加自发光
+        // 添加自发光贡献（如果材质有自发光）
         if (mat.emission_strength > 0.0) {
             radiance += throughput * mat.emission_color * mat.emission_strength;
-            break; // 击中发光体，终止路径
+            break; // 击中发光体，终止路径（发光体不继续弹射）
         }
         
-        // [透明材质逻辑]
+        // [透明材质逻辑：处理折射和反射]
         if (mat.transmission > 0.01) {
             float etaI = 1.0;
             float etaT = mat.ior;
@@ -162,40 +162,40 @@ float3 TracePathWithObjectMotionBlur(float3 rayOrigin, float3 rayDir, float moti
             }
             
             float cosTheta = abs(dot(normal, V));
-            float Fr = FresnelDielectric(cosTheta, etaI, etaT);
+            float Fr = FresnelDielectric(cosTheta, etaI, etaT); // 计算菲涅尔反射系数
             
             if (Rand01(seed) < Fr) {
-                // 反射
+                // 根据菲涅尔系数随机选择反射
                 rayDir = reflect(-V, normal);
-                rayOrigin = hitPos + normal * 0.001;
+                rayOrigin = hitPos + normal * 0.001; // 偏移起点以避免自相交
             } else {
                 // 折射
                 float3 refracted;
                 if (Refract(-V, normal, etaI/etaT, refracted)) {
                     rayDir = normalize(refracted);
-                    rayOrigin = hitPos - normal * 0.001;
-                    // Beer's Law 吸收
+                    rayOrigin = hitPos - normal * 0.001; // 偏移起点以避免自相交
+                    // Beer's Law 吸收（光线在介质中传播时的颜色衰减）
                     if (entering) throughput *= mat.transmission_color;
                 } else {
-                    rayDir = reflect(-V, normal); // 全反射
+                    rayDir = reflect(-V, normal); // 全反射（当折射角超过临界角时）
                     rayOrigin = hitPos + normal * 0.001;
                 }
             }
         } 
         // [不透明材质逻辑 - 使用 Principled BSDF]
         else {
-            // Sample Principled BSDF
+            // 采样 Principled BSDF 生成新的光线方向
             float pdf_sample;
             float3 bsdf_weight;
             rayDir = SamplePrincipledBSDF(mat, V, N, uv, seed, pdf_sample, bsdf_weight);
             
-            // Check if sampling was successful
+            // 检查采样是否成功
             if (pdf_sample < 1e-7 || dot(N, rayDir) <= 0.0) {
-                break; // Invalid sample or ray goes below surface
+                break; // 无效采样或光线方向在表面下方，终止路径
             }
             
-            rayOrigin = hitPos + N * 0.001;
-            throughput *= bsdf_weight;
+            rayOrigin = hitPos + N * 0.001; // 偏移起点以避免自相交
+            throughput *= bsdf_weight; // 累积BSDF权重
             
             // 关键修复：限制throughput的最大值，防止累积导致数值爆炸
             // 当throughput过大时，说明路径已经不稳定，应该提前终止
@@ -215,9 +215,9 @@ float3 TracePathWithObjectMotionBlur(float3 rayOrigin, float3 rayDir, float moti
             float survivalProb = clamp(maxThroughput, 0.3, 0.95); // 提高最小值从0.1到0.3
             
             if (Rand01(seed) > survivalProb) {
-                break; // 终止路径
+                break; // 随机终止路径（俄罗斯轮盘赌）
             }
-            throughput /= survivalProb; // 无偏估计
+            throughput /= survivalProb; // 无偏估计（补偿终止概率）
             
             // 再次检查throughput是否过大（俄罗斯轮盘赌后可能放大）
             maxThroughput = max(max(throughput.r, throughput.g), throughput.b);
@@ -226,7 +226,7 @@ float3 TracePathWithObjectMotionBlur(float3 rayOrigin, float3 rayDir, float moti
             }
         }
         
-        // 额外的安全检查：如果throughput过小，提前终止
+        // 额外的安全检查：如果throughput过小，提前终止（贡献可忽略）
         if (max(max(throughput.r, throughput.g), throughput.b) < 0.001) {
             break;
         }
@@ -235,7 +235,7 @@ float3 TracePathWithObjectMotionBlur(float3 rayOrigin, float3 rayDir, float moti
     return radiance;
 }
 
-// 标准路径追踪入口函数
+// 标准路径追踪入口函数（不启用物体运动模糊）
 float3 TracePath(float3 rayOrigin, float3 rayDir, inout uint seed) {
     // 不启用物体运动模糊时，使用默认时间 0.5（无偏移）
     return TracePathWithObjectMotionBlur(rayOrigin, rayDir, 0.5, seed);

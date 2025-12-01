@@ -10,11 +10,12 @@
 
 // Alpha shadow 阴影射线追踪（非递归版本，返回 RGB 可见度，支持有色透射 Beer–Lambert 衰减）
 // 返回值：float3(1,1,1) = 完全可见，float3(0,0,0) = 完全遮挡，其他为按通道衰减后的可见度
+// 支持透明材质的多重弹射，计算光源到表面的可见度
 float3 TraceAlphaShadowRGB(float3 rayOrigin, float3 rayDirection, float maxDistance, inout uint seed) {
 	float3 visibility = float3(1.0, 1.0, 1.0);
 	float travelDistance = 0.0;
-	const int MAX_BOUNCES = 6; // 允许更多透明体穿过次数以捕获混合
-	const float MIN_VISIBILITY = 0.001; // 如果可见性过低，提前终止
+	const int MAX_BOUNCES = 6; // 允许更多透明体穿过次数以捕获混合效果
+	const float MIN_VISIBILITY = 0.001; // 如果可见性过低，提前终止追踪
 
 	for (int i = 0; i < MAX_BOUNCES; ++i) {
 		if (travelDistance >= maxDistance || max(max(visibility.r, visibility.g), visibility.b) < MIN_VISIBILITY) {
@@ -37,7 +38,7 @@ float3 TraceAlphaShadowRGB(float3 rayOrigin, float3 rayDirection, float maxDista
 		TraceRay(as, RAY_FLAG_NONE, 0xFF, 0, 1, 0, shadowRay, shadowPayload);
 
 		if (!shadowPayload.hit) {
-			// 没有hit = 完全可见
+			// 没有击中任何物体 = 完全可见
 			return visibility;
 		}
 
@@ -49,18 +50,18 @@ float3 TraceAlphaShadowRGB(float3 rayOrigin, float3 rayDirection, float maxDista
 		// 如果材质是透明的，应用有色透射（Beer–Lambert 简化）并继续追踪
 		if (mat.transmission > 0.01) {
 			// 使用 transmission_color 作为每单位距离的透射色近似：visibility *= transmission_color ^ distance
-			// 并额外乘以传输强度 scalar
+			// 并额外乘以传输强度标量
 			float3 colorAttenuation = pow(mat.transmission_color, distanceToHit);
 			visibility *= colorAttenuation * mat.transmission;
 
-			// 继续追踪，向前偏移
+			// 继续追踪，向前偏移起点以避免自相交
 			rayOrigin = shadowPayload.hit_pos + normalize(rayDirection) * 0.001;
 			continue;
 		}
 
-		// 检查 alpha 贴图
+		// 检查 alpha 贴图（如果材质有透明度贴图）
 		if (mat.has_alpha_map > 0.5) {
-			// 原先用亮度作为 alpha 的近似，这里也按亮度决定通道级别的透射
+			// 使用亮度作为 alpha 的近似，按亮度决定通道级别的透射
 			float colorBrightness = dot(mat.base_color, float3(0.299, 0.587, 0.114));
 			float alpha = colorBrightness;
 
@@ -75,26 +76,26 @@ float3 TraceAlphaShadowRGB(float3 rayOrigin, float3 rayDirection, float maxDista
 			}
 		}
 
-		// 不透明的物体，完全遮挡
+		// 不透明的物体，完全遮挡光线
 		return float3(0.0, 0.0, 0.0);
 	}
 
 	return visibility;
 }
 
-// 计算面光源贡献 (使用 Principled BSDF)
+// 计算面光源的直接光照贡献（使用 Principled BSDF，支持 MIS）
 float3 ComputeAreaLightContribution(float3 hitPos, float3 normal, float3 viewDir, Material material, float2 uv, AreaLight light, inout uint seed) {
-    const int NUM_LIGHT_SAMPLES = 1;
+    const int NUM_LIGHT_SAMPLES = 1; // 面光源采样次数
     float3 totalContribution = float3(0, 0, 0);
     
     for (int sample_idx = 0; sample_idx < NUM_LIGHT_SAMPLES; ++sample_idx) {
-        // 1. 随机采样光源表面
+        // 1. 在光源表面上随机采样一个点
         float u_base = Rand01(seed) - 0.5;
         float v_base = Rand01(seed) - 0.5;
         
         float3 samplePos = light.position + (light.u_axis * u_base * light.width) + (light.v_axis * v_base * light.height);
         
-        // 2. 几何计算
+        // 2. 几何计算：计算从击中点到光源采样点的方向和距离
         float3 lightVec = samplePos - hitPos;
         float distSq = dot(lightVec, lightVec);
         float dist = sqrt(distSq);
@@ -104,33 +105,34 @@ float3 ComputeAreaLightContribution(float3 hitPos, float3 normal, float3 viewDir
         float3 lightNormal = light.direction;
         float LdotLn = dot(-lightDir, lightNormal);
         
+        // 检查光源是否在表面正面，以及采样点是否在光源正面
         if (NdotL <= 0.0 || LdotLn <= 0.0) {
             continue;
         }
         
-        // 3. 阴影检测
+        // 3. 阴影检测：计算光源到表面的可见度
         const float RAY_EPSILON = 0.001;
         float3 visibility = TraceAlphaShadowRGB(hitPos + normal * RAY_EPSILON, lightDir, dist - RAY_EPSILON, seed);
         
         if (max(max(visibility.r, visibility.g), visibility.b) < 0.001) {
-            continue;
+            continue; // 完全被遮挡，跳过此采样
         }
         
-        // 4. 计算光源采样PDF
+        // 4. 计算光源采样的概率密度函数（PDF）
         float area = light.width * light.height;
         float pdf_light = distSq / (area * LdotLn + 1e-8);
         
-        // 5. 辐射度
+        // 5. 光源的辐射度（自发光）
         float3 Le = light.color * light.strength;
         
-        // 6. 使用 Principled BSDF 评估
+        // 6. 使用 Principled BSDF 评估材质响应
         float pdf_brdf;
         float3 brdf_eval = EvaluatePrincipledBSDF(material, viewDir, lightDir, normal, uv, pdf_brdf);
         
-        // 7. MIS权重
+        // 7. MIS权重：平衡光源采样和BSDF采样
         float w_light = BalanceHeuristic(pdf_light, pdf_brdf);
         
-        // 8. 最终贡献
+        // 8. 计算最终的光照贡献
         float geometryFactor = (NdotL * LdotLn * area) / (distSq + 1e-8);
         float3 contribution = Le * brdf_eval * visibility * w_light / (pdf_light + 1e-8);
         
@@ -140,16 +142,16 @@ float3 ComputeAreaLightContribution(float3 hitPos, float3 normal, float3 viewDir
     return totalContribution / float(NUM_LIGHT_SAMPLES);
 }
 
-// 计算点光源的直接光照贡献 (使用 Principled BSDF)
+// 计算点光源的直接光照贡献（使用 Principled BSDF）
 float3 ComputePointLightContribution(float3 hitPos, float3 normal, float3 viewDir, Material material, float2 uv, PointLight light, inout uint seed) {
-	// 计算光源方向和距离
+	// 计算从击中点到光源的方向和距离
 	float3 lightVec = light.position - hitPos;
 	float lightDistance = length(lightVec);
 	float3 lightDir = normalize(lightVec);
 	
 	// 改进的距离保护：使用更大的最小距离，并考虑光源半径
-	// 如果光源半径太小或为0，使用更安全的最小距离
-	const float MIN_LIGHT_DISTANCE = 0.05; // 增加到0.05，提供更好的保护
+	// 如果光源半径太小或为0，使用更安全的最小距离以避免数值问题
+	const float MIN_LIGHT_DISTANCE = 0.05; // 增加到0.05，提供更好的数值稳定性保护
 	const float MIN_RADIUS = 0.01; // 光源半径的最小值
 	
 	// 确保光源半径不为0或过小
@@ -157,9 +159,9 @@ float3 ComputePointLightContribution(float3 hitPos, float3 normal, float3 viewDi
 	float safeDistance = max(lightDistance, max(effectiveRadius, MIN_LIGHT_DISTANCE));
 	
 	// 改进的衰减计算：使用平滑衰减曲线，避免硬截止
-	// 当距离接近最小距离时，使用平滑过渡
+	// 当距离接近最小距离时，使用平滑过渡以避免数值不稳定
 	float distSq = safeDistance * safeDistance;
-	float baseAttenuation = light.strength / (4.0 * PI * distSq);
+	float baseAttenuation = light.strength / (4.0 * PI * distSq); // 平方反比定律
 	
 	// 添加额外的衰减因子，当距离很小时进一步衰减
 	// 使用平滑的衰减曲线：1 / (1 + (d_min/d)^2)
@@ -167,32 +169,32 @@ float3 ComputePointLightContribution(float3 hitPos, float3 normal, float3 viewDi
 	float smoothFactor = 1.0 / (1.0 + distanceRatio * distanceRatio);
 	float attenuation = baseAttenuation * smoothFactor;
 	
-	// 限制衰减的最大值，防止异常大的衰减值
+	// 限制衰减的最大值，防止异常大的衰减值导致数值问题
 	const float MAX_ATTENUATION = 1e4; // 合理的上限值
 	attenuation = min(attenuation, MAX_ATTENUATION);
 	
-	// 检查光源是否在表面的正面
+	// 检查光源是否在表面的正面（背面光照不贡献）
 	float NdotL = dot(normal, lightDir);
 	if (NdotL <= 0.0) {
 		return float3(0.0, 0.0, 0.0);
 	}
 	
-	// 检查阴影遮挡
+	// 检查阴影遮挡：计算光源到表面的可见度
 	const float RAY_EPSILON = 0.001;
-	float3 shadowOrigin = hitPos + normal * RAY_EPSILON;
+	float3 shadowOrigin = hitPos + normal * RAY_EPSILON; // 偏移起点以避免自相交
 	// 修正阴影射线距离：起点已偏移RAY_EPSILON，距离应该相应减少
 	float shadowRayDistance = max(safeDistance - RAY_EPSILON, 0.0);
 	float3 lightVisibility = TraceAlphaShadowRGB(shadowOrigin, lightDir, shadowRayDistance, seed);
 	
 	if (max(max(lightVisibility.r, lightVisibility.g), lightVisibility.b) < 0.001) {
-		return float3(0.0, 0.0, 0.0);
+		return float3(0.0, 0.0, 0.0); // 完全被遮挡
 	}
 	
-	// 使用 Principled BSDF 评估
+	// 使用 Principled BSDF 评估材质响应
 	float pdf_brdf;
 	float3 brdf_eval = EvaluatePrincipledBSDF(material, viewDir, lightDir, normal, uv, pdf_brdf);
 	
-	// 最终光照
+	// 计算最终的光照贡献
 	float3 radiance = brdf_eval * light.color * attenuation * lightVisibility * SHADOW_DEBUG_BOOST;
 	
 	// 添加radiance上限保护，防止异常值导致过曝亮点

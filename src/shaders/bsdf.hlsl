@@ -7,14 +7,14 @@
 #include "common.hlsl"
 #include "rng.hlsl"
 
-// Power heuristic for MIS (beta=2)
+// MIS 的 Power heuristic（β=2），用于多重重要性采样权重计算
 float PowerHeuristic(float pdf_a, float pdf_b) {
     float a = pdf_a * pdf_a;
     float b = pdf_b * pdf_b;
     return a / (a + b + 1e-8);
 }
 
-// Balance heuristic for MIS
+// MIS 的 Balance heuristic，用于多重重要性采样权重计算
 float BalanceHeuristic(float pdf_a, float pdf_b) {
     return pdf_a / (pdf_a + pdf_b + 1e-8);
 }
@@ -34,7 +34,7 @@ float3 SampleCosineHemisphere(float3 n, inout uint seed, out float pdf) {
 	float3 b = cross(n, t);
 	
 	float3 dir = normalize(x * t + y * b + z * n);
-	pdf = z / PI; // cosine-weighted PDF
+	pdf = z / PI; // 余弦加权的概率密度函数
 	return dir;
 }
 
@@ -50,7 +50,7 @@ float3 GetMaterialBaseColor(Material mat, float2 uv) {
     }
 }
 
-// Schlick Fresnel
+// Schlick Fresnel 近似，计算菲涅尔反射系数
 float3 FresnelSchlick(float cosTheta, float3 F0) {
 	return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
 }
@@ -99,7 +99,7 @@ float FresnelDielectric(float cosThetaI, float etaI, float etaT) {
 
 // ==================== Principled BSDF Implementation ====================
 
-// Build orthonormal basis from normal
+// 从法线构建正交基（切线和副切线），用于各向异性BSDF
 void BuildOrthonormalBasis(float3 N, out float3 T, out float3 B) {
 	float3 up = abs(N.z) < 0.999 ? float3(0, 0, 1) : float3(1, 0, 0);
 	T = normalize(cross(up, N));
@@ -134,12 +134,12 @@ void ComputeLobeWeights(float3 F, float3 kD, float clearcoat,
 	clearcoat_weight /= total_weight;
 }
 
-// GGX Distribution (with anisotropic support)
+// GGX 微表面法线分布函数（支持各向异性）
 float GGX_D(float3 H, float3 N, float3 T, float3 B, float roughness, float anisotropic) {
 	float alpha_x, alpha_y;
 	ComputeAnisotropicAlpha(roughness, anisotropic, alpha_x, alpha_y);
 	
-	float NdotH = max(dot(N, H), 0.0); // 确保非负
+	float NdotH = max(dot(N, H), 0.0); // 确保点积非负
 	float TdotH = dot(T, H);
 	float BdotH = dot(B, H);
 	
@@ -147,7 +147,7 @@ float GGX_D(float3 H, float3 N, float3 T, float3 B, float roughness, float aniso
 	float3 v = float3(alpha_y * TdotH, alpha_x * BdotH, a2 * NdotH);
 	float v2 = dot(v, v);
 	
-	// 添加数值稳定性保护：防止v2过小导致w2爆炸
+	// 数值稳定性保护：防止v2过小导致w2爆炸
 	// 当v2非常小时，D项应该接近0，而不是无限大
 	const float MIN_V2 = 1e-10; // 防止除零的最小值
 	v2 = max(v2, MIN_V2);
@@ -156,17 +156,17 @@ float GGX_D(float3 H, float3 N, float3 T, float3 B, float roughness, float aniso
 	
 	// 限制w2的最大值，防止数值爆炸
 	// 理论上D项的最大值约为 1/(PI * alpha^2)，这里使用更保守的上限
-	const float MAX_W2 = 1e6; // 合理的上限，防止数值溢出
+	const float MAX_W2 = 1e6; // 合理的上限值，防止数值溢出
 	w2 = min(w2, MAX_W2);
 	
 	float D = a2 * w2 * w2 / PI;
 	
 	// 最终安全检查：限制D项的最大值
-	const float MAX_D = 1e4; // 防止异常大的D值
+	const float MAX_D = 1e4; // 防止异常大的D值导致数值问题
 	return min(D, MAX_D);
 }
 
-// GGX Geometry term (Smith)
+// GGX 几何项（Smith G1），计算自遮挡
 float GGX_G1(float3 V, float3 N, float3 T, float3 B, float roughness, float anisotropic) {
 	float alpha_x, alpha_y;
 	ComputeAnisotropicAlpha(roughness, anisotropic, alpha_x, alpha_y);
@@ -184,13 +184,13 @@ float GGX_G(float3 V, float3 L, float3 N, float3 T, float3 B, float roughness, f
 	return GGX_G1(V, N, T, B, roughness, anisotropic) * GGX_G1(L, N, T, B, roughness, anisotropic);
 }
 
-// Sample GGX distribution (anisotropic) - 内部版本，接受预计算的 T, B
+// GGX 分布采样（各向异性）- 内部版本，接受预计算的切空间基向量 T, B
 float3 SampleGGX_Internal(float3 N, float3 V, float3 T, float3 B, float roughness, float anisotropic, 
                           float anisotropic_rotation, inout uint seed, out float pdf) {
 	float u1 = Rand01(seed);
 	float u2 = Rand01(seed);
 	
-	// Apply anisotropic rotation
+	// 应用各向异性旋转
 	float rotation_angle = anisotropic_rotation * 2.0 * PI;
 	float cos_rot = cos(rotation_angle);
 	float sin_rot = sin(rotation_angle);
@@ -199,7 +199,7 @@ float3 SampleGGX_Internal(float3 N, float3 V, float3 T, float3 B, float roughnes
 	T = T_rot;
 	B = B_rot;
 	
-	// Sample with anisotropy
+	// 使用各向异性参数进行采样
 	float alpha_x, alpha_y;
 	ComputeAnisotropicAlpha(roughness, anisotropic, alpha_x, alpha_y);
 	
@@ -212,14 +212,14 @@ float3 SampleGGX_Internal(float3 N, float3 V, float3 T, float3 B, float roughnes
 	float cos_theta = 1.0 / sqrt(1.0 + tan_theta * tan_theta);
 	float sin_theta = tan_theta * cos_theta;
 	
-	// Half vector in local space
+	// 局部空间中的半向量
 	float3 H_local = float3(sin_theta * cos_phi, sin_theta * sin_phi, cos_theta);
 	float3 H = normalize(T * H_local.x + B * H_local.y + N * H_local.z);
 	
-	// Reflect to get light direction
+	// 反射得到光线方向
 	float3 L = reflect(-V, H);
 	
-	// Calculate PDF
+	// 计算概率密度函数
 	float D = GGX_D(H, N, T, B, roughness, anisotropic);
 	float NdotH = max(dot(N, H), 0.0);
 	float VdotH = max(dot(V, H), 0.0);
@@ -228,7 +228,7 @@ float3 SampleGGX_Internal(float3 N, float3 V, float3 T, float3 B, float roughnes
 	return L;
 }
 
-// Sample GGX distribution (anisotropic) - 外部接口，保持兼容性
+// GGX 分布采样（各向异性）- 外部接口，保持向后兼容性
 float3 SampleGGX(float3 N, float3 V, float roughness, float anisotropic, float anisotropic_rotation, 
                  inout uint seed, out float pdf) {
 	float3 T, B;
@@ -236,24 +236,24 @@ float3 SampleGGX(float3 N, float3 V, float roughness, float anisotropic, float a
 	return SampleGGX_Internal(N, V, T, B, roughness, anisotropic, anisotropic_rotation, seed, pdf);
 }
 
-// Sheen BRDF (Estevez & Kulla)
+// Sheen BRDF 评估（Estevez & Kulla 模型），用于织物的绒毛效果
 float3 EvaluateSheen(float3 V, float3 L, float3 N, float3 base_color, float sheen, float sheen_tint) {
 	if (sheen < 1e-5) return float3(0, 0, 0);
 	
 	float3 H = normalize(V + L);
 	float VdotH = max(dot(V, H), 0.0);
 	
-	// Sheen color
+	// Sheen 颜色计算
 	float lum = dot(base_color, float3(0.299, 0.587, 0.114));
 	float3 tint_color = lum > 0 ? base_color / lum : float3(1, 1, 1);
 	float3 sheen_color = lerp(float3(1, 1, 1), tint_color, sheen_tint);
 	
-	// Schlick Fresnel approximation for sheen
+	// Sheen 的 Schlick Fresnel 近似
 	float fresnel = pow(1.0 - VdotH, 5.0);
 	return sheen * sheen_color * fresnel;
 }
 
-// Clearcoat BRDF
+// Clearcoat BRDF 评估，用于清漆层（如汽车漆）
 float3 EvaluateClearcoat(float3 V, float3 L, float3 N, float clearcoat, float clearcoat_roughness, out float pdf) {
 	if (clearcoat < 1e-5) {
 		pdf = 0.0;
@@ -266,17 +266,17 @@ float3 EvaluateClearcoat(float3 V, float3 L, float3 N, float clearcoat, float cl
 	float NdotV = max(dot(N, V), 0.0);
 	float VdotH = max(dot(V, H), 0.0);
 	
-	// Clearcoat uses a fixed IOR of 1.5
+	// Clearcoat 使用固定的折射率 IOR = 1.5
 	float F0 = 0.04; // ((1.5 - 1) / (1.5 + 1))^2
 	float F = F0 + (1.0 - F0) * pow(1.0 - VdotH, 5.0);
 	
-	// GGX distribution for clearcoat
+	// Clearcoat 的 GGX 分布
 	float alpha = clearcoat_roughness * clearcoat_roughness;
 	float alpha2 = alpha * alpha;
 	float denom = NdotH * NdotH * (alpha2 - 1.0) + 1.0;
 	float D = alpha2 / (PI * denom * denom + 1e-7);
 	
-	// Geometry term (simplified for clearcoat)
+	// 几何项（Clearcoat 的简化版本）
 	float k = alpha / 2.0;
 	float G_V = NdotV / (NdotV * (1.0 - k) + k);
 	float G_L = NdotL / (NdotL * (1.0 - k) + k);
@@ -288,12 +288,12 @@ float3 EvaluateClearcoat(float3 V, float3 L, float3 N, float clearcoat, float cl
 	return float3(clearcoat_value, clearcoat_value, clearcoat_value);
 }
 
-// Sample clearcoat lobe
+// Clearcoat lobe 采样，生成清漆层反射方向
 float3 SampleClearcoat(float3 N, float3 V, float clearcoat_roughness, inout uint seed, out float pdf) {
 	float u1 = Rand01(seed);
 	float u2 = Rand01(seed);
 	
-	// GGX sampling for clearcoat
+	// Clearcoat 的 GGX 采样
 	float alpha = clearcoat_roughness * clearcoat_roughness;
 	float alpha2 = alpha * alpha;
 	
@@ -301,17 +301,17 @@ float3 SampleClearcoat(float3 N, float3 V, float clearcoat_roughness, inout uint
 	float sin_theta = sqrt(max(0.0, 1.0 - cos_theta * cos_theta));
 	float phi = 2.0 * PI * u2;
 	
-	// Build tangent space
+	// 构建切空间基
 	float3 T, B;
 	BuildOrthonormalBasis(N, T, B);
 	
-	// Half vector
+	// 半向量
 	float3 H = normalize(sin_theta * cos(phi) * T + sin_theta * sin(phi) * B + cos_theta * N);
 	
-	// Reflect to get light direction
+	// 反射得到光线方向
 	float3 L = reflect(-V, H);
 	
-	// Calculate PDF
+	// 计算概率密度函数
 	float NdotH = max(dot(N, H), 0.0);
 	float VdotH = max(dot(V, H), 0.0);
 	float D = alpha2 / (PI * pow(NdotH * NdotH * (alpha2 - 1.0) + 1.0, 2.0) + 1e-7);
@@ -320,7 +320,7 @@ float3 SampleClearcoat(float3 N, float3 V, float clearcoat_roughness, inout uint
 	return L;
 }
 
-// Principled BSDF evaluation
+// Principled BSDF 评估，计算给定入射和出射方向的BRDF值
 float3 EvaluatePrincipledBSDF(Material mat, float3 V, float3 L, float3 N, float2 uv, out float pdf) {
 	float3 baseColor = GetMaterialBaseColor(mat, uv);
 	
@@ -336,18 +336,18 @@ float3 EvaluatePrincipledBSDF(Material mat, float3 V, float3 L, float3 N, float2
 	float NdotH = max(dot(N, H), 0.0);
 	float VdotH = max(dot(V, H), 0.0);
 	
-	// Build tangent space for anisotropic
+	// 构建切空间基（用于各向异性）
 	float3 T, B;
 	BuildOrthonormalBasis(N, T, B);
 	
-	// Specular reflection color
+	// 计算镜面反射颜色
 	float3 spec_color, F0;
 	ComputeSpecularColor(mat, baseColor, spec_color, F0);
 	
-	// Fresnel
+	// 菲涅尔项
 	float3 F = F0 + (1.0 - F0) * pow(1.0 - VdotH, 5.0);
 	
-	// GGX specular
+	// GGX 镜面反射项
 	float D = GGX_D(H, N, T, B, mat.roughness, mat.anisotropic);
 	float G = GGX_G(V, L, N, T, B, mat.roughness, mat.anisotropic);
 	
@@ -356,26 +356,26 @@ float3 EvaluatePrincipledBSDF(Material mat, float3 V, float3 L, float3 N, float2
 	float denominator = max(4.0 * NdotV * NdotL, MIN_DENOM);
 	float3 specular = D * F * G / denominator;
 	
-	// 限制specular项的最大值，防止数值爆炸
+	// 限制镜面反射项的最大值，防止数值爆炸
 	// 即使D、F、G都很大，specular也不应该超过合理范围
 	const float MAX_SPECULAR = 1e3; // 合理的上限值
 	specular = min(specular, float3(MAX_SPECULAR, MAX_SPECULAR, MAX_SPECULAR));
 	
-	// Diffuse (energy-conserving)
+	// 漫反射项（能量守恒）
 	float3 kD = (1.0 - F) * (1.0 - mat.metallic);
 	float3 diffuse = kD * baseColor / PI;
 	
-	// Sheen
+	// Sheen 项
 	float3 sheen = EvaluateSheen(V, L, N, baseColor, mat.sheen, mat.sheen_tint);
 	
-	// Clearcoat
+	// Clearcoat 项
 	float clearcoat_pdf;
 	float3 clearcoat = EvaluateClearcoat(V, L, N, mat.clearcoat, mat.clearcoat_roughness, clearcoat_pdf);
 	
-	// Combine lobes
+	// 组合所有 lobe
 	float3 brdf = diffuse + specular + sheen + clearcoat;
 	
-	// Calculate combined PDF
+	// 计算组合的概率密度函数
 	float diffuse_weight, specular_weight, clearcoat_weight;
 	ComputeLobeWeights(F, kD, mat.clearcoat, diffuse_weight, specular_weight, clearcoat_weight);
 	
@@ -387,15 +387,15 @@ float3 EvaluatePrincipledBSDF(Material mat, float3 V, float3 L, float3 N, float2
 	return brdf * NdotL;
 }
 
-// Sample Principled BSDF
+// Principled BSDF 采样（重要性采样），生成新的光线方向
 float3 SamplePrincipledBSDF(Material mat, float3 V, float3 N, float2 uv, inout uint seed, out float pdf, out float3 weight) {
 	float3 baseColor = GetMaterialBaseColor(mat, uv);
 	
-	// Build tangent space (预计算，避免在采样函数中重复计算)
+	// 构建切空间基（预计算，避免在采样函数中重复计算）
 	float3 T, B;
 	BuildOrthonormalBasis(N, T, B);
 	
-	// Calculate lobe weights
+	// 计算各 lobe 的权重
 	float VdotH_approx = max(dot(V, N), 0.0);
 	
 	float3 spec_color, F0;
@@ -407,32 +407,32 @@ float3 SamplePrincipledBSDF(Material mat, float3 V, float3 N, float2 uv, inout u
 	float diffuse_weight, specular_weight, clearcoat_weight;
 	ComputeLobeWeights(F_approx, kD, mat.clearcoat, diffuse_weight, specular_weight, clearcoat_weight);
 	
-	// Choose lobe to sample
+	// 根据权重选择要采样的 lobe
 	float lobe_choice = Rand01(seed);
 	float3 L;
 	
 	if (lobe_choice < diffuse_weight) {
-		// Sample diffuse lobe
+		// 采样漫反射 lobe
 		L = SampleCosineHemisphere(N, seed, pdf);
-		weight = float3(1, 1, 1); // Will be multiplied by BRDF evaluation
+		weight = float3(1, 1, 1); // 将在BRDF评估时乘以实际值
 	} else if (lobe_choice < diffuse_weight + specular_weight) {
-		// Sample specular lobe (使用预计算的 T, B)
+		// 采样镜面反射 lobe（使用预计算的切空间基 T, B）
 		L = SampleGGX_Internal(N, V, T, B, mat.roughness, mat.anisotropic, mat.anisotropic_rotation, seed, pdf);
 		weight = float3(1, 1, 1);
 	} else {
-		// Sample clearcoat lobe
+		// 采样 clearcoat lobe
 		L = SampleClearcoat(N, V, mat.clearcoat_roughness, seed, pdf);
 		weight = float3(1, 1, 1);
 	}
 	
-	// Evaluate full BSDF to get actual weight
+	// 评估完整的BSDF以获得实际权重
 	float eval_pdf;
 	float3 brdf = EvaluatePrincipledBSDF(mat, V, L, N, uv, eval_pdf);
 	
-	// Update PDF to be the combined PDF
+	// 更新PDF为组合的PDF
 	pdf = eval_pdf;
 	
-	// Weight is BRDF * NdotL / PDF (but BRDF already includes NdotL)
+	// 权重 = BRDF * NdotL / PDF（但BRDF已经包含了NdotL）
 	// 关键修复：限制weight的最大值，防止pdf过小时weight爆炸
 	if (pdf > 1e-7) {
 		weight = brdf / pdf;

@@ -17,7 +17,8 @@ namespace {
 #include "built_in_shaders.inl"
 }
 
-// 初始化 Skybox (根据 USE_HDR_SKYBOX 开关决定使用 HDR 或程序化天空)
+// 初始化天空盒（根据USE_HDR_SKYBOX开关决定使用HDR或程序化天空）
+// 功能：尝试加载HDR环境贴图，失败则使用程序化天空
 void Application::InitializeSkybox() {
     if (USE_HDR_SKYBOX) {
         // 尝试加载 HDR 环境贴图
@@ -42,6 +43,7 @@ void Application::InitializeSkybox() {
 }
 
 // 创建默认的后备环境贴图（简单的渐变天空）
+// 功能：生成一个64x32的渐变天空纹理，从天顶到地平线再到地面
 void Application::CreateDefaultEnvironmentMap() {
     const int width = 64;
     const int height = 32;
@@ -82,20 +84,27 @@ void Application::CreateDefaultEnvironmentMap() {
     grassland::LogInfo("Created default environment map ({}x{})", width, height);
 }
 
+// 构造函数：创建应用程序实例
+// api: 图形API后端（D3D12或Vulkan）
 Application::Application(grassland::graphics::BackendAPI api) {
+    // 创建图形核心对象
     grassland::graphics::CreateCore(api, grassland::graphics::Core::Settings{}, &core_);
+    // 自动选择逻辑设备
     core_->InitializeLogicalDeviceAutoSelect(true);
 
+    // 记录设备信息
     grassland::LogInfo("Device Name: {}", core_->DeviceName());
     grassland::LogInfo("- Ray Tracing Support: {}", core_->DeviceRayTracingSupport());
 }
 
+// 析构函数：清理资源
 Application::~Application() {
     core_.reset();
 }
 
-// Event handler for keyboard input
-// Poll keyboard state directly to ensure it works even when ImGui is active
+// 处理键盘输入事件
+// 功能：直接轮询键盘状态，确保即使ImGui激活时也能工作
+// 处理WASD移动、Space/Shift上下移动、Tab隐藏UI、Ctrl+S保存截图等
 void Application::ProcessInput() {
     // Get GLFW window handle
     GLFWwindow* glfw_window = window_->GLFWWindow();
@@ -166,7 +175,9 @@ void Application::ProcessInput() {
     }
 }
 
-// Event handler for mouse movement
+// 鼠标移动事件处理函数
+// xpos, ypos: 鼠标位置（屏幕坐标）
+// 功能：更新鼠标位置，处理相机视角旋转（如果相机启用）
 void Application::OnMouseMove(double xpos, double ypos) {
     // Always store mouse position for hover detection (even if ImGui wants input)
     mouse_x_ = xpos;
@@ -209,7 +220,12 @@ void Application::OnMouseMove(double xpos, double ypos) {
     camera_front_ = glm::normalize(front);
 }
 
-// Event handler for mouse button clicks
+// 鼠标按钮事件处理函数
+// button: 按钮（0=左键，1=右键）
+// action: 动作（1=按下）
+// mods: 修饰键
+// xpos, ypos: 鼠标位置
+// 功能：左键选择实体，右键切换相机模式
 void Application::OnMouseButton(int button, int action, int mods, double xpos, double ypos) {
     const int BUTTON_LEFT = 0;  // Left mouse button
     const int BUTTON_RIGHT = 1; // Right mouse button
@@ -705,8 +721,11 @@ void Application::OnClose() {
     window_.reset();
 }
 
+// 更新鼠标悬停的实体
+// 功能：从entity_id_image_读取鼠标位置下的实体ID，实现悬停检测
+// 注意：仅在相机禁用时检测（光标可见时）
 void Application::UpdateHoveredEntity() {
-    // Only detect hover when camera is disabled (cursor visible)
+    // 仅在相机禁用时检测悬停（光标可见）
     if (camera_enabled_) {
         hovered_entity_id_ = -1;
         hovered_pixel_color_ = glm::vec4(0.0f);
@@ -767,14 +786,17 @@ void Application::UpdateHoveredEntity() {
     // Hover state is shown in the UI panels, no logging needed
 }
 
+// 更新应用程序状态（每帧调用）
+// 功能：处理窗口关闭、处理输入、更新相机、检测相机移动、更新悬停实体、更新GPU缓冲区
 void Application::OnUpdate() {
+    // 检查窗口是否应该关闭
     if (window_->ShouldClose()) {
         window_->CloseWindow();
         alive_ = false;
-        return;  // Exit update immediately after closing
+        return;  // 关闭后立即退出更新
     }
     if (alive_) {
-        // Process keyboard input to move camera
+        // 处理键盘输入以移动相机
         ProcessInput();
         
         CameraObject current_camera_object{};
@@ -859,9 +881,11 @@ void Application::OnUpdate() {
     }
 }
 
+// 应用悬停高亮效果（后处理）
+// image: 要处理的图像
+// 功能：通过修改匹配悬停实体的像素来应用高亮效果
+// 注意：这是在CPU端进行的后处理，不影响累积
 void Application::ApplyHoverHighlight(grassland::graphics::Image* image) {
-    // Apply hover highlighting by modifying pixels where entity ID matches hovered entity
-    // This is done as a CPU-side post-process so it doesn't affect accumulation
     
     int width = window_->GetWidth();
     int height = window_->GetHeight();
@@ -891,8 +915,10 @@ void Application::ApplyHoverHighlight(grassland::graphics::Image* image) {
     image->UploadData(image_data.data());
 }
 
+// 保存累积输出到PNG文件
+// filename: 输出文件名
+// 功能：将累积的输出图像保存为PNG文件（不包含悬停高亮）
 void Application::SaveAccumulatedOutput(const std::string& filename) {
-    // Save the accumulated output image to a PNG file (without hover highlighting)
     int width = window_->GetWidth();
     int height = window_->GetHeight();
     int sample_count = film_->GetSampleCount();
@@ -935,9 +961,10 @@ void Application::SaveAccumulatedOutput(const std::string& filename) {
     }
 }
 
+// 渲染信息覆盖层（左侧UI面板）
+// 功能：显示相机信息、景深控制、MSAA控制、运动模糊控制、环境光控制、场景信息、渲染信息等
+// 注意：仅在相机禁用且UI未隐藏时显示
 void Application::RenderInfoOverlay() {
-    // Only show overlay when camera is disabled and UI is not hidden
-    if (camera_enabled_ || ui_hidden_) {
         return;
     }
 
@@ -1296,9 +1323,10 @@ void Application::RenderInfoOverlay() {
     ImGui::End();
 }
 
+// 渲染实体检查器面板（右侧UI面板）
+// 功能：显示实体选择下拉菜单、选中实体的详细信息（变换、材质、网格等）、材质编辑控件
+// 注意：仅在相机禁用且UI未隐藏时显示
 void Application::RenderEntityPanel() {
-    // Only show entity panel when camera is disabled and UI is not hidden
-    if (camera_enabled_ || ui_hidden_) {
         return;
     }
 
@@ -1513,8 +1541,10 @@ void Application::RenderEntityPanel() {
     ImGui::End();
 }
 
+// 渲染一帧
+// 功能：清空缓冲区、绑定资源、调度光线追踪、应用后处理、渲染UI、呈现图像
 void Application::OnRender() {
-    // Don't render if window is closing
+    // 如果窗口正在关闭，不渲染
     if (!alive_) {
         return;
     }
