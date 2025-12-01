@@ -6,13 +6,12 @@
 第四个问题：BSDF 里面的数值保护关闭，现在的渲染出小白点问题到底在哪？
 第五个问题：lighting 的MAX_BOUNCES=6 多少次 NUM_LIGHT_SAMPLES 仍然数值保护。
 第六个问题：Skybox 使用简化的 Blinn-Phong 镜面反射，而不是 Principled BSDF？
-第七个问题：GetMSAAModeID 没用。
-第八个问题：运动模糊 Apply Motion Blur 应该在 motion blur 这里实现。
-第九个问题：暂时不需要快门形状，要不要删除。
-第十个问题：只需要做平移模糊，不需要其他内容。
-第十一个问题：为啥 motion blur 在这里实现啊，其次是 max_bounce 怎么 =8 和前面 lighting 也没匹配上啊。也要删除相关数值保护。(重构 raytracing 函数)
-第十二个问题：删除 disny.glsl 有用吗？
-第十三个问题：shader.hlsl 太长，数值保护过多，逻辑复杂。
+第七个问题：运动模糊 Apply Motion Blur 应该在 motion blur 这里实现。
+第八个问题：暂时不需要快门形状，要不要删除。
+第九个问题：只需要做平移模糊，不需要其他内容。
+第十个问题：为啥 motion blur 在这里实现啊，其次是 max_bounce 怎么 =8 和前面 lighting 也没匹配上啊。也要删除相关数值保护。(重构 raytracing 函数)
+第十一个问题：删除 disny.glsl 有用吗？
+第十二个问题：shader.hlsl 太长，数值保护过多，逻辑复杂。
 
 本文档详细说明光线追踪渲染管线中所有 shader 文件的功能、函数作用以及优化建议。
 
@@ -538,15 +537,6 @@
 - **功能**: 检查是否应该使用 MSAA
 - **用途**: 条件判断
 - **优化建议**: 无
-
-##### `GetMSAAModeID(int msaa_mode) -> int`
-- **功能**: 获取 MSAA 模式名称（用于调试）
-- **用途**: 调试
-- **问题**: 
-  - 注释说"返回模式的数字标识"，但实际就是返回输入值，无实际作用
-- **优化建议**: 
-  - 移除此函数（如果不需要调试信息）
-  - 或者实现实际的模式名称映射（如果HLSL支持字符串）
 
 ---
 

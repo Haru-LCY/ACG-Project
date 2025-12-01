@@ -14,7 +14,7 @@
 float3 TraceAlphaShadowRGB(float3 rayOrigin, float3 rayDirection, float maxDistance, inout uint seed) {
 	float3 visibility = float3(1.0, 1.0, 1.0);
 	float travelDistance = 0.0;
-	const int MAX_BOUNCES = 6; // 允许更多透明体穿过次数以捕获混合效果
+	const int MAX_BOUNCES = MAX_SHADOW_BOUNCES; // 允许更多透明体穿过次数以捕获混合效果
 	const float MIN_VISIBILITY = 0.001; // 如果可见性过低，提前终止追踪
 
 	for (int i = 0; i < MAX_BOUNCES; ++i) {

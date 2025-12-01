@@ -162,5 +162,9 @@ StructuredBuffer<EntityOffset> entity_offsets : register(t0, space23); // 实体
 static const float SHADOW_DEBUG_BOOST = 1.0; //1.0相当于正常
 static const float PI = 3.14159265359;
 
+// 路径追踪和阴影追踪的最大弹射次数
+#define MAX_PATH_BOUNCES 8      // 路径追踪最大弹射次数
+#define MAX_SHADOW_BOUNCES 6    // 阴影追踪最大弹射次数（用于透明材质）
+
 #endif // COMMON_HLSL
 

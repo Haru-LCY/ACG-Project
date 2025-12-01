@@ -43,7 +43,7 @@ bool TraceRaySimple(float3 rayOrigin, float3 rayDir, float tMin, float tMax, ino
 // 沿速度方向"拖尾"，产生运动模糊效果。这通过在采样时随机选择
 // 时间点来实现，不同采样看到物体在运动轨迹上的不同位置。
 float3 TracePathWithObjectMotionBlur(float3 rayOrigin, float3 rayDir, float motion_time, inout uint seed) {
-    const int MAX_BOUNCES = 8;
+    const int MAX_BOUNCES = MAX_PATH_BOUNCES;
     const float MAX_THROUGHPUT = 100.0;
     RayPayload payload;
     float3 radiance = float3(0,0,0);
