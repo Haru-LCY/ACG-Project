@@ -183,13 +183,16 @@
 	float t = RayTCurrent();
 	payload.hit_pos = WorldRayOrigin() + WorldRayDirection() * t;
 	
-	// 使用物体空间位置计算几何法线
+	// 获取实体ID和图元ID
+	uint entity_id = InstanceID();
+	uint primitive_id = PrimitiveIndex();
+	
+	// 转换到物体空间
 	float3 worldPos = payload.hit_pos;
 	float3 objectPos = mul(WorldToObject3x4(), float4(worldPos, 1.0)).xyz;
 	
-	// 根据实体ID计算几何法线
-	uint entity_id = InstanceID();
-	float3 objectNormal = ComputeGeometryNormal(entity_id, objectPos);
+	// 从全局缓冲区获取法线（优先使用OBJ文件中的vn，否则计算面法线）
+	float3 objectNormal = GetVertexNormal(entity_id, primitive_id, attr.barycentrics);
 	
 	// 转换到世界空间
 	float3x3 objectToWorld = (float3x3)ObjectToWorld3x4();
@@ -200,6 +203,6 @@
 		payload.normal = -payload.normal;
 	}
 	
-	// 根据实体ID计算UV坐标
-	payload.uv = ComputeGeometryUV(entity_id, objectPos, payload.normal);
+	// 从全局缓冲区获取UV坐标（优先使用OBJ文件中的vt，否则计算UV）
+	payload.uv = GetVertexUV(entity_id, primitive_id, attr.barycentrics, objectPos, objectNormal);
 }

@@ -67,6 +67,13 @@ struct HoverInfo {
     int hovered_entity_id;
 };
 
+// 实体偏移信息结构体（用于全局缓冲区，必须与C++端保持一致）
+struct EntityOffset {
+    uint vertex_offset;  // 在全局缓冲区中的起始顶点索引
+    uint index_offset;   // 在全局缓冲区中的起始索引
+    uint padding[2];     // 填充以对齐到16字节（GPU要求）
+};
+
 // 点光源结构体
 struct PointLight {
   float3 position;     // 光源位置
@@ -141,6 +148,13 @@ StructuredBuffer<float4> entity_velocities : register(t0, space15);  // 实体�
 ConstantBuffer<SkyboxInfo> skybox_info : register(b0, space16);    // 天空盒信息
 Texture2D environment_map : register(t0, space17);                  // HDR 环境贴图
 SamplerState envSampler : register(s0, space18);                    // 环境贴图采样器
+
+// 全局几何缓冲区（用于从OBJ文件加载的几何数据）
+StructuredBuffer<float3> global_vertices : register(t0, space19);      // 全局顶点缓冲区
+StructuredBuffer<float3> global_normals : register(t0, space20);       // 全局法线缓冲区
+StructuredBuffer<float2> global_texcoords : register(t0, space21);     // 全局UV坐标缓冲区
+StructuredBuffer<uint> global_indices : register(t0, space22);         // 全局索引缓冲区
+StructuredBuffer<EntityOffset> entity_offsets : register(t0, space23); // 实体偏移缓冲区
 
 //t，u，space分别表示纹理寄存器、采样器寄存器和常量缓冲区寄存器的空间索引
 

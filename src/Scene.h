@@ -55,6 +55,7 @@ public:
     grassland::graphics::Buffer* GetGlobalVertexBuffer() const { return global_vertex_buffer_.get(); }
     grassland::graphics::Buffer* GetGlobalNormalBuffer() const { return global_normal_buffer_.get(); }
     grassland::graphics::Buffer* GetGlobalIndexBuffer() const { return global_index_buffer_.get(); }
+    grassland::graphics::Buffer* GetGlobalTexcoordBuffer() const { return global_texcoord_buffer_.get(); }
     
     // 获取实体偏移缓冲区（存储每个实体的顶点/索引偏移）
     grassland::graphics::Buffer* GetEntityOffsetsBuffer() const { return entity_offsets_buffer_.get(); }
@@ -95,6 +96,7 @@ private:
     std::unique_ptr<grassland::graphics::Buffer> global_vertex_buffer_;  // 全局顶点缓冲区
     std::unique_ptr<grassland::graphics::Buffer> global_normal_buffer_; // 全局法线缓冲区
     std::unique_ptr<grassland::graphics::Buffer> global_index_buffer_;  // 全局索引缓冲区
+    std::unique_ptr<grassland::graphics::Buffer> global_texcoord_buffer_; // 全局UV坐标缓冲区
     std::unique_ptr<grassland::graphics::Buffer> entity_offsets_buffer_;  // 实体偏移缓冲区
     
     // 运动模糊：实体速度缓冲区

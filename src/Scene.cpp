@@ -39,6 +39,7 @@ void Scene::Clear() {
     global_vertex_buffer_.reset();
     global_normal_buffer_.reset();
     global_index_buffer_.reset();
+    global_texcoord_buffer_.reset();
     entity_offsets_buffer_.reset();
     velocities_buffer_.reset();
 }
@@ -168,9 +169,10 @@ void Scene::BuildGlobalGeometryBuffers() {
         return;
     }
 
-    // 收集所有实体的顶点、法线、索引数据
+    // 收集所有实体的顶点、法线、UV、索引数据
     std::vector<glm::vec3> all_vertices;
     std::vector<glm::vec3> all_normals;
+    std::vector<glm::vec2> all_texcoords;
     std::vector<uint32_t> all_indices;
     std::vector<EntityOffset> entity_offsets;
     
@@ -200,16 +202,29 @@ void Scene::BuildGlobalGeometryBuffers() {
             all_vertices.push_back(positions[i]);
         }
         
-        // 添加法线（如果没有法线数据，使用占位符，将在shader中几何计算）
+        // 添加法线（如果没有法线数据，使用占位符 (0,0,0)，将在shader中计算面法线）
         const glm::vec3* normals = reinterpret_cast<const glm::vec3*>(mesh.Normals());
         if (normals) {
             for (size_t i = 0; i < num_vertices; ++i) {
                 all_normals.push_back(normals[i]);
             }
         } else {
-            // 生成占位符法线（将在shader中几何计算）
+            // 生成占位符法线 (0,0,0) - shader中会检测并计算面法线
             for (size_t i = 0; i < num_vertices; ++i) {
-                all_normals.push_back(glm::vec3(0.0f, 1.0f, 0.0f)); // 占位符
+                all_normals.push_back(glm::vec3(0.0f, 0.0f, 0.0f));
+            }
+        }
+        
+        // 添加UV坐标（如果没有UV数据，使用占位符 (-1,-1)，将在shader中计算）
+        const glm::vec2* texcoords = reinterpret_cast<const glm::vec2*>(mesh.TexCoords());
+        if (texcoords) {
+            for (size_t i = 0; i < num_vertices; ++i) {
+                all_texcoords.push_back(texcoords[i]);
+            }
+        } else {
+            // 生成占位符UV (-1,-1) - shader中会检测并计算UV
+            for (size_t i = 0; i < num_vertices; ++i) {
+                all_texcoords.push_back(glm::vec2(-1.0f, -1.0f));
             }
         }
         
@@ -237,6 +252,13 @@ void Scene::BuildGlobalGeometryBuffers() {
                        grassland::graphics::BUFFER_TYPE_DYNAMIC, 
                        &global_normal_buffer_);
     global_normal_buffer_->UploadData(all_normals.data(), normal_buffer_size);
+    
+    // 创建全局UV坐标缓冲区
+    size_t texcoord_buffer_size = all_texcoords.size() * sizeof(glm::vec2);
+    core_->CreateBuffer(texcoord_buffer_size, 
+                       grassland::graphics::BUFFER_TYPE_DYNAMIC, 
+                       &global_texcoord_buffer_);
+    global_texcoord_buffer_->UploadData(all_texcoords.data(), texcoord_buffer_size);
     
     // 创建全局索引缓冲区
     size_t index_buffer_size = all_indices.size() * sizeof(uint32_t);
@@ -270,8 +292,8 @@ void Scene::BuildGlobalGeometryBuffers() {
                        &velocities_buffer_);
     velocities_buffer_->UploadData(velocities.data(), velocities_buffer_size);
     
-    grassland::LogInfo("Built global geometry buffers: {} vertices, {} normals, {} indices, {} entities", 
-                       all_vertices.size(), all_normals.size(), all_indices.size(), entity_offsets.size());
+    grassland::LogInfo("Built global geometry buffers: {} vertices, {} normals, {} texcoords, {} indices, {} entities", 
+                       all_vertices.size(), all_normals.size(), all_texcoords.size(), all_indices.size(), entity_offsets.size());
 }
 
 // 收集所有实体的纹理
