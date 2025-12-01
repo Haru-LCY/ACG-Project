@@ -275,7 +275,7 @@ void Scene::BuildGlobalGeometryBuffers() {
 }
 
 // 收集所有实体的纹理
-// 功能：从所有实体收集纹理，分配纹理ID，填充纹理数组到16个以满足D3D12静态描述符要求
+// 功能：从所有实体收集纹理，分配纹理ID，填充纹理数组到MAX_TEXTURES个以满足D3D12静态描述符要求
 void Scene::CollectTextures() {
     textures_.clear();
     
@@ -291,21 +291,20 @@ void Scene::CollectTextures() {
         }
     }
     
-    // 将纹理数组填充到最大大小（16）以满足D3D12的静态描述符要求
+    // 将纹理数组填充到最大大小（MAX_TEXTURES）以满足D3D12的静态描述符要求
     // 如果不这样做，描述符表将包含未初始化的描述符，导致崩溃
     if (!textures_.empty()) {
         size_t current_texture_count = textures_.size();
-        const size_t max_textures = 16;
-        if (current_texture_count < max_textures) {
+        if (current_texture_count < MAX_TEXTURES) {
             // 使用第一个可用纹理作为后备纹理
             grassland::graphics::Image* fallback_texture = textures_[0];
-            for (size_t i = current_texture_count; i < max_textures; ++i) {
+            for (size_t i = current_texture_count; i < MAX_TEXTURES; ++i) {
                 textures_.push_back(fallback_texture);
             }
             grassland::LogInfo("Padded texture array from {} to {} with a fallback texture.", current_texture_count, textures_.size());
         }
     }
     
-    grassland::LogInfo("Collected {} textures from scene (padded to 16 for GPU binding)", textures_.size());
+    grassland::LogInfo("Collected {} textures from scene (padded to {} for GPU binding)", textures_.size(), MAX_TEXTURES);
 }
 

@@ -4,6 +4,9 @@
 #ifndef COMMON_HLSL
 #define COMMON_HLSL
 
+// ==================== Constants ====================
+#define MAX_TEXTURES 64  // 纹理数组最大数量（必须与C++端保持一致）
+
 struct CameraInfo {
   float4x4 screen_to_camera;
   float4x4 camera_to_world;
@@ -130,7 +133,7 @@ RWTexture2D<int> accumulated_samples : register(u0, space7);
 RWTexture2D<float> depth_output : register(u0, space12);
 StructuredBuffer<PointLight> point_lights : register(t0, space8);  // 点光源数组
 StructuredBuffer<AreaLight> area_lights : register(t0, space9);  // 面光源数组
-Texture2D textures[16] : register(t0, space10);  // 纹理数组 (最多16个)
+Texture2D textures[MAX_TEXTURES] : register(t0, space10);  // 纹理数组 (最多MAX_TEXTURES个)
 SamplerState texSampler : register(s0, space11);  // 纹理采样器
 StructuredBuffer<float4> entity_velocities : register(t0, space15);  // 实体速度数组 (xyz=velocity, w=padding)
 

@@ -40,7 +40,7 @@ float3 SampleCosineHemisphere(float3 n, inout uint seed, out float pdf) {
 
 // 获取材质的基础颜色（考虑纹理）
 float3 GetMaterialBaseColor(Material mat, float2 uv) {
-    if (mat.texture_id >= 0 && mat.texture_id < 16) {
+    if (mat.texture_id >= 0 && mat.texture_id < MAX_TEXTURES) {
         // 有纹理，采样纹理颜色
         float4 texColor = textures[mat.texture_id].SampleLevel(texSampler, uv, 0);
         return texColor.rgb;

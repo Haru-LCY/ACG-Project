@@ -675,7 +675,7 @@ void Application::OnInit() {
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_WRITABLE_IMAGE, 1);          // space7 - accumulated samples
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space8 - point lights
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space9 - area lights
-    program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_IMAGE, 16);                  // space10 - texture array
+    program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_IMAGE, MAX_TEXTURES);        // space10 - texture array
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_SAMPLER, 1);                 // space11 - texture sampler
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_WRITABLE_IMAGE, 1);          // space12 - depth image
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space13 - reserved

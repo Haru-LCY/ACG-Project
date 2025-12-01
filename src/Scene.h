@@ -5,6 +5,10 @@
 #include <vector>
 #include <memory>
 
+// 纹理数组最大数量（必须与Shader端保持一致）
+// 注意：此值必须与 src/shaders/common.hlsl 中的 MAX_TEXTURES 宏定义保持一致
+constexpr size_t MAX_TEXTURES = 64;
+
 // 实体偏移信息结构体（用于全局缓冲区）
 // Entity offset information for global buffers
 struct EntityOffset {
