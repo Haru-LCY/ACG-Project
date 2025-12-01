@@ -965,6 +965,8 @@ void Application::SaveAccumulatedOutput(const std::string& filename) {
 // 功能：显示相机信息、景深控制、MSAA控制、运动模糊控制、环境光控制、场景信息、渲染信息等
 // 注意：仅在相机禁用且UI未隐藏时显示
 void Application::RenderInfoOverlay() {
+    // Only show overlay when camera is disabled and UI is not hidden
+    if (camera_enabled_ || ui_hidden_) {
         return;
     }
 
@@ -1327,6 +1329,8 @@ void Application::RenderInfoOverlay() {
 // 功能：显示实体选择下拉菜单、选中实体的详细信息（变换、材质、网格等）、材质编辑控件
 // 注意：仅在相机禁用且UI未隐藏时显示
 void Application::RenderEntityPanel() {
+    // Only show entity panel when camera is disabled and UI is not hidden
+    if (camera_enabled_ || ui_hidden_) {
         return;
     }
 
