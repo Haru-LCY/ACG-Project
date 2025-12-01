@@ -20,6 +20,9 @@ struct CameraObject {
     int motion_blur_mode;         // 运动模糊模式: 0=Off, 1=Camera, 2=Object, 3=Radial, 4=Directional
     float motion_blur_intensity;  // 运动模糊强度
     glm::vec2 motion_blur_direction; // 方向性模糊的方向向量
+    // 光源数量
+    int num_point_lights;  // 点光源数量
+    int num_area_lights;   // 面光源数量
 };
 
 // Skybox / Environment Map 信息 (与 shader 中的定义匹配)

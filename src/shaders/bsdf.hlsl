@@ -106,6 +106,16 @@ void BuildOrthonormalBasis(float3 N, out float3 T, out float3 B) {
 	B = cross(N, T);
 }
 
+// Schlick Fresnel 权重函数（用于概率计算）
+float SchlickWeight(float cosTheta) {
+	return pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+}
+
+// 计算颜色亮度（用于概率权重计算）
+float Luminance(float3 color) {
+	return dot(color, float3(0.299, 0.587, 0.114));
+}
+
 // 计算各向异性 alpha 值（减少重复计算）
 void ComputeAnisotropicAlpha(float roughness, float anisotropic, out float alpha_x, out float alpha_y) {
 	float aspect = sqrt(1.0 - anisotropic * 0.9);
@@ -121,17 +131,33 @@ void ComputeSpecularColor(Material mat, float3 baseColor, out float3 spec_color,
 	F0 = lerp(0.08 * mat.specular * spec_color, baseColor, mat.metallic);
 }
 
-// 计算 lobe 权重（减少重复计算）
-void ComputeLobeWeights(float3 F, float3 kD, float clearcoat, 
+// 计算 lobe 权重（参考 reference 实现）
+// 按照 Disney BSDF reference 的方式计算各 lobe 的采样概率
+void ComputeLobeWeights(Material mat, float3 baseColor, float3 Cspec0, float NdotV,
                          out float diffuse_weight, out float specular_weight, out float clearcoat_weight) {
-	diffuse_weight = max(max(kD.x, kD.y), kD.z);
-	specular_weight = max(max(F.x, F.y), F.z);
-	clearcoat_weight = clearcoat * 0.25;
+	// 计算材质类型权重
+	float dielectricWt = (1.0 - mat.metallic) * (1.0 - mat.transmission);
+	float metalWt = mat.metallic;
+	float glassWt = (1.0 - mat.metallic) * mat.transmission;
 	
-	float total_weight = diffuse_weight + specular_weight + clearcoat_weight + 1e-7;
-	diffuse_weight /= total_weight;
-	specular_weight /= total_weight;
-	clearcoat_weight /= total_weight;
+	// 计算 Schlick Fresnel 权重（用于概率计算）
+	float schlickWt = SchlickWeight(NdotV);
+	
+	// 计算各 lobe 的概率（参考 reference）
+	float diffPr = dielectricWt * Luminance(baseColor);
+	float dielectricPr = dielectricWt * Luminance(lerp(Cspec0, float3(1.0, 1.0, 1.0), schlickWt));
+	float metalPr = metalWt * Luminance(lerp(baseColor, float3(1.0, 1.0, 1.0), schlickWt));
+	float glassPr = glassWt;
+	float clearCtPr = 0.25 * mat.clearcoat;
+	
+	// 归一化概率
+	float totalPr = diffPr + dielectricPr + metalPr + glassPr + clearCtPr + 1e-7;
+	float invTotalPr = 1.0 / totalPr;
+	
+	// 合并 dielectric 和 metal 的反射为 specular_weight
+	diffuse_weight = diffPr * invTotalPr;
+	specular_weight = (dielectricPr + metalPr + glassPr) * invTotalPr;
+	clearcoat_weight = clearCtPr * invTotalPr;
 }
 
 // GGX 微表面法线分布函数（支持各向异性）
@@ -332,6 +358,43 @@ float3 EvaluatePrincipledBSDF(Material mat, float3 V, float3 L, float3 N, float2
 		return float3(0, 0, 0);
 	}
 	
+	// 如果金属度大于 0.3，使用纯镜面反射
+	const float METALLIC_THRESHOLD = 0.3;
+	if (mat.metallic > METALLIC_THRESHOLD) {
+		// 纯镜面反射：只计算镜面反射项
+		float3 H = normalize(V + L);
+		float NdotH = max(dot(N, H), 0.0);
+		float VdotH = max(dot(V, H), 0.0);
+		
+		// 构建切空间基（用于各向异性）
+		float3 T, B;
+		BuildOrthonormalBasis(N, T, B);
+		
+		// 计算镜面反射颜色
+		float3 spec_color, F0;
+		ComputeSpecularColor(mat, baseColor, spec_color, F0);
+		
+		// 菲涅尔项
+		float3 F = F0 + (1.0 - F0) * pow(1.0 - VdotH, 5.0);
+		
+		// GGX 镜面反射项
+		float D = GGX_D(H, N, T, B, mat.roughness, mat.anisotropic);
+		float G = GGX_G(V, L, N, T, B, mat.roughness, mat.anisotropic);
+		
+		// 改进的除零保护：使用更大的epsilon，并限制分母的最小值
+		const float MIN_DENOM = 1e-5;
+		float denominator = max(4.0 * NdotV * NdotL, MIN_DENOM);
+		float3 specular = D * F * G / denominator;
+		
+		// 限制镜面反射项的最大值，防止数值爆炸
+		const float MAX_SPECULAR = 1e3;
+		specular = min(specular, float3(MAX_SPECULAR, MAX_SPECULAR, MAX_SPECULAR));
+		
+		// 纯镜面反射：只返回镜面反射项
+		pdf = D * NdotH / (4.0 * VdotH + 1e-7);
+		return specular * NdotL;
+	}
+	
 	float3 H = normalize(V + L);
 	float NdotH = max(dot(N, H), 0.0);
 	float VdotH = max(dot(V, H), 0.0);
@@ -343,6 +406,13 @@ float3 EvaluatePrincipledBSDF(Material mat, float3 V, float3 L, float3 N, float2
 	// 计算镜面反射颜色
 	float3 spec_color, F0;
 	ComputeSpecularColor(mat, baseColor, spec_color, F0);
+	
+	// 计算 Cspec0（用于权重计算，参考 reference）
+	float lum = Luminance(baseColor);
+	float3 tint_color = lum > 0 ? baseColor / lum : float3(1, 1, 1);
+	float F0_scalar = ((mat.ior - 1.0) / (mat.ior + 1.0));
+	F0_scalar = F0_scalar * F0_scalar;
+	float3 Cspec0 = F0_scalar * mat.specular * lerp(float3(1, 1, 1), tint_color, mat.specular_tint);
 	
 	// 菲涅尔项
 	float3 F = F0 + (1.0 - F0) * pow(1.0 - VdotH, 5.0);
@@ -375,9 +445,9 @@ float3 EvaluatePrincipledBSDF(Material mat, float3 V, float3 L, float3 N, float2
 	// 组合所有 lobe
 	float3 brdf = diffuse + specular + sheen + clearcoat;
 	
-	// 计算组合的概率密度函数
+	// 计算组合的概率密度函数（使用 reference 的权重计算方式）
 	float diffuse_weight, specular_weight, clearcoat_weight;
-	ComputeLobeWeights(F, kD, mat.clearcoat, diffuse_weight, specular_weight, clearcoat_weight);
+	ComputeLobeWeights(mat, baseColor, Cspec0, NdotV, diffuse_weight, specular_weight, clearcoat_weight);
 	
 	float pdf_diffuse = NdotL / PI;
 	float pdf_specular = D * NdotH / (4.0 * VdotH + 1e-7);
@@ -395,34 +465,44 @@ float3 SamplePrincipledBSDF(Material mat, float3 V, float3 N, float2 uv, inout u
 	float3 T, B;
 	BuildOrthonormalBasis(N, T, B);
 	
-	// 计算各 lobe 的权重
-	float VdotH_approx = max(dot(V, N), 0.0);
-	
-	float3 spec_color, F0;
-	ComputeSpecularColor(mat, baseColor, spec_color, F0);
-	float3 F_approx = F0 + (1.0 - F0) * pow(1.0 - VdotH_approx, 5.0);
-	
-	float3 kD = (1.0 - F_approx) * (1.0 - mat.metallic);
-	
-	float diffuse_weight, specular_weight, clearcoat_weight;
-	ComputeLobeWeights(F_approx, kD, mat.clearcoat, diffuse_weight, specular_weight, clearcoat_weight);
-	
-	// 根据权重选择要采样的 lobe
-	float lobe_choice = Rand01(seed);
+	// 如果金属度大于 0.3，强制只采样镜面反射 lobe（纯镜面反射）
+	const float METALLIC_THRESHOLD = 0.3;
 	float3 L;
 	
-	if (lobe_choice < diffuse_weight) {
-		// 采样漫反射 lobe
-		L = SampleCosineHemisphere(N, seed, pdf);
-		weight = float3(1, 1, 1); // 将在BRDF评估时乘以实际值
-	} else if (lobe_choice < diffuse_weight + specular_weight) {
-		// 采样镜面反射 lobe（使用预计算的切空间基 T, B）
+	if (mat.metallic > METALLIC_THRESHOLD) {
+		// 纯镜面反射：强制只采样镜面反射 lobe
 		L = SampleGGX_Internal(N, V, T, B, mat.roughness, mat.anisotropic, mat.anisotropic_rotation, seed, pdf);
 		weight = float3(1, 1, 1);
 	} else {
-		// 采样 clearcoat lobe
-		L = SampleClearcoat(N, V, mat.clearcoat_roughness, seed, pdf);
-		weight = float3(1, 1, 1);
+		// 计算各 lobe 的权重（使用 reference 的权重计算方式）
+		float NdotV = max(dot(N, V), 0.0);
+		
+		// 计算 Cspec0（用于权重计算，参考 reference）
+		float lum = Luminance(baseColor);
+		float3 tint_color = lum > 0 ? baseColor / lum : float3(1, 1, 1);
+		float F0_scalar = ((mat.ior - 1.0) / (mat.ior + 1.0));
+		F0_scalar = F0_scalar * F0_scalar;
+		float3 Cspec0 = F0_scalar * mat.specular * lerp(float3(1, 1, 1), tint_color, mat.specular_tint);
+		
+		float diffuse_weight, specular_weight, clearcoat_weight;
+		ComputeLobeWeights(mat, baseColor, Cspec0, NdotV, diffuse_weight, specular_weight, clearcoat_weight);
+		
+		// 根据权重选择要采样的 lobe
+		float lobe_choice = Rand01(seed);
+		
+		if (lobe_choice < diffuse_weight) {
+			// 采样漫反射 lobe
+			L = SampleCosineHemisphere(N, seed, pdf);
+			weight = float3(1, 1, 1); // 将在BRDF评估时乘以实际值
+		} else if (lobe_choice < diffuse_weight + specular_weight) {
+			// 采样镜面反射 lobe（使用预计算的切空间基 T, B）
+			L = SampleGGX_Internal(N, V, T, B, mat.roughness, mat.anisotropic, mat.anisotropic_rotation, seed, pdf);
+			weight = float3(1, 1, 1);
+		} else {
+			// 采样 clearcoat lobe
+			L = SampleClearcoat(N, V, mat.clearcoat_roughness, seed, pdf);
+			weight = float3(1, 1, 1);
+		}
 	}
 	
 	// 评估完整的BSDF以获得实际权重

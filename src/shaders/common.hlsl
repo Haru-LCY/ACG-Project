@@ -22,6 +22,9 @@ struct CameraInfo {
   int motion_blur_mode;     // 0=Off, 1=Camera, 2=Object, 3=Radial, 4=Directional
   float motion_blur_intensity; // 运动模糊强度
   float2 motion_blur_direction; // 方向性模糊的方向
+  // 光源数量
+  int num_point_lights;  // 点光源数量
+  int num_area_lights;   // 面光源数量
 };
 
 // Principled BSDF Material (matches C++ struct layout)
@@ -165,6 +168,17 @@ static const float PI = 3.14159265359;
 // 路径追踪和阴影追踪的最大弹射次数
 #define MAX_PATH_BOUNCES 8      // 路径追踪最大弹射次数
 #define MAX_SHADOW_BOUNCES 6    // 阴影追踪最大弹射次数（用于透明材质）
+
+// ==================== Tone Mapping ====================
+// ACES Film Tone Mapping 函数（HDR -> LDR）
+float3 ACESFilm(float3 x) {
+    float a = 2.51;
+    float b = 0.03;
+    float c = 2.43;
+    float d = 0.59;
+    float e = 0.14;
+    return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
+}
 
 #endif // COMMON_HLSL
 

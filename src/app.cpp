@@ -360,11 +360,11 @@ void Application::OnInit() {
         scene_->AddEntity(ceiling);
     }
 
-    // Green metallic sphere (中景 - 作为焦平面目标)
+    // Green glass sphere (中景 - 作为焦平面目标)
      {
          auto green_sphere = std::make_shared<Entity>(
              "meshes/octahedron.obj",
-             Material(glm::vec3(0.2f, 1.0f, 0.2f), 0.2f, 0.8f),
+             Material(glm::vec3(0.2f, 1.0f, 0.2f), 0.0f, 0.0f, 1.0f, 1.5f),  // 基础颜色、粗糙度、金属度、透射度、折射率
              // 放在 z=2 作为中景焦点
              glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.5f, 2.0f))
          );
@@ -638,6 +638,8 @@ void Application::OnInit() {
     camera_object.motion_blur_mode = motion_blur_mode_;
     camera_object.motion_blur_intensity = motion_blur_intensity_;
     camera_object.motion_blur_direction = motion_blur_direction_;
+    camera_object.num_point_lights = (int)point_lights_.size();
+    camera_object.num_area_lights = (int)area_lights_.size();
     camera_object_buffer_->UploadData(&camera_object, sizeof(CameraObject));
 
     core_->CreateImage(window_->GetWidth(), window_->GetHeight(), grassland::graphics::IMAGE_FORMAT_R32G32B32A32_SFLOAT,
@@ -872,6 +874,8 @@ void Application::OnUpdate() {
         current_camera_object.motion_blur_mode = motion_blur_mode_;
         current_camera_object.motion_blur_intensity = motion_blur_intensity_;
         current_camera_object.motion_blur_direction = motion_blur_direction_;
+        current_camera_object.num_point_lights = (int)point_lights_.size();
+        current_camera_object.num_area_lights = (int)area_lights_.size();
         camera_object_buffer_->UploadData(&current_camera_object, sizeof(CameraObject));
         // --------------- 修改结束 ---------------
 

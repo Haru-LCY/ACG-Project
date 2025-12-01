@@ -9,7 +9,6 @@
 #include "lighting.hlsl"
 #include "raytracing.hlsl"
 #include "geometry.hlsl"
-#include "motion_blur.hlsl"
 #include "raygen.hlsl"
 
 [shader("raygeneration")] void RayGenMain() {
@@ -89,33 +88,8 @@
         float3 rayOrigin, rayDir;
         GenerateCameraRayWithDOF(dispatchIndex, jitter, seed, rayOrigin, rayDir);
         
-        // 应用相机/径向/方向运动模糊效果（非物体模糊）
-        if (camera_info.motion_blur_mode > 0 && camera_info.motion_blur_mode != MOTION_BLUR_MODE_OBJECT && 
-            camera_info.motion_blur_intensity > 0.001) {
-            float2 uv = (float2(dispatchIndex) + float2(0.5, 0.5)) / float2(DispatchRaysDimensions().xy);
-            ApplyMotionBlur(
-                rayOrigin, 
-                rayDir, 
-                uv, 
-                1.0,  // shutter_time = 1.0 (full frame)
-                camera_info.motion_blur_intensity, 
-                camera_info.motion_blur_mode, 
-                seed
-            );
-        }
-        
-        // 物体运动模糊的屏幕空间模拟：
-        // 对于每个采样，我们随机选择一个时间点，然后在追踪路径时
-        // 会根据该时间点来偏移有速度物体的光照计算位置
-        float3 radiance;
-        if (camera_info.motion_blur_mode == MOTION_BLUR_MODE_OBJECT && 
-            camera_info.motion_blur_intensity > 0.001) {
-            // 物体运动模糊：使用多次短程追踪来模拟
-            radiance = TracePathObjectMotionBlur(rayOrigin, rayDir, seed);
-        } else {
-            // 执行标准路径追踪
-            radiance = TracePath(rayOrigin, rayDir, seed);
-        }
+        // 执行标准路径追踪
+        float3 radiance = TracePath(rayOrigin, rayDir, seed);
         
         // 关键修复：限制单个采样radiance的最大值，防止异常采样导致亮点
         // 即使throughput和pointLightContrib都有保护，某些极端角度组合仍可能产生异常值
