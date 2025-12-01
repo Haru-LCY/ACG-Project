@@ -194,9 +194,10 @@
 	// 从全局缓冲区获取法线（优先使用OBJ文件中的vn，否则计算面法线）
 	float3 objectNormal = GetVertexNormal(entity_id, primitive_id, attr.barycentrics);
 	
-	// 转换到世界空间
-	float3x3 objectToWorld = (float3x3)ObjectToWorld3x4();
-	payload.normal = normalize(mul(objectToWorld, objectNormal));
+	// 转换到世界空间（法线变换需要使用逆转置矩阵）
+	float3x3 worldToObject = (float3x3)WorldToObject3x4();
+	float3x3 objectToWorldNormal = transpose(worldToObject);
+	payload.normal = normalize(mul(objectToWorldNormal, objectNormal));
 	
 	// 确保法线朝向光线来源
 	if (dot(payload.normal, -WorldRayDirection()) < 0) {
