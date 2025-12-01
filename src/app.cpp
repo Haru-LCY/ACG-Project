@@ -455,7 +455,7 @@ void Application::OnInit() {
     // Move main point light down so it's inside the room (y near ceiling = 4.8)
     point_lights_[0].position = glm::vec3(2.0f, 3.8f, 5.0f);
     point_lights_[0].color = glm::vec3(1.0f, 1.0f, 1.0f);
-    point_lights_[0].strength = 2000.0f; // make it stronger for testing (can tune in UI)
+    point_lights_[0].strength = 1000.0f; // half of original 2000.0f (can tune in UI)
     point_lights_[0].radius = 0.2f;  // 扩大一倍（从0.1到0.2）避免黑色阴影
     
     // 添加一个补光光源（柔和白光）- 左上方，避免产生强反光
@@ -551,7 +551,7 @@ void Application::OnInit() {
     skybox_info_.zenith_color = glm::vec3(0.3f, 0.5f, 0.85f);    // 深蓝色天顶
     skybox_info_.horizon_color = glm::vec3(0.7f, 0.75f, 0.85f);  // 浅蓝色地平线
     skybox_info_.ground_color = glm::vec3(0.3f, 0.3f, 0.35f);    // 深灰色地面
-    skybox_info_.has_environment_map = 0.0f;                       // 默认无环境贴图
+    skybox_info_.has_environment_map = 1.0f;                       // 默认开启环境贴图
     skybox_info_.environment_intensity = 1.0f;                     // 默认强度
     skybox_info_.environment_rotation = 0.0f;                      // 无旋转
     
@@ -602,7 +602,7 @@ void Application::OnInit() {
     focus_distance_ = 6.0f;  // 默认焦距6米 -> focal plane at z=2 (camera z=8)
         samples_per_frame_ = 2;  // 每帧每像素多采样次数，默认为2，能显著降低闪烁
         focused_entity_id_ = -1; // no focus locked initially
-    exposure_ = 0.5f;        // Default exposure multiplier
+    exposure_ = 0.25f;       // Default exposure multiplier (half of original 0.5f)
     lights_need_upload_ = false; // track if any light params changed
     
     // Initialize MSAA parameters
@@ -1270,7 +1270,7 @@ void Application::RenderInfoOverlay() {
     // Light controls (quick debug + adjust exposure)
     ImGui::SeparatorText("Lights / Exposure");
     bool lights_changed = false;
-    if (ImGui::SliderFloat("Exposure", &exposure_, 0.01f, 0.1f, "%.2f")) {
+    if (ImGui::SliderFloat("Exposure", &exposure_, 0.01f, 1.0f, "%.2f")) {
         lights_changed = true;
     }
 
