@@ -433,6 +433,26 @@ void Application::OnInit() {
         scene_->AddEntity(bg_sphere);
     }
 
+    // Add small flower asset from assets (scale 0.1) and rotate to stand upright
+    {
+        // Build a transform: translate * rotate * scale
+        glm::mat4 flower_transform = glm::translate(glm::mat4(1.0f), glm::vec3(1.8f, 0.0f, 1.5f))
+                                  * glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f))
+                                  * glm::scale(glm::mat4(1.0f), glm::vec3(0.1f));
+
+        auto flower = std::make_shared<Entity>(
+            "meshes/12973_anemone_flower_v1_l2.obj",
+            // diffuse, non-metallic material
+            Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.8f, 0.0f),
+            flower_transform,
+            // use diffuse texture from the mesh's material if available
+            "meshes/12973_anemone_flower_diff.jpg"
+        );
+        // keep static (no velocity) by default
+        flower->SetVelocity(glm::vec3(0.0f, 0.0f, 0.0f));
+        scene_->AddEntity(flower);
+    }
+
     // Build acceleration structures
     scene_->BuildAccelerationStructures();
 
