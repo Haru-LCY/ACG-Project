@@ -6,7 +6,7 @@
 
 #include "common.hlsl"
 
-// 改进的 PCG RNG
+// 改进的 PCG 随机数生成器（哈希函数）
 uint PCGHash(inout uint state) {
 	uint prev = state * 747796405u + 2891336453u;
 	uint word = ((prev >> ((prev >> 28u) + 4u)) ^ prev) * 277803737u;
@@ -14,6 +14,7 @@ uint PCGHash(inout uint state) {
 	return (word >> 22u) ^ word;
 }
 
+// 生成 [0, 1) 范围的随机浮点数
 float Rand01(inout uint state) {
 	return float(PCGHash(state)) / 4294967296.0;
 }

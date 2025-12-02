@@ -5,146 +5,104 @@
 #include <vector>
 #include <memory>
 
+// 纹理数组最大数量（必须与Shader端保持一致）
+// 注意：此值必须与 src/shaders/common.hlsl 中的 MAX_TEXTURES 宏定义保持一致
+constexpr size_t MAX_TEXTURES = 64;
+
+// 实体偏移信息结构体（用于全局缓冲区）
 // Entity offset information for global buffers
 struct EntityOffset {
-    uint32_t vertex_offset;  // Starting vertex index in global buffer
-    uint32_t index_offset;   // Starting index in global buffer
-    uint32_t padding[2];     // Align to 16 bytes for GPU
+    uint32_t vertex_offset;  // 在全局缓冲区中的起始顶点索引
+    uint32_t index_offset;    // 在全局缓冲区中的起始索引
+    uint32_t padding[2];      // 填充以对齐到16字节（GPU要求）
 };
 
-// KDT节点结构体（用于GPU，与HLSL中的结构体对应）
-struct KDTNodeGPU {
-    glm::vec3 aabb_min;      // AABB最小值
-    glm::vec3 aabb_max;      // AABB最大值
-    int32_t split_axis;      // 分割轴：0=X, 1=Y, 2=Z, -1=叶子节点
-    float split_pos;         // 分割位置
-    int32_t left_child_idx;  // 左子节点索引（-1表示无子节点）
-    int32_t right_child_idx; // 右子节点索引（-1表示无子节点）
-    int32_t entity_start_idx; // 实体索引列表起始位置（仅在叶子节点有效）
-    int32_t entity_count;    // 实体数量（仅在叶子节点有效）
-    uint32_t mask;           // 该节点对应的instance mask
-    uint32_t padding;        // 对齐填充
-};
-
-// KDT信息结构体（用于GPU，传递节点数量）
-struct KDTInfo {
-    uint32_t num_nodes;      // KDT节点数量
-    uint32_t padding[3];     // 对齐填充（确保16字节对齐）
-};
-
-// KDT节点结构体（用于CPU构建）
-struct KDTNode {
-    grassland::AABB aabb;                    // 包围盒
-    int split_axis;                         // 分割轴：0=X, 1=Y, 2=Z, -1=叶子节点
-    float split_pos;                         // 分割位置
-    int left_child_idx;                     // 左子节点索引
-    int right_child_idx;                     // 右子节点索引
-    std::vector<uint32_t> entity_indices;   // 该节点包含的实体索引列表
-    uint32_t mask;                           // 该节点对应的instance mask
-};
-
+// Scene类：管理场景中的所有实体，构建顶层加速结构（TLAS）
 // Scene manages a collection of entities and builds the TLAS
 class Scene {
 public:
+    // 构造函数：创建场景对象
+    // core: 图形核心对象指针
     Scene(grassland::graphics::Core* core);
+    
+    // 析构函数：清理所有资源
     ~Scene();
 
-    // Add an entity to the scene
+    // 向场景添加实体
+    // entity: 实体共享指针
+    // 注意：添加时会自动构建实体的BLAS
     void AddEntity(std::shared_ptr<Entity> entity);
 
-    // Remove all entities
+    // 清除场景中的所有实体
     void Clear();
 
-    // Build/rebuild the TLAS from all entities
+    // 构建/重建顶层加速结构（TLAS）
+    // 功能：从所有实体构建TLAS，并构建全局几何缓冲区
     void BuildAccelerationStructures();
 
-    // Update TLAS instances (e.g., for animation)
+    // 更新TLAS实例（例如用于动画）
+    // 功能：更新所有实体的变换矩阵，重建TLAS实例
     void UpdateInstances();
 
-    // Get the TLAS for rendering
+    // ========== Getter方法 ==========
+    // 获取TLAS指针（用于渲染）
     grassland::graphics::AccelerationStructure* GetTLAS() const { return tlas_.get(); }
-    
-    // Get KDT nodes buffer for GPU traversal
-    grassland::graphics::Buffer* GetKDTNodesBuffer() const { return kdt_nodes_buffer_.get(); }
-    
-    // Get KDT info buffer (contains node count)
-    grassland::graphics::Buffer* GetKDTInfoBuffer() const { return kdt_info_buffer_.get(); }
-    
-    // Debug: 输出所有KDT节点的AABB信息
-    void DebugPrintKDTNodes() const;
-    // Debug: 测试光线与哪些AABB相交，返回相交信息
-    struct KDTIntersectionInfo {
-        int node_idx;
-        bool is_leaf;
-        float t_hit;
-        glm::vec3 aabb_min;
-        glm::vec3 aabb_max;
-        int split_axis;
-        float split_pos;
-        uint32_t mask;
-        int entity_count;
-    };
-    std::vector<KDTIntersectionInfo> DebugTestRayAABBIntersection(const glm::vec3& rayOrigin, const glm::vec3& rayDir, float tMin, float tMax) const;
-    
-    // Get number of KDT nodes
-    size_t GetKDTNodeCount() const { return kdt_nodes_.size(); }
 
-    // Get materials buffer for all entities
+    // 获取所有实体的材质缓冲区
     grassland::graphics::Buffer* GetMaterialsBuffer() const { return materials_buffer_.get(); }
 
-    // Get global geometry buffers for raytracing
+    // 获取全局几何缓冲区（用于光线追踪）
     grassland::graphics::Buffer* GetGlobalVertexBuffer() const { return global_vertex_buffer_.get(); }
     grassland::graphics::Buffer* GetGlobalNormalBuffer() const { return global_normal_buffer_.get(); }
     grassland::graphics::Buffer* GetGlobalIndexBuffer() const { return global_index_buffer_.get(); }
+    grassland::graphics::Buffer* GetGlobalTexcoordBuffer() const { return global_texcoord_buffer_.get(); }
     
-    // Get entity offset buffer (stores vertex/index offsets for each entity)
+    // 获取实体偏移缓冲区（存储每个实体的顶点/索引偏移）
     grassland::graphics::Buffer* GetEntityOffsetsBuffer() const { return entity_offsets_buffer_.get(); }
     
-    // Get texture array for raytracing
+    // 获取实体速度缓冲区（用于运动模糊）
+    grassland::graphics::Buffer* GetVelocitiesBuffer() const { return velocities_buffer_.get(); }
+    
+    // 获取纹理数组（用于光线追踪）
     const std::vector<grassland::graphics::Image*>& GetTextures() const { return textures_; }
+    // 获取纹理数量
     size_t GetTextureCount() const { return textures_.size(); }
 
-    // Get all entities
+    // 获取所有实体的引用
     const std::vector<std::shared_ptr<Entity>>& GetEntities() const { return entities_; }
 
-    // Get number of entities
+    // 获取实体数量
     size_t GetEntityCount() const { return entities_.size(); }
 
-    // Update materials buffer data on GPU from CPU-side materials
+    // 更新材质缓冲区数据（从CPU端材质更新到GPU）
     void UpdateMaterials();
 
 private:
+    // ========== 私有辅助函数 ==========
+    // 更新材质缓冲区（内部实现）
     void UpdateMaterialsBuffer();
+    // 构建全局几何缓冲区（合并所有实体的几何数据）
     void BuildGlobalGeometryBuffers();
+    // 收集所有实体的纹理
     void CollectTextures();
-    
-    // KDT相关函数
-    void BuildKDT();
-    int BuildKDTRecursive(std::vector<std::pair<grassland::AABB, uint32_t>>& entities_with_aabb,
-                          int start_idx, int end_idx, int cut_dim, int node_idx, int depth = 0);
-    int CountNodes(int node_idx);  // 辅助函数：找到子树中最大的节点索引
-    int FindMaxNodeIndex(int node_idx);  // 辅助函数：找到子树中最大的节点索引（别名）
-    grassland::AABB ComputeEntityAABB(uint32_t entity_idx);
-    void BuildTLASWithKDT();
 
-    grassland::graphics::Core* core_;
-    std::vector<std::shared_ptr<Entity>> entities_;
-    std::unique_ptr<grassland::graphics::AccelerationStructure> tlas_;
-    std::unique_ptr<grassland::graphics::Buffer> materials_buffer_;
+    grassland::graphics::Core* core_;                              // 图形核心对象指针
+    std::vector<std::shared_ptr<Entity>> entities_;                // 实体列表
+    std::unique_ptr<grassland::graphics::AccelerationStructure> tlas_;  // 顶层加速结构
     
-    // Global geometry buffers for all entities combined
-    std::unique_ptr<grassland::graphics::Buffer> global_vertex_buffer_;
-    std::unique_ptr<grassland::graphics::Buffer> global_normal_buffer_;
-    std::unique_ptr<grassland::graphics::Buffer> global_index_buffer_;
-    std::unique_ptr<grassland::graphics::Buffer> entity_offsets_buffer_;
+    std::unique_ptr<grassland::graphics::Buffer> materials_buffer_;  // 材质缓冲区
     
-    // Texture array (raw pointers owned by entities)
+    // 全局几何缓冲区（合并所有实体的几何数据）
+    std::unique_ptr<grassland::graphics::Buffer> global_vertex_buffer_;  // 全局顶点缓冲区
+    std::unique_ptr<grassland::graphics::Buffer> global_normal_buffer_; // 全局法线缓冲区
+    std::unique_ptr<grassland::graphics::Buffer> global_index_buffer_;  // 全局索引缓冲区
+    std::unique_ptr<grassland::graphics::Buffer> global_texcoord_buffer_; // 全局UV坐标缓冲区
+    std::unique_ptr<grassland::graphics::Buffer> entity_offsets_buffer_;  // 实体偏移缓冲区
+    
+    // 运动模糊：实体速度缓冲区
+    std::unique_ptr<grassland::graphics::Buffer> velocities_buffer_;
+    
+    // 纹理数组（原始指针，所有权属于实体）
     std::vector<grassland::graphics::Image*> textures_;
-    
-    // KDT树相关
-    std::vector<KDTNode> kdt_nodes_;                                    // KDT节点数组（CPU端）
-    std::unique_ptr<grassland::graphics::Buffer> kdt_nodes_buffer_;     // KDT节点buffer（GPU端）
-    std::unique_ptr<grassland::graphics::Buffer> kdt_info_buffer_;      // KDT信息buffer（GPU端，包含节点数量）
-    std::vector<KDTNodeGPU> kdt_nodes_gpu_;                             // KDT节点数组（GPU格式）
 };
 

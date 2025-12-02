@@ -17,20 +17,94 @@ namespace {
 #include "built_in_shaders.inl"
 }
 
+// 初始化天空盒（根据USE_HDR_SKYBOX开关决定使用HDR或程序化天空）
+// 功能：尝试加载HDR环境贴图，失败则使用程序化天空
+void Application::InitializeSkybox() {
+    if (USE_HDR_SKYBOX) {
+        // 尝试加载 HDR 环境贴图
+        std::string full_path = grassland::FindAssetFile(HDR_SKYBOX_PATH);
+        
+        if (grassland::graphics::LoadImageFromFile(core_.get(), full_path, &environment_map_) == 0) {
+            grassland::LogInfo("Loaded HDR environment map: {} ({}x{})", 
+                               HDR_SKYBOX_PATH,
+                               environment_map_->Extent().width,
+                               environment_map_->Extent().height);
+            skybox_info_.has_environment_map = 1.0f;
+            return;
+        }
+        
+        grassland::LogWarning("Failed to load HDR skybox from: {}, using procedural sky", HDR_SKYBOX_PATH);
+    }
+    
+    // 使用程序化天空
+    CreateDefaultEnvironmentMap();
+    skybox_info_.has_environment_map = 0.0f;
+    grassland::LogInfo("Using procedural sky");
+}
+
+// 创建默认的后备环境贴图（简单的渐变天空）
+// 功能：生成一个64x32的渐变天空纹理，从天顶到地平线再到地面
+void Application::CreateDefaultEnvironmentMap() {
+    const int width = 64;
+    const int height = 32;
+    std::vector<float> default_data(width * height * 4);
+    
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            int idx = (y * width + x) * 4;
+            
+            // 计算垂直位置 (0 = 底部/地面, 1 = 顶部/天顶)
+            float v = 1.0f - (float)y / (float)(height - 1);
+            
+            // 简单的渐变天空
+            glm::vec3 color;
+            if (v > 0.5f) {
+                // 天空部分: 从地平线到天顶
+                float t = (v - 0.5f) * 2.0f;
+                color = glm::mix(skybox_info_.horizon_color, skybox_info_.zenith_color, t);
+            } else {
+                // 地面部分: 从地平线到地面
+                float t = (0.5f - v) * 2.0f;
+                color = glm::mix(skybox_info_.horizon_color, skybox_info_.ground_color, t);
+            }
+            
+            default_data[idx + 0] = color.r;
+            default_data[idx + 1] = color.g;
+            default_data[idx + 2] = color.b;
+            default_data[idx + 3] = 1.0f;
+        }
+    }
+    
+    // 创建 GPU 纹理
+    core_->CreateImage(width, height, 
+                      grassland::graphics::IMAGE_FORMAT_R32G32B32A32_SFLOAT,
+                      &environment_map_);
+    environment_map_->UploadData(default_data.data());
+    
+    grassland::LogInfo("Created default environment map ({}x{})", width, height);
+}
+
+// 构造函数：创建应用程序实例
+// api: 图形API后端（D3D12或Vulkan）
 Application::Application(grassland::graphics::BackendAPI api) {
+    // 创建图形核心对象
     grassland::graphics::CreateCore(api, grassland::graphics::Core::Settings{}, &core_);
+    // 自动选择逻辑设备
     core_->InitializeLogicalDeviceAutoSelect(true);
 
+    // 记录设备信息
     grassland::LogInfo("Device Name: {}", core_->DeviceName());
     grassland::LogInfo("- Ray Tracing Support: {}", core_->DeviceRayTracingSupport());
 }
 
+// 析构函数：清理资源
 Application::~Application() {
     core_.reset();
 }
 
-// Event handler for keyboard input
-// Poll keyboard state directly to ensure it works even when ImGui is active
+// 处理键盘输入事件
+// 功能：直接轮询键盘状态，确保即使ImGui激活时也能工作
+// 处理WASD移动、Space/Shift上下移动、Tab隐藏UI、Ctrl+S保存截图等
 void Application::ProcessInput() {
     // Get GLFW window handle
     GLFWwindow* glfw_window = window_->GLFWWindow();
@@ -101,7 +175,9 @@ void Application::ProcessInput() {
     }
 }
 
-// Event handler for mouse movement
+// 鼠标移动事件处理函数
+// xpos, ypos: 鼠标位置（屏幕坐标）
+// 功能：更新鼠标位置，处理相机视角旋转（如果相机启用）
 void Application::OnMouseMove(double xpos, double ypos) {
     // Always store mouse position for hover detection (even if ImGui wants input)
     mouse_x_ = xpos;
@@ -144,7 +220,12 @@ void Application::OnMouseMove(double xpos, double ypos) {
     camera_front_ = glm::normalize(front);
 }
 
-// Event handler for mouse button clicks
+// 鼠标按钮事件处理函数
+// button: 按钮（0=左键，1=右键）
+// action: 动作（1=按下）
+// mods: 修饰键
+// xpos, ypos: 鼠标位置
+// 功能：左键选择实体，右键切换相机模式
 void Application::OnMouseButton(int button, int action, int mods, double xpos, double ypos) {
     const int BUTTON_LEFT = 0;  // Left mouse button
     const int BUTTON_RIGHT = 1; // Right mouse button
@@ -224,298 +305,152 @@ void Application::OnInit() {
     // Create scene - 展览馆场景
     scene_ = std::make_unique<Scene>(core_.get());
 
-    // ========== 建筑结构 ==========
-    // 1. 地面 - 大理石地板
     {
-        auto floor = std::make_shared<Entity>(
+        auto ground = std::make_shared<Entity>(
             "meshes/cube.obj",
-            Material(glm::vec3(0.85f, 0.85f, 0.9f), 0.3f, 0.1f),  // 浅灰大理石
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, 0.0f)), 
-                      glm::vec3(12.0f, 0.05f, 12.0f))
+            Material(glm::vec3(0.8f, 0.8f, 0.8f), 0.8f, 0.0f),
+            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -1.0f, 0.0f)), 
+                      glm::vec3(10.0f, 0.1f, 10.0f))
         );
-        scene_->AddEntity(floor);
+        scene_->AddEntity(ground);
     }
 
-    // 2-5. 四面墙 - 白色展馆墙壁
-    // 左墙
+    // Left wall
     {
         auto left_wall = std::make_shared<Entity>(
             "meshes/cube.obj",
-            Material(glm::vec3(0.95f, 0.95f, 0.97f), 0.7f, 0.0f),
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(-6.0f, 2.5f, 0.0f)), 
-                      glm::vec3(0.2f, 5.0f, 12.0f))
+            Material(glm::vec3(0.9f, 0.9f, 0.9f), 0.9f, 0.0f),
+            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(-5.0f, 2.0f, 0.0f)), 
+                      glm::vec3(0.1f, 4.0f, 10.0f))
         );
         scene_->AddEntity(left_wall);
     }
-    // 右墙
+
+    // Right wall - 镜面
     {
         auto right_wall = std::make_shared<Entity>(
             "meshes/cube.obj",
-            Material(glm::vec3(0.95f, 0.95f, 0.97f), 0.7f, 0.0f),
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(6.0f, 2.5f, 0.0f)), 
-                      glm::vec3(0.2f, 5.0f, 12.0f))
+            Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.02f, 1.0f),  // 镜面：白色，极低粗糙度，全金属
+            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(5.0f, 2.0f, 0.0f)), 
+                      glm::vec3(0.1f, 4.0f, 10.0f))
         );
         scene_->AddEntity(right_wall);
     }
-    // 后墙
+
+    // Back wall
     {
         auto back_wall = std::make_shared<Entity>(
             "meshes/cube.obj",
-            Material(glm::vec3(0.95f, 0.95f, 0.97f), 0.7f, 0.0f),
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 2.5f, -6.0f)), 
-                      glm::vec3(12.0f, 5.0f, 0.2f)),
-            "textures/sakura.png"  // 后墙可以有装饰纹理
+            Material(glm::vec3(0.9f, 0.9f, 0.9f), 0.9f, 0.0f),
+            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 2.0f, -5.0f)), 
+                      glm::vec3(10.0f, 4.0f, 0.1f)),
+            "textures/sakura.png"
         );
         scene_->AddEntity(back_wall);
     }
-    // 前墙（入口方向，留出空间）
-    {
-        auto front_wall = std::make_shared<Entity>(
-            "meshes/cube.obj",
-            Material(glm::vec3(0.95f, 0.95f, 0.97f), 0.7f, 0.0f),
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 2.5f, 6.0f)), 
-                      glm::vec3(12.0f, 5.0f, 0.2f))
-        );
-        scene_->AddEntity(front_wall);
-    }
 
-    // 6. 天花板
+    // Ceiling
     {
         auto ceiling = std::make_shared<Entity>(
             "meshes/cube.obj",
-            Material(glm::vec3(0.98f, 0.98f, 0.99f), 0.8f, 0.0f),
+            Material(glm::vec3(0.9f, 0.9f, 0.9f), 0.9f, 0.0f),
             glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 5.0f, 0.0f)), 
-                      glm::vec3(12.0f, 0.1f, 12.0f))
+                      glm::vec3(10.0f, 0.1f, 10.0f))
         );
         scene_->AddEntity(ceiling);
     }
 
-    // ========== 支撑柱 ==========
-    // 7-10. 四个角落的装饰柱
+    // Green metallic sphere (中景 - 作为焦平面目标)
+     {
+         auto green_sphere = std::make_shared<Entity>(
+             "meshes/octahedron.obj",
+             Material(glm::vec3(0.2f, 1.0f, 0.2f), 0.2f, 0.8f),
+             // 放在 z=2 作为中景焦点
+             glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.5f, 2.0f))
+         );
+         green_sphere->SetVelocity(glm::vec3(0.0f, 1.5f, 0.0f));  // 向上移动的运动模糊
+         scene_->AddEntity(green_sphere);
+     }
+     
+    // Textured copper sphere (幕后/中景)
     {
-        auto pillar1 = std::make_shared<Entity>(
-            "meshes/cube.obj",
-            Material(glm::vec3(0.9f, 0.9f, 0.92f), 0.5f, 0.2f),
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(-5.0f, 2.5f, -5.0f)), 
-                      glm::vec3(0.3f, 5.0f, 0.3f))
-        );
-        scene_->AddEntity(pillar1);
-    }
-    {
-        auto pillar2 = std::make_shared<Entity>(
-            "meshes/cube.obj",
-            Material(glm::vec3(0.9f, 0.9f, 0.92f), 0.5f, 0.2f),
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(5.0f, 2.5f, -5.0f)), 
-                      glm::vec3(0.3f, 5.0f, 0.3f))
-        );
-        scene_->AddEntity(pillar2);
-    }
-    {
-        auto pillar3 = std::make_shared<Entity>(
-            "meshes/cube.obj",
-            Material(glm::vec3(0.9f, 0.9f, 0.92f), 0.5f, 0.2f),
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(-5.0f, 2.5f, 5.0f)), 
-                      glm::vec3(0.3f, 5.0f, 0.3f))
-        );
-        scene_->AddEntity(pillar3);
-    }
-    {
-        auto pillar4 = std::make_shared<Entity>(
-            "meshes/cube.obj",
-            Material(glm::vec3(0.9f, 0.9f, 0.92f), 0.5f, 0.2f),
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(5.0f, 2.5f, 5.0f)), 
-                      glm::vec3(0.3f, 5.0f, 0.3f))
-        );
-        scene_->AddEntity(pillar4);
-    }
-
-    // ========== 展台底座 ==========
-    // 11-18. 8个展台底座，分布在展馆中
-    // 第一排展台（靠近入口）
-    {
-        auto pedestal1 = std::make_shared<Entity>(
-            "meshes/cube.obj",
-            Material(glm::vec3(0.7f, 0.7f, 0.75f), 0.4f, 0.3f),  // 深灰大理石
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(-3.5f, 0.4f, 3.5f)), 
-                      glm::vec3(1.2f, 0.8f, 1.2f))
-        );
-        scene_->AddEntity(pedestal1);
-    }
-    {
-        auto pedestal2 = std::make_shared<Entity>(
-            "meshes/cube.obj",
-            Material(glm::vec3(0.7f, 0.7f, 0.75f), 0.4f, 0.3f),
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.4f, 3.5f)), 
-                      glm::vec3(1.2f, 0.8f, 1.2f))
-        );
-        scene_->AddEntity(pedestal2);
-    }
-    {
-        auto pedestal3 = std::make_shared<Entity>(
-            "meshes/cube.obj",
-            Material(glm::vec3(0.7f, 0.7f, 0.75f), 0.4f, 0.3f),
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(3.5f, 0.4f, 3.5f)), 
-                      glm::vec3(1.2f, 0.8f, 1.2f))
-        );
-        scene_->AddEntity(pedestal3);
-    }
-    // 第二排展台（中间）
-    {
-        auto pedestal4 = std::make_shared<Entity>(
-            "meshes/cube.obj",
-            Material(glm::vec3(0.7f, 0.7f, 0.75f), 0.4f, 0.3f),
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(-3.5f, 0.4f, 0.0f)), 
-                      glm::vec3(1.2f, 0.8f, 1.2f))
-        );
-        scene_->AddEntity(pedestal4);
-    }
-    {
-        auto pedestal5 = std::make_shared<Entity>(
-            "meshes/cube.obj",
-            Material(glm::vec3(0.7f, 0.7f, 0.75f), 0.4f, 0.3f),
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.4f, 0.0f)), 
-                      glm::vec3(1.2f, 0.8f, 1.2f))
-        );
-        scene_->AddEntity(pedestal5);
-    }
-    {
-        auto pedestal6 = std::make_shared<Entity>(
-            "meshes/cube.obj",
-            Material(glm::vec3(0.7f, 0.7f, 0.75f), 0.4f, 0.3f),
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(3.5f, 0.4f, 0.0f)), 
-                      glm::vec3(1.2f, 0.8f, 1.2f))
-        );
-        scene_->AddEntity(pedestal6);
-    }
-    // 第三排展台（靠近后墙）
-    {
-        auto pedestal7 = std::make_shared<Entity>(
-            "meshes/cube.obj",
-            Material(glm::vec3(0.7f, 0.7f, 0.75f), 0.4f, 0.3f),
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(-3.5f, 0.4f, -3.5f)), 
-                      glm::vec3(1.2f, 0.8f, 1.2f))
-        );
-        scene_->AddEntity(pedestal7);
-    }
-    {
-        auto pedestal8 = std::make_shared<Entity>(
-            "meshes/cube.obj",
-            Material(glm::vec3(0.7f, 0.7f, 0.75f), 0.4f, 0.3f),
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(3.5f, 0.4f, -3.5f)), 
-                      glm::vec3(1.2f, 0.8f, 1.2f))
-        );
-        scene_->AddEntity(pedestal8);
-    }
-
-    // ========== 展品 ==========
-    // 19-26. 8个主要展品（每个展台上一个）
-    // 第一排展品
-    {
-        auto exhibit1 = std::make_shared<Entity>(
+        auto copper_sphere = std::make_shared<Entity>(
             "meshes/octahedron.obj",
-            Material(glm::vec3(0.2f, 0.8f, 0.3f), 0.2f, 0.9f),  // 绿色金属雕塑
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(-3.5f, 1.2f, 3.5f)), glm::vec3(0.4f))
-        );
-        scene_->AddEntity(exhibit1);
-    }
-    {
-        auto exhibit2 = std::make_shared<Entity>(
-            "meshes/octahedron.obj",
-            Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.3f, 0.9f),  // 银色金属
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 1.2f, 3.5f)), glm::vec3(0.5f)),
+            Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.3f, 0.9f),  // 白色基础,金属
+            // 将铜球移到中景靠后位置，增加前后景深变化
+            glm::translate(glm::mat4(1.0f), glm::vec3(-2.5f, 0.5f, 0.0f)),
             "textures/copper/Sphere_Base_color.png"
         );
-        scene_->AddEntity(exhibit2);
-    }
-    {
-        auto exhibit3 = std::make_shared<Entity>(
-            "meshes/octahedron.obj",
-            Material(glm::vec3(0.8f, 0.2f, 0.2f), 0.3f, 0.8f),  // 红色金属
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(3.5f, 1.2f, 3.5f)), glm::vec3(0.45f))
-        );
-        scene_->AddEntity(exhibit3);
-    }
-    // 第二排展品
-    {
-        auto exhibit4 = std::make_shared<Entity>(
-            "meshes/octahedron.obj",
-            Material(glm::vec3(0.3f, 0.3f, 1.0f), 0.05f, 0.0f, 0.95f, 1.5f),  // 蓝色玻璃
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(-3.5f, 1.2f, 0.0f)), glm::vec3(0.5f))
-        );
-        scene_->AddEntity(exhibit4);
-    }
-    {
-        auto exhibit5 = std::make_shared<Entity>(
-            "meshes/octahedron.obj",
-            Material(glm::vec3(0.9f, 0.7f, 0.2f), 0.4f, 0.7f),  // 金色
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 1.2f, 0.0f)), glm::vec3(0.6f))
-        );
-        scene_->AddEntity(exhibit5);
-    }
-    {
-        auto exhibit6 = std::make_shared<Entity>(
-            "meshes/octahedron.obj",
-            Material(glm::vec3(0.5f, 0.3f, 0.8f), 0.3f, 0.6f),  // 紫色
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(3.5f, 1.2f, 0.0f)), glm::vec3(0.4f))
-        );
-        scene_->AddEntity(exhibit6);
-    }
-    // 第三排展品
-    {
-        auto exhibit7 = std::make_shared<Entity>(
-            "meshes/octahedron.obj",
-            Material(glm::vec3(1.0f, 0.8f, 0.6f), 0.2f, 0.5f),  // 陶瓷/陶土色
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(-3.5f, 1.2f, -3.5f)), glm::vec3(0.55f))
-        );
-        scene_->AddEntity(exhibit7);
-    }
-    {
-        auto exhibit8 = std::make_shared<Entity>(
-            "meshes/octahedron.obj",
-            Material(glm::vec3(0.2f, 0.6f, 0.8f), 0.25f, 0.85f),  // 青色金属
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(3.5f, 1.2f, -3.5f)), glm::vec3(0.5f))
-        );
-        scene_->AddEntity(exhibit8);
+        copper_sphere->SetVelocity(glm::vec3(0.0f, 0.0f, 2.0f));  // 向前移动的运动模糊
+        scene_->AddEntity(copper_sphere);
     }
 
-    // ========== 额外展品（放在中心展台上） ==========
-    // 27-28. 中心展台上的两个展品
+    // Transparent blue glass cube (背景)
+    // {
+    //     auto blue_cube = std::make_shared<Entity>(
+    //         "meshes/cube.obj",
+    //         // Material(glm::vec3(0.3f, 0.3f, 1.0f), 0.05f, 0.0f, 0.95f, 1.5f), // 蓝色玻璃：明显的蓝色色调
+    //         // Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.3f, 0.9f),  // 白色基础,金属
+    //         // 将蓝色玻璃放在稍微靠后的背景位置
+    //         glm::translate(glm::mat4(1.0f), glm::vec3(2.0f, 0.5f, -2.0f))
+    //         // "textures/sakura.png"
+    //     );
+    //     scene_->AddEntity(blue_cube);
+    // }
+
     {
-        auto center_exhibit1 = std::make_shared<Entity>(
-            "meshes/octahedron.obj",
-            Material(glm::vec3(1.0f, 1.0f, 0.9f), 0.1f, 0.95f),  // 高光白色
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 1.4f, 0.0f)), glm::vec3(0.5f))
+        auto blue_cube = std::make_shared<Entity>(
+            "meshes/cube.obj",
+            Material(glm::vec3(0.3f, 0.3f, 1.0f), 0.05f, 0.0f, 0.95f, 1.5f), // 蓝色玻璃：明显的蓝色色调
+            // Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.3f, 0.9f),  // 白色基础,金属
+            // 将蓝色玻璃放在稍微靠后的背景位置
+            glm::translate(glm::mat4(1.0f), glm::vec3(2.0f, 0.5f, -2.0f)),
+            "textures/sakura.png"
         );
-        scene_->AddEntity(center_exhibit1);
-    }
-    {
-        auto center_exhibit2 = std::make_shared<Entity>(
-            "meshes/octahedron.obj",
-            Material(glm::vec3(0.9f, 0.9f, 1.0f), 0.15f, 0.9f),  // 淡蓝色高光
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.9f, 0.0f)), glm::vec3(0.35f))
-        );
-        scene_->AddEntity(center_exhibit2);
+        blue_cube->SetVelocity(glm::vec3(2.0f, 0.0f, 0.0f));  // 向右移动的运动模糊
+        scene_->AddEntity(blue_cube);
     }
 
-    // ========== 展柜（可选，保护重要展品） ==========
-    // 29-30. 两个玻璃展柜（降低透明度）
+    // Foreground specular sphere (近景 - 应该被模糊)
     {
-        auto showcase1 = std::make_shared<Entity>(
-            "meshes/cube.obj",
-            Material(glm::vec3(0.95f, 0.95f, 1.0f), 0.05f, 0.0f, 0.5f, 1.5f),  // 半透明玻璃（transmission从0.9降到0.5）
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(-3.5f, 1.5f, 3.5f)), 
-                      glm::vec3(1.5f, 1.5f, 1.5f))
+        auto fg_sphere = std::make_shared<Entity>(
+            "meshes/octahedron.obj",
+             Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.3f, 0.9f),
+            // Material(glm::vec3(0.3f, 0.3f, 1.0f), 0.05f, 0.0f, 0.95f, 1.5f), // 蓝色玻璃：明显的蓝色色调
+            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.35f, 4.0f)), glm::vec3(0.5f))
         );
-        scene_->AddEntity(showcase1);
+        fg_sphere->SetVelocity(glm::vec3(-1.5f, 1.0f, 0.0f));  // 斜向左上方移动的运动模糊
+        scene_->AddEntity(fg_sphere);
     }
+
+    // Background ornamental sphere (远景 - 强烈模糊形成bokeh高光)
     {
-        auto showcase2 = std::make_shared<Entity>(
-            "meshes/cube.obj",
-            Material(glm::vec3(0.95f, 0.95f, 1.0f), 0.05f, 0.0f, 0.5f, 1.5f),  // 半透明玻璃（transmission从0.9降到0.5）
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(3.5f, 1.5f, -3.5f)), 
-                      glm::vec3(1.5f, 1.5f, 1.5f))
+        auto bg_sphere = std::make_shared<Entity>(
+            "meshes/octahedron.obj",
+            Material(glm::vec3(1.0f, 1.0f, 0.85f), 0.05f, 1.0f),
+            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.4f, -7.0f)), glm::vec3(0.6f))
         );
-        scene_->AddEntity(showcase2);
+        scene_->AddEntity(bg_sphere);
+    }
+
+    // Add small flower asset from assets (scale 0.1) and rotate to stand upright
+    {
+        // Build a transform: translate * rotate * scale
+        glm::mat4 flower_transform = glm::translate(glm::mat4(1.0f), glm::vec3(1.8f, 0.0f, 1.5f))
+                                  * glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f))
+                                  * glm::scale(glm::mat4(1.0f), glm::vec3(0.1f));
+
+        auto flower = std::make_shared<Entity>(
+            "meshes/12973_anemone_flower_v1_l2.obj",
+            // diffuse, non-metallic material
+            Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.8f, 0.0f),
+            flower_transform,
+            // use diffuse texture from the mesh's material if available
+            "meshes/12973_anemone_flower_diff.jpg"
+        );
+        // keep static (no velocity) by default
+        flower->SetVelocity(glm::vec3(0.0f, 0.0f, 0.0f));
+        scene_->AddEntity(flower);
     }
 
     // Build acceleration structures
@@ -540,7 +475,7 @@ void Application::OnInit() {
     // Move main point light down so it's inside the room (y near ceiling = 4.8)
     point_lights_[0].position = glm::vec3(2.0f, 3.8f, 5.0f);
     point_lights_[0].color = glm::vec3(1.0f, 1.0f, 1.0f);
-    point_lights_[0].strength = 2000.0f; // make it stronger for testing (can tune in UI)
+    point_lights_[0].strength = 1000.0f; // half of original 2000.0f (can tune in UI)
     point_lights_[0].radius = 0.2f;  // 扩大一倍（从0.1到0.2）避免黑色阴影
     
     // 添加一个补光光源（柔和白光）- 左上方，避免产生强反光
@@ -631,6 +566,40 @@ void Application::OnInit() {
     area_lights_buffer_->UploadData(area_lights_.data(), sizeof(AreaLight) * 8);
     grassland::LogInfo("Initialized {} area lights", 3);
 
+    // ==================== 初始化 Skybox / Environment Map ====================
+    // 初始化 skybox 信息
+    skybox_info_.zenith_color = glm::vec3(0.3f, 0.5f, 0.85f);    // 深蓝色天顶
+    skybox_info_.horizon_color = glm::vec3(0.7f, 0.75f, 0.85f);  // 浅蓝色地平线
+    skybox_info_.ground_color = glm::vec3(0.3f, 0.3f, 0.35f);    // 深灰色地面
+    skybox_info_.has_environment_map = 1.0f;                       // 默认开启环境贴图
+    skybox_info_.environment_intensity = 1.0f;                     // 默认强度
+    skybox_info_.environment_rotation = 0.0f;                      // 无旋转
+    
+    // 太阳设置
+    skybox_info_.sun_direction = glm::normalize(glm::vec3(0.5f, 0.8f, 0.3f));
+    skybox_info_.sun_intensity = 0.0f;                             // 默认关闭太阳光
+    skybox_info_.sun_color = glm::vec3(1.0f, 0.95f, 0.85f);       // 暖色阳光
+    skybox_info_.sun_angular_radius = 0.00465f;                    // 约 0.53 度（真实太阳大小）
+    
+    // 创建 skybox info 缓冲区
+    core_->CreateBuffer(sizeof(SkyboxInfo), grassland::graphics::BUFFER_TYPE_DYNAMIC, &skybox_info_buffer_);
+    skybox_info_buffer_->UploadData(&skybox_info_, sizeof(SkyboxInfo));
+    
+    // 初始化 Skybox (根据 USE_HDR_SKYBOX 开关)
+    InitializeSkybox();
+    
+    // 重新上传 skybox info (可能被 InitializeSkybox 修改)
+    skybox_info_buffer_->UploadData(&skybox_info_, sizeof(SkyboxInfo));
+    
+    // 创建环境贴图采样器
+    grassland::graphics::SamplerInfo env_sampler_info;
+    env_sampler_info.min_filter = grassland::graphics::FILTER_MODE_LINEAR;
+    env_sampler_info.mag_filter = grassland::graphics::FILTER_MODE_LINEAR;
+    env_sampler_info.address_mode_u = grassland::graphics::ADDRESS_MODE_REPEAT;
+    env_sampler_info.address_mode_v = grassland::graphics::ADDRESS_MODE_CLAMP_TO_EDGE;
+    env_sampler_info.address_mode_w = grassland::graphics::ADDRESS_MODE_REPEAT;
+    core_->CreateSampler(env_sampler_info, &environment_sampler_);
+
     // Initialize camera state member variables
     camera_pos_ = glm::vec3{ 1.76f, 2.55f, 5.13f }; // 展览馆内部视角
     camera_up_ = glm::vec3{ 0.0f, 1.0f, 0.0f }; // World up
@@ -653,12 +622,17 @@ void Application::OnInit() {
     focus_distance_ = 6.0f;  // 默认焦距6米 -> focal plane at z=2 (camera z=8)
         samples_per_frame_ = 2;  // 每帧每像素多采样次数，默认为2，能显著降低闪烁
         focused_entity_id_ = -1; // no focus locked initially
-    exposure_ = 0.5f;        // Default exposure multiplier
+    exposure_ = 0.25f;       // Default exposure multiplier (half of original 0.5f)
     lights_need_upload_ = false; // track if any light params changed
     
     // Initialize MSAA parameters
     msaa_mode_ = MSAA_MODE_4X;  // 默认使用 4x MSAA
     accumulated_frames_ = 0;    // 累积帧计数
+    
+    // Initialize Motion Blur parameters
+    motion_blur_mode_ = 0;          // 默认关闭运动模糊
+    motion_blur_intensity_ = 0.5f;  // 默认强度
+    motion_blur_direction_ = glm::vec2(1.0f, 0.0f); // 默认水平方向
 
     // Calculate initial camera_front_ based on yaw and pitch
     glm::vec3 front;
@@ -681,6 +655,9 @@ void Application::OnInit() {
     camera_object.debug_point_index = 0;
     camera_object.msaa_mode = msaa_mode_;
     camera_object.accumulated_frames = accumulated_frames_;
+    camera_object.motion_blur_mode = motion_blur_mode_;
+    camera_object.motion_blur_intensity = motion_blur_intensity_;
+    camera_object.motion_blur_direction = motion_blur_direction_;
     camera_object_buffer_->UploadData(&camera_object, sizeof(CameraObject));
 
     core_->CreateImage(window_->GetWidth(), window_->GetHeight(), grassland::graphics::IMAGE_FORMAT_R32G32B32A32_SFLOAT,
@@ -718,16 +695,21 @@ void Application::OnInit() {
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_WRITABLE_IMAGE, 1);          // space7 - accumulated samples
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space8 - point lights
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space9 - area lights
-    program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_IMAGE, 16);                  // space10 - texture array
+    program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_IMAGE, MAX_TEXTURES);        // space10 - texture array
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_SAMPLER, 1);                 // space11 - texture sampler
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_WRITABLE_IMAGE, 1);          // space12 - depth image
-    program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space13 - KDT nodes
-    program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_UNIFORM_BUFFER, 1);          // space14 - KDT info
-    // 暂时注释掉全局几何缓冲区绑定
-    // program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space9 - global vertices
-    // program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space10 - global normals
-    // program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space11 - global indices
-    // program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space12 - entity offsets
+    program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space13 - reserved
+    program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_UNIFORM_BUFFER, 1);          // space14 - reserved
+    program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space15 - entity velocities (motion blur)
+    program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_UNIFORM_BUFFER, 1);          // space16 - skybox info
+    program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_IMAGE, 1);                   // space17 - environment map
+    program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_SAMPLER, 1);                 // space18 - environment sampler
+    // 全局几何缓冲区绑定
+    program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space19 - global vertices
+    program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space20 - global normals
+    program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space21 - global texcoords
+    program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space22 - global indices
+    program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space23 - entity offsets
     program_->Finalize();
 }
 
@@ -750,13 +732,21 @@ void Application::OnClose() {
     texture_sampler_.reset();      // 清理纹理采样器
     depth_image_.reset(); // 清理深度图像
     
+    // 清理 Skybox 资源
+    skybox_info_buffer_.reset();
+    environment_map_.reset();
+    environment_sampler_.reset();
+    
     // Don't call TerminateImGui - let the window destructor handle it
     // Just reset window which will clean everything up properly
     window_.reset();
 }
 
+// 更新鼠标悬停的实体
+// 功能：从entity_id_image_读取鼠标位置下的实体ID，实现悬停检测
+// 注意：仅在相机禁用时检测（光标可见时）
 void Application::UpdateHoveredEntity() {
-    // Only detect hover when camera is disabled (cursor visible)
+    // 仅在相机禁用时检测悬停（光标可见）
     if (camera_enabled_) {
         hovered_entity_id_ = -1;
         hovered_pixel_color_ = glm::vec4(0.0f);
@@ -817,14 +807,17 @@ void Application::UpdateHoveredEntity() {
     // Hover state is shown in the UI panels, no logging needed
 }
 
+// 更新应用程序状态（每帧调用）
+// 功能：处理窗口关闭、处理输入、更新相机、检测相机移动、更新悬停实体、更新GPU缓冲区
 void Application::OnUpdate() {
+    // 检查窗口是否应该关闭
     if (window_->ShouldClose()) {
         window_->CloseWindow();
         alive_ = false;
-        return;  // Exit update immediately after closing
+        return;  // 关闭后立即退出更新
     }
     if (alive_) {
-        // Process keyboard input to move camera
+        // 处理键盘输入以移动相机
         ProcessInput();
         
         CameraObject current_camera_object{};
@@ -873,37 +866,6 @@ void Application::OnUpdate() {
         HoverInfo hover_info{};
         hover_info.hovered_entity_id = hovered_entity_id_;
         hover_info_buffer_->UploadData(&hover_info, sizeof(HoverInfo));
-        
-        // 当摄像机不动时，计算中心像素的光线并收集KDT相交信息
-        if (!camera_enabled_ && scene_->GetKDTNodeCount() > 0) {
-            // 计算中心像素的光线方向（与shader中GenerateCameraRay相同）
-            int width = window_->GetWidth();
-            int height = window_->GetHeight();
-            glm::vec2 pixel_center = glm::vec2(width / 2.0f, height / 2.0f);
-            glm::vec2 uv = pixel_center / glm::vec2(width, height);
-            uv.y = 1.0f - uv.y;
-            glm::vec2 d = uv * 2.0f - 1.0f;
-            
-            // 使用当前的camera_to_world矩阵计算光线方向
-            CameraObject current_camera_object{};
-            current_camera_object.screen_to_camera = glm::inverse(
-                glm::perspective(glm::radians(60.0f), (float)width / (float)height, 0.1f, 10.0f));
-            current_camera_object.camera_to_world =
-                glm::inverse(glm::lookAt(camera_pos_, camera_pos_ + camera_front_, camera_up_));
-            
-            glm::vec4 target = glm::vec4(d.x, d.y, 1.0f, 1.0f);
-            glm::mat4 screen_to_camera = current_camera_object.screen_to_camera;
-            glm::vec4 target_camera = screen_to_camera * target;
-            glm::mat4 camera_to_world = current_camera_object.camera_to_world;
-            glm::vec4 direction_world = camera_to_world * glm::vec4(glm::vec3(target_camera), 0.0f);
-            glm::vec3 rayDir = glm::normalize(glm::vec3(direction_world));
-            
-            // 测试中心像素光线与所有KDT节点的相交
-            center_pixel_intersections_ = scene_->DebugTestRayAABBIntersection(
-                camera_pos_, rayDir, 0.001f, 10000.0f);
-        } else {
-            center_pixel_intersections_.clear();
-        }
 
         // --------------- 修改开始 ---------------
         // 上传当前帧的 CameraObject（使用上面计算的 current_camera_object）
@@ -927,6 +889,9 @@ void Application::OnUpdate() {
         current_camera_object.debug_point_index = 0;
         current_camera_object.msaa_mode = msaa_mode_;
         current_camera_object.accumulated_frames = accumulated_frames_;
+        current_camera_object.motion_blur_mode = motion_blur_mode_;
+        current_camera_object.motion_blur_intensity = motion_blur_intensity_;
+        current_camera_object.motion_blur_direction = motion_blur_direction_;
         camera_object_buffer_->UploadData(&current_camera_object, sizeof(CameraObject));
         // --------------- 修改结束 ---------------
 
@@ -937,9 +902,11 @@ void Application::OnUpdate() {
     }
 }
 
+// 应用悬停高亮效果（后处理）
+// image: 要处理的图像
+// 功能：通过修改匹配悬停实体的像素来应用高亮效果
+// 注意：这是在CPU端进行的后处理，不影响累积
 void Application::ApplyHoverHighlight(grassland::graphics::Image* image) {
-    // Apply hover highlighting by modifying pixels where entity ID matches hovered entity
-    // This is done as a CPU-side post-process so it doesn't affect accumulation
     
     int width = window_->GetWidth();
     int height = window_->GetHeight();
@@ -969,8 +936,10 @@ void Application::ApplyHoverHighlight(grassland::graphics::Image* image) {
     image->UploadData(image_data.data());
 }
 
+// 保存累积输出到PNG文件
+// filename: 输出文件名
+// 功能：将累积的输出图像保存为PNG文件（不包含悬停高亮）
 void Application::SaveAccumulatedOutput(const std::string& filename) {
-    // Save the accumulated output image to a PNG file (without hover highlighting)
     int width = window_->GetWidth();
     int height = window_->GetHeight();
     int sample_count = film_->GetSampleCount();
@@ -1013,6 +982,9 @@ void Application::SaveAccumulatedOutput(const std::string& filename) {
     }
 }
 
+// 渲染信息覆盖层（左侧UI面板）
+// 功能：显示相机信息、景深控制、MSAA控制、运动模糊控制、环境光控制、场景信息、渲染信息等
+// 注意：仅在相机禁用且UI未隐藏时显示
 void Application::RenderInfoOverlay() {
     // Only show overlay when camera is disabled and UI is not hidden
     if (camera_enabled_ || ui_hidden_) {
@@ -1121,6 +1093,110 @@ void Application::RenderInfoOverlay() {
         film_->Reset();
         accumulated_frames_ = 0;
     };
+    
+    // ==================== Motion Blur 控制 ====================
+    ImGui::SeparatorText("Motion Blur");
+    bool motion_blur_changed = false;
+    
+    // Motion Blur 模式下拉菜单
+    const char* motion_blur_modes[] = { "Off", "Camera", "Object", "Radial", "Directional" };
+    if (ImGui::Combo("Motion Blur Mode", &motion_blur_mode_, motion_blur_modes, IM_ARRAYSIZE(motion_blur_modes))) {
+        motion_blur_changed = true;
+    }
+    
+    // 显示当前模式说明
+    switch (motion_blur_mode_) {
+        case 0: // Off
+            ImGui::TextWrapped("No motion blur. Standard rendering.");
+            break;
+        case 1: // Camera
+            ImGui::TextWrapped("Camera motion blur. Simulates shutter time during camera movement.");
+            break;
+        case 2: // Object
+            ImGui::TextWrapped("Object motion blur. Blurs objects with velocity (green/red/gold exhibits).");
+            break;
+        case 3: // Radial
+            ImGui::TextWrapped("Radial blur from screen center. Creates zoom effect.");
+            break;
+        case 4: // Directional
+            ImGui::TextWrapped("Directional blur along specified direction.");
+            break;
+    }
+    
+    // 强度滑块（只在开启运动模糊时显示）
+    if (motion_blur_mode_ > 0) {
+        if (ImGui::SliderFloat("Blur Intensity", &motion_blur_intensity_, 0.0f, 0.3f, "%.2f")) {
+            motion_blur_changed = true;
+        }
+        
+        // 方向控制（只在方向性模糊时显示）
+        if (motion_blur_mode_ == 4) {
+            float dir[2] = { motion_blur_direction_.x, motion_blur_direction_.y };
+            if (ImGui::SliderFloat2("Blur Direction", dir, -1.0f, 1.0f)) {
+                motion_blur_direction_ = glm::vec2(dir[0], dir[1]);
+                motion_blur_changed = true;
+            }
+            // 归一化方向
+            float len = glm::length(motion_blur_direction_);
+            if (len > 0.001f) {
+                motion_blur_direction_ /= len;
+            }
+        }
+    }
+    
+    // Motion Blur 参数改变时重置累积
+    if (motion_blur_changed && film_) {
+        film_->Reset();
+        accumulated_frames_ = 0;
+    }
+    
+    // ==================== Skybox / Environment Lighting 控制 ====================
+    ImGui::SeparatorText("Environment Lighting");
+    bool skybox_changed = false;
+    
+    // 显示当前状态
+    if (skybox_info_.has_environment_map > 0.5f) {
+        ImGui::TextColored(ImVec4(0.5f, 1.0f, 0.5f, 1.0f), "Mode: HDR Environment Map");
+    } else {
+        ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.5f, 1.0f), "Mode: Procedural Sky");
+    }
+    
+    // 环境光强度
+    if (ImGui::SliderFloat("Env Intensity", &skybox_info_.environment_intensity, 0.0f, 5.0f, "%.2f")) {
+        skybox_changed = true;
+    }
+    
+    // HDR 环境贴图旋转 (仅在使用 HDR 时显示)
+    if (skybox_info_.has_environment_map > 0.5f) {
+        float rotation_deg = skybox_info_.environment_rotation * 180.0f / 3.14159265f;
+        if (ImGui::SliderFloat("Env Rotation", &rotation_deg, 0.0f, 360.0f, "%.1f deg")) {
+            skybox_info_.environment_rotation = rotation_deg * 3.14159265f / 180.0f;
+            skybox_changed = true;
+        }
+    }
+    
+    // 程序化天空颜色 (始终可调，影响后备天空)
+    if (ImGui::TreeNode("Sky Colors")) {
+        if (ImGui::ColorEdit3("Zenith", &skybox_info_.zenith_color.x)) {
+            skybox_changed = true;
+        }
+        if (ImGui::ColorEdit3("Horizon", &skybox_info_.horizon_color.x)) {
+            skybox_changed = true;
+        }
+        if (ImGui::ColorEdit3("Ground", &skybox_info_.ground_color.x)) {
+            skybox_changed = true;
+        }
+        ImGui::TreePop();
+    }
+    
+    // Skybox 参数改变时重置累积
+    if (skybox_changed) {
+        skybox_need_upload_ = true;
+        if (film_) {
+            film_->Reset();
+            accumulated_frames_ = 0;
+        }
+    }
 
     // Scene Information
     ImGui::SeparatorText("Scene");
@@ -1214,7 +1290,7 @@ void Application::RenderInfoOverlay() {
     // Light controls (quick debug + adjust exposure)
     ImGui::SeparatorText("Lights / Exposure");
     bool lights_changed = false;
-    if (ImGui::SliderFloat("Exposure", &exposure_, 0.01f, 0.1f, "%.2f")) {
+    if (ImGui::SliderFloat("Exposure", &exposure_, 0.01f, 1.0f, "%.2f")) {
         lights_changed = true;
     }
 
@@ -1266,36 +1342,13 @@ void Application::RenderInfoOverlay() {
     ImGui::Spacing();
     ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.5f, 1.0f), "Hold Tab to hide UI");
     ImGui::TextColored(ImVec4(0.5f, 1.0f, 1.0f, 1.0f), "Ctrl+S to save screenshot");
-    
-    // KDT Intersection Debug Info (only when camera is not moving)
-    if (!camera_enabled_ && !center_pixel_intersections_.empty()) {
-        ImGui::Spacing();
-        ImGui::SeparatorText("KDT Center Pixel Intersections");
-        ImGui::Text("Center pixel ray intersections: %zu", center_pixel_intersections_.size());
-        
-        // 使用可滚动区域显示所有相交信息
-        ImGui::BeginChild("KDTIntersections", ImVec2(0, 300), true);
-        for (size_t i = 0; i < center_pixel_intersections_.size(); ++i) {
-            const auto& info = center_pixel_intersections_[i];
-            if (info.is_leaf) {
-                ImGui::TextColored(ImVec4(0.5f, 1.0f, 0.5f, 1.0f), 
-                    "Node %d [LEAF]: t=%.3f, mask=0x%02X, entities=%d",
-                    info.node_idx, info.t_hit, info.mask, info.entity_count);
-            } else {
-                ImGui::TextColored(ImVec4(0.7f, 0.7f, 1.0f, 1.0f),
-                    "Node %d [INTERNAL]: t=%.3f, axis=%d, split=%.3f, mask=0x%02X",
-                    info.node_idx, info.t_hit, info.split_axis, info.split_pos, info.mask);
-            }
-            ImGui::Text("  AABB: min=(%.2f,%.2f,%.2f) max=(%.2f,%.2f,%.2f)",
-                info.aabb_min.x, info.aabb_min.y, info.aabb_min.z,
-                info.aabb_max.x, info.aabb_max.y, info.aabb_max.z);
-        }
-        ImGui::EndChild();
-    }
 
     ImGui::End();
 }
 
+// 渲染实体检查器面板（右侧UI面板）
+// 功能：显示实体选择下拉菜单、选中实体的详细信息（变换、材质、网格等）、材质编辑控件
+// 注意：仅在相机禁用且UI未隐藏时显示
 void Application::RenderEntityPanel() {
     // Only show entity panel when camera is disabled and UI is not hidden
     if (camera_enabled_ || ui_hidden_) {
@@ -1513,8 +1566,10 @@ void Application::RenderEntityPanel() {
     ImGui::End();
 }
 
+// 渲染一帧
+// 功能：清空缓冲区、绑定资源、调度光线追踪、应用后处理、渲染UI、呈现图像
 void Application::OnRender() {
-    // Don't render if window is closing
+    // 如果窗口正在关闭，不渲染
     if (!alive_) {
         return;
     }
@@ -1542,13 +1597,26 @@ void Application::OnRender() {
     command_context->CmdBindResources(8, { point_lights_buffer_.get() }, grassland::graphics::BIND_POINT_RAYTRACING);  // 绑定点光源
     command_context->CmdBindResources(9, { area_lights_buffer_.get() }, grassland::graphics::BIND_POINT_RAYTRACING);  // 绑定面光源
     
-    // 绑定KDT节点buffer和info buffer（如果存在）
-    if (scene_->GetKDTNodesBuffer()) {
-        command_context->CmdBindResources(13, { scene_->GetKDTNodesBuffer() }, grassland::graphics::BIND_POINT_RAYTRACING);
-    }
-    if (scene_->GetKDTInfoBuffer()) {
-        command_context->CmdBindResources(14, { scene_->GetKDTInfoBuffer() }, grassland::graphics::BIND_POINT_RAYTRACING);
-    }
+    // 绑定 reserved 空间（space13, space14）- 使用现有缓冲区作为占位符
+    // D3D12 要求所有声明的资源槽都必须被绑定
+    command_context->CmdBindResources(13, { scene_->GetMaterialsBuffer() }, grassland::graphics::BIND_POINT_RAYTRACING);  // space13 placeholder
+    command_context->CmdBindResources(14, { camera_object_buffer_.get() }, grassland::graphics::BIND_POINT_RAYTRACING);   // space14 placeholder
+    
+    // 绑定实体速度缓冲区（用于物体运动模糊）- 必须总是绑定
+    command_context->CmdBindResources(15, { scene_->GetVelocitiesBuffer() }, grassland::graphics::BIND_POINT_RAYTRACING);
+    
+    // 绑定 Skybox / Environment Map 资源
+    command_context->CmdBindResources(16, { skybox_info_buffer_.get() }, grassland::graphics::BIND_POINT_RAYTRACING);
+    // 环境贴图必须始终有效 (初始化时已创建默认贴图)
+    command_context->CmdBindResources(17, { environment_map_.get() }, grassland::graphics::BIND_POINT_RAYTRACING);
+    command_context->CmdBindResources(18, { environment_sampler_.get() }, grassland::graphics::BIND_POINT_RAYTRACING);
+    
+    // 绑定全局几何缓冲区（用于从OBJ文件加载的几何数据）
+    command_context->CmdBindResources(19, { scene_->GetGlobalVertexBuffer() }, grassland::graphics::BIND_POINT_RAYTRACING);
+    command_context->CmdBindResources(20, { scene_->GetGlobalNormalBuffer() }, grassland::graphics::BIND_POINT_RAYTRACING);
+    command_context->CmdBindResources(21, { scene_->GetGlobalTexcoordBuffer() }, grassland::graphics::BIND_POINT_RAYTRACING);
+    command_context->CmdBindResources(22, { scene_->GetGlobalIndexBuffer() }, grassland::graphics::BIND_POINT_RAYTRACING);
+    command_context->CmdBindResources(23, { scene_->GetEntityOffsetsBuffer() }, grassland::graphics::BIND_POINT_RAYTRACING);
 
     // If UI changed lights, re-upload data to GPU buffer (so shader sees changes)
     if (lights_need_upload_) {
@@ -1556,6 +1624,15 @@ void Application::OnRender() {
         if (area_lights_buffer_) area_lights_buffer_->UploadData(area_lights_.data(), sizeof(AreaLight) * area_lights_.size());
         lights_need_upload_ = false;
         grassland::LogInfo("Light buffers updated (uploaded to GPU). PL0 pos=(%.2f, %.2f, %.2f) strength=%.1f", point_lights_[0].position.x, point_lights_[0].position.y, point_lights_[0].position.z, point_lights_[0].strength);
+    }
+    
+    // If skybox parameters changed, re-upload
+    if (skybox_need_upload_) {
+        if (skybox_info_buffer_) {
+            skybox_info_buffer_->UploadData(&skybox_info_, sizeof(SkyboxInfo));
+        }
+        skybox_need_upload_ = false;
+        grassland::LogInfo("Skybox info updated (uploaded to GPU)");
     }
     
     // Bind textures and sampler (space10)

@@ -4,6 +4,9 @@
 #ifndef COMMON_HLSL
 #define COMMON_HLSL
 
+// ==================== Constants ====================
+#define MAX_TEXTURES 64  // 纹理数组最大数量（必须与C++端保持一致）
+
 struct CameraInfo {
   float4x4 screen_to_camera;
   float4x4 camera_to_world;
@@ -15,6 +18,10 @@ struct CameraInfo {
   int debug_point_index; // which point light index to debug (0..N-1)
   int msaa_mode;         // MSAA 模式: 0=Off, 1=2x, 2=4x, 3=8x, 4=Random
   int accumulated_frames; // 累积帧数（用于时间累积 MSAA）
+  // Motion Blur 参数
+  int motion_blur_mode;     // 0=Off, 1=Camera, 2=Object, 3=Radial, 4=Directional
+  float motion_blur_intensity; // 运动模糊强度
+  float2 motion_blur_direction; // 方向性模糊的方向
 };
 
 // Principled BSDF Material (matches C++ struct layout)
@@ -60,10 +67,11 @@ struct HoverInfo {
     int hovered_entity_id;
 };
 
-// KDT信息结构体（用于传递节点数量）
-struct KDTInfo {
-    uint num_nodes;        // KDT节点数量
-    uint padding[3];       // 对齐填充
+// 实体偏移信息结构体（用于全局缓冲区，必须与C++端保持一致）
+struct EntityOffset {
+    uint vertex_offset;  // 在全局缓冲区中的起始顶点索引
+    uint index_offset;   // 在全局缓冲区中的起始索引
+    uint padding[2];     // 填充以对齐到16字节（GPU要求）
 };
 
 // 点光源结构体
@@ -100,18 +108,24 @@ struct RayPayload {
 	float2 uv;  // UV坐标用于纹理采样
 };
 
-// KDT节点结构体（与C++中的KDTNodeGPU对应）
-struct KDTNode {
-	float3 aabb_min;        // AABB最小值
-	float3 aabb_max;        // AABB最大值
-	int split_axis;         // 分割轴：0=X, 1=Y, 2=Z, -1=叶子节点
-	float split_pos;         // 分割位置
-	int left_child_idx;     // 左子节点索引（-1表示无子节点）
-	int right_child_idx;     // 右子节点索引（-1表示无子节点）
-	int entity_start_idx;    // 实体索引列表起始位置（仅在叶子节点有效）
-	int entity_count;        // 实体数量（仅在叶子节点有效）
-	uint mask;               // 该节点对应的instance mask
-	uint padding;            // 对齐填充
+// Skybox / Environment Map 信息
+struct SkyboxInfo {
+    // 程序化天空颜色
+    float3 zenith_color;      // 天顶颜色
+    float has_environment_map; // 是否有环境贴图 (>0.5 = true)
+    
+    float3 horizon_color;     // 地平线颜色
+    float environment_intensity; // 环境光强度
+    
+    float3 ground_color;      // 地面颜色
+    float environment_rotation; // 环境贴图旋转角度（弧度）
+    
+    // 太阳/方向光设置
+    float3 sun_direction;     // 太阳方向（归一化）
+    float sun_intensity;      // 太阳强度
+    
+    float3 sun_color;         // 太阳颜色
+    float sun_angular_radius; // 太阳角半径（弧度）
 };
 
 // ==================== Resources ====================
@@ -126,15 +140,31 @@ RWTexture2D<int> accumulated_samples : register(u0, space7);
 RWTexture2D<float> depth_output : register(u0, space12);
 StructuredBuffer<PointLight> point_lights : register(t0, space8);  // 点光源数组
 StructuredBuffer<AreaLight> area_lights : register(t0, space9);  // 面光源数组
-Texture2D textures[16] : register(t0, space10);  // 纹理数组 (最多16个)
+Texture2D textures[MAX_TEXTURES] : register(t0, space10);  // 纹理数组 (最多MAX_TEXTURES个)
 SamplerState texSampler : register(s0, space11);  // 纹理采样器
-StructuredBuffer<KDTNode> kdt_nodes : register(t0, space13);  // KDT节点数组
-ConstantBuffer<KDTInfo> kdt_info : register(b0, space14);  // KDT信息（节点数量）
+StructuredBuffer<float4> entity_velocities : register(t0, space15);  // 实体速度数组 (xyz=velocity, w=padding)
+
+// Skybox / Environment Map 资源
+ConstantBuffer<SkyboxInfo> skybox_info : register(b0, space16);    // 天空盒信息
+Texture2D environment_map : register(t0, space17);                  // HDR 环境贴图
+SamplerState envSampler : register(s0, space18);                    // 环境贴图采样器
+
+// 全局几何缓冲区（用于从OBJ文件加载的几何数据）
+StructuredBuffer<float3> global_vertices : register(t0, space19);      // 全局顶点缓冲区
+StructuredBuffer<float3> global_normals : register(t0, space20);       // 全局法线缓冲区
+StructuredBuffer<float2> global_texcoords : register(t0, space21);     // 全局UV坐标缓冲区
+StructuredBuffer<uint> global_indices : register(t0, space22);         // 全局索引缓冲区
+StructuredBuffer<EntityOffset> entity_offsets : register(t0, space23); // 实体偏移缓冲区
+
 //t，u，space分别表示纹理寄存器、采样器寄存器和常量缓冲区寄存器的空间索引
 
 // ==================== Constants ====================
 static const float SHADOW_DEBUG_BOOST = 1.0; //1.0相当于正常
 static const float PI = 3.14159265359;
+
+// 路径追踪和阴影追踪的最大弹射次数
+#define MAX_PATH_BOUNCES 8      // 路径追踪最大弹射次数
+#define MAX_SHADOW_BOUNCES 6    // 阴影追踪最大弹射次数（用于透明材质）
 
 #endif // COMMON_HLSL
 

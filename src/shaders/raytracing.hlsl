@@ -8,8 +8,10 @@
 #include "rng.hlsl"
 #include "bsdf.hlsl"
 #include "lighting.hlsl"
+#include "motion_blur.hlsl"
+#include "skybox.hlsl"
 
-// ACES Tone Mapping (解决过曝/刺眼问题的关键)
+// ACES 色调映射（解决过曝/刺眼问题的关键，将HDR值映射到LDR范围）
 float3 ACESFilm(float3 x) {
     float a = 2.51f;
     float b = 0.03f;
@@ -19,182 +21,8 @@ float3 ACESFilm(float3 x) {
     return saturate((x * (a * x + b)) / (x * (c * x + d) + e));
 }
 
-// 光线与AABB相交检测（使用slab方法，最基础实现，严格处理边界）
-// 返回true表示相交，false表示不相交
-// 如果相交，tHit返回相交的t值（进入AABB的点，如果起点在AABB内则返回tMin）
-bool RayAABBIntersect(float3 rayOrigin, float3 rayDir, float3 aabbMin, float3 aabbMax, float tMin, float tMax, out float tHit) {
-    const float epsilon = 1e-7;
-    
-    // 首先严格检查光线起点是否在AABB内（这是关键！）
-    bool originInside = (rayOrigin.x >= aabbMin.x - epsilon) && (rayOrigin.x <= aabbMax.x + epsilon) &&
-                         (rayOrigin.y >= aabbMin.y - epsilon) && (rayOrigin.y <= aabbMax.y + epsilon) &&
-                         (rayOrigin.z >= aabbMin.z - epsilon) && (rayOrigin.z <= aabbMax.z + epsilon);
-    
-    // 如果起点在AABB内，直接返回相交（使用tMin作为起始点）
-    if (originInside) {
-        tHit = tMin;
-        // tMin应该在有效范围内（由调用者保证），直接返回true
-        return true;
-    }
-    
-    // 起点在AABB外，使用标准的slab方法
-    // 计算每个轴的相交区间
-    float3 t0 = float3(0, 0, 0);
-    float3 t1 = float3(0, 0, 0);
-    
-    // X轴
-    if (abs(rayDir.x) < epsilon) {
-        // 光线与X轴平行
-        if (rayOrigin.x < aabbMin.x - epsilon || rayOrigin.x > aabbMax.x + epsilon) {
-            return false;  // 不相交
-        }
-        t0.x = -1e30;
-        t1.x = 1e30;
-    } else {
-        float invDirX = 1.0 / rayDir.x;
-        t0.x = (aabbMin.x - rayOrigin.x) * invDirX;
-        t1.x = (aabbMax.x - rayOrigin.x) * invDirX;
-        if (t0.x > t1.x) {
-            float temp = t0.x;
-            t0.x = t1.x;
-            t1.x = temp;
-        }
-    }
-    
-    // Y轴
-    if (abs(rayDir.y) < epsilon) {
-        // 光线与Y轴平行
-        if (rayOrigin.y < aabbMin.y - epsilon || rayOrigin.y > aabbMax.y + epsilon) {
-            return false;  // 不相交
-        }
-        t0.y = -1e30;
-        t1.y = 1e30;
-    } else {
-        float invDirY = 1.0 / rayDir.y;
-        t0.y = (aabbMin.y - rayOrigin.y) * invDirY;
-        t1.y = (aabbMax.y - rayOrigin.y) * invDirY;
-        if (t0.y > t1.y) {
-            float temp = t0.y;
-            t0.y = t1.y;
-            t1.y = temp;
-        }
-    }
-    
-    // Z轴
-    if (abs(rayDir.z) < epsilon) {
-        // 光线与Z轴平行
-        if (rayOrigin.z < aabbMin.z - epsilon || rayOrigin.z > aabbMax.z + epsilon) {
-            return false;  // 不相交
-        }
-        t0.z = -1e30;
-        t1.z = 1e30;
-    } else {
-        float invDirZ = 1.0 / rayDir.z;
-        t0.z = (aabbMin.z - rayOrigin.z) * invDirZ;
-        t1.z = (aabbMax.z - rayOrigin.z) * invDirZ;
-        if (t0.z > t1.z) {
-            float temp = t0.z;
-            t0.z = t1.z;
-            t1.z = temp;
-        }
-    }
-    
-    // 找到最大的tNear和最小的tFar
-    float tNearMax = max(max(t0.x, t0.y), t0.z);
-    float tFarMin = min(min(t1.x, t1.y), t1.z);
-    
-    // 检查是否相交：tNearMax <= tFarMin
-    if (tNearMax > tFarMin + epsilon) {
-        return false;  // 不相交
-    }
-    
-    // 检查相交点是否在有效范围内
-    // tNearMax是进入AABB的点
-    if (tNearMax > tMax + epsilon) {
-        return false;  // 进入点在有效范围之外
-    }
-    
-    if (tFarMin < tMin - epsilon) {
-        return false;  // AABB完全在光线起点之前
-    }
-    
-    // 确定相交的t值
-    if (tNearMax < tMin - epsilon) {
-        // 如果进入点在tMin之前，但AABB与光线相交，说明起点在AABB内（但我们已经检查过了）
-        // 这种情况不应该发生，但为了安全起见，使用tMin
-        tHit = tMin;
-    } else {
-        // 使用进入点
-        tHit = tNearMax;
-    }
-    
-    // 最终检查：确保tHit在有效范围内
-    if (tHit < tMin - epsilon || tHit > tMax + epsilon) {
-        return false;
-    }
-    
-    return true;
-}
-
-// KDT遍历函数：从根节点出发，找到所有相交的叶子节点，合并mask后执行一次TraceRay
-// 返回是否命中
-bool TraceRayWithKDT(float3 rayOrigin, float3 rayDir, float tMin, float tMax, inout RayPayload payload) {
-    // 如果KDT节点数组为空，回退到普通TraceRay
-    uint numNodes = kdt_info.num_nodes;
-    if (numNodes == 0) {
-        RayDesc ray;
-        ray.Origin = rayOrigin;
-        ray.Direction = rayDir;
-        ray.TMin = tMin;
-        ray.TMax = tMax;
-        TraceRay(as, RAY_FLAG_NONE, 0xFF, 0, 1, 0, ray, payload);
-        return payload.hit;
-    }
-    
-    // 第一步：遍历树，找到所有相交的叶子节点，合并mask
-    uint mergedMask = 0;
-    
-    // 使用栈模拟递归遍历（从根节点开始）
-    int stack[32];
-    int stackTop = 0;
-    stack[stackTop++] = 0;  // 根节点索引为0
-    
-    while (stackTop > 0 && stackTop < 32) {
-        int nodeIdx = stack[--stackTop];
-        if (nodeIdx < 0 || nodeIdx >= (int)numNodes) {
-            continue;
-        }
-        
-        KDTNode node = kdt_nodes[nodeIdx];
-        
-        // 检查光线是否与当前节点AABB相交
-        float tHitAABB;
-        bool intersects = RayAABBIntersect(rayOrigin, rayDir, node.aabb_min, node.aabb_max, tMin, tMax, tHitAABB);
-        if (!intersects) {
-            continue;  // 不相交，跳过
-        }
-        
-        // 如果是叶子节点，合并mask
-        if (node.split_axis == -1) {
-            mergedMask |= node.mask;
-        } else {
-            // 内部节点：递归检查左右子节点
-            if (node.left_child_idx >= 0) {
-                stack[stackTop++] = node.left_child_idx;
-            }
-            if (node.right_child_idx >= 0) {
-                stack[stackTop++] = node.right_child_idx;
-            }
-        }
-    }
-    
-    // 第二步：如果没有任何相交的叶子节点，返回未命中
-    if (mergedMask == 0) {
-        payload.hit = false;
-        return false;
-    }
-    
-    // 第三步：使用合并后的mask执行一次TraceRay
+// 简单的光线追踪函数，直接使用硬件加速的 TraceRay API
+bool TraceRaySimple(float3 rayOrigin, float3 rayDir, float tMin, float tMax, inout RayPayload payload) {
     RayDesc ray;
     ray.Origin = rayOrigin;
     ray.Direction = rayDir;
@@ -202,57 +30,89 @@ bool TraceRayWithKDT(float3 rayOrigin, float3 rayDir, float tMin, float tMax, in
     ray.TMax = tMax;
     
     payload.hit = false;
-    TraceRay(as, RAY_FLAG_NONE, mergedMask, 0, 1, 0, ray, payload);
+    TraceRay(as, RAY_FLAG_NONE, 0xFF, 0, 1, 0, ray, payload);
     
     return payload.hit;
 }
 
-// 执行路径追踪
-float3 TracePath(float3 rayOrigin, float3 rayDir, inout uint seed) {
-    const int MAX_BOUNCES = 8; // 优化：8次弹射足够，平衡质量和性能
-    const float MAX_THROUGHPUT = 100.0; // 降低throughput上限值，更严格地防止累积导致数值爆炸
+// 执行路径追踪（支持物体运动模糊）
+// 物体运动模糊原理：对于有速度的物体，通过多采样在时间域上分散，
+// 让物体在运动方向上产生模糊效果。
+// 
+// 关键改进：在击中有速度的物体后，我们将该物体的颜色/光照贡献
+// 沿速度方向"拖尾"，产生运动模糊效果。这通过在采样时随机选择
+// 时间点来实现，不同采样看到物体在运动轨迹上的不同位置。
+float3 TracePathWithObjectMotionBlur(float3 rayOrigin, float3 rayDir, float motion_time, inout uint seed) {
+    const int MAX_BOUNCES = MAX_PATH_BOUNCES;
+    const float MAX_THROUGHPUT = 100.0;
     RayPayload payload;
     float3 radiance = float3(0,0,0);
     float3 throughput = float3(1,1,1);
     
+    float intensity = camera_info.motion_blur_intensity;
+    
     for (int bounce = 0; bounce < MAX_BOUNCES; ++bounce) {
-        // 初始化 payload
         payload.hit = false;
         payload.material_idx = 0;
         payload.hit_pos = float3(0,0,0);
         payload.normal = float3(0,1,0);
         
-        // 使用KDT加速的光线追踪
-        TraceRayWithKDT(rayOrigin, rayDir, 0.001, 10000.0, payload);
+        TraceRaySimple(rayOrigin, rayDir, 0.001, 10000.0, payload);
         
         if (!payload.hit) {
-            // Skybox / Environment - 提升环境光亮度
+            // 光线未击中任何物体，使用环境贴图或程序化天空
             float3 rayDirNorm = normalize(rayDir);
-            float tsky = 0.5 * (rayDirNorm.y + 1.0);
-            float3 sky = lerp(float3(0.2, 0.2, 0.25), float3(0.4, 0.5, 0.7), tsky); // 增加环境光亮度
-            radiance += throughput * sky;
-            break;
+            float3 sky;
+            if (skybox_info.has_environment_map > 0.5) {
+                sky = SampleEnvironmentMap(rayDirNorm);
+            } else {
+                sky = GetProceduralSky(rayDirNorm);
+            }
+            radiance += throughput * sky; // 累积环境光照贡献
+            break; // 终止路径追踪
         }
         
         Material mat = materials[payload.material_idx];
         float3 N = normalize(payload.normal);
         float3 V = normalize(-rayDir);
-        float2 uv = payload.uv;  // 从payload获取UV坐标
+        float2 uv = payload.uv;
         
-        // 双面材质处理
         bool entering = dot(N, V) > 0.0;
         if (!entering && mat.transmission < 0.01) N = -N;
 
         float3 hitPos = payload.hit_pos;
         
-        // 获取材质基础颜色（考虑纹理）
+        // ===== 物体运动模糊：在第一次弹射时应用 =====
+        // 检测运动物体并应用模糊效果
+        bool is_moving_object = false;
+        float3 velocity = float3(0, 0, 0);
+        
+        if (bounce == 0) {
+            uint entity_id = payload.material_idx;
+            velocity = GetEntityVelocity(entity_id);
+            float vel_length = length(velocity);
+            
+            if (vel_length > 0.001) {
+                is_moving_object = true;
+                
+                // 时间偏移：motion_time 在 [0,1]，映射到 [-0.5, 0.5]
+                // intensity 控制模糊的强度
+                float time_offset = (motion_time - 0.5) * intensity;
+                
+                // 偏移击中点用于光照计算
+                // 这会让光照在速度方向上产生变化
+                float3 position_offset = velocity * time_offset;
+                hitPos = hitPos + position_offset;
+            }
+        }
+        
         float3 baseColor = GetMaterialBaseColor(mat, uv);
         
-        // ===== 直接光照计算 (Direct Lighting / NEE) =====
-        bool useNEE = true; // 开启直接光照采样
+        // ===== 直接光照计算 (Direct Lighting / Next Event Estimation) =====
+        bool useNEE = true; // 开启直接光照采样（重要性采样光源）
         
         if (useNEE) {
-            // 1. 点光源循环
+            // 1. 遍历所有点光源并计算直接光照贡献
             // 关键修复：对点光源计算时的throughput做特殊处理，防止异常放大
             // 当throughput已经很大时，限制其对点光源贡献的影响
             float3 effectiveThroughput = throughput;
@@ -273,8 +133,8 @@ float3 TracePath(float3 rayOrigin, float3 rayDir, inout uint seed) {
                 }
             }
             
-            // 2. 面光源循环
-            const int MAX_AREA_LIGHTS = 8; // 假设最多8个
+            // 2. 遍历所有面光源并计算直接光照贡献
+            const int MAX_AREA_LIGHTS = 8; // 假设最多8个面光源
             for (int j = 0; j < MAX_AREA_LIGHTS; ++j) {
                 AreaLight al = area_lights[j];
                 if (al.strength <= 0.0) continue;
@@ -284,15 +144,15 @@ float3 TracePath(float3 rayOrigin, float3 rayDir, inout uint seed) {
             }
         }
 
-        // ===== 间接光照 (BSDF Sampling / 递归) =====
+        // ===== 间接光照 (BSDF Sampling / 递归路径追踪) =====
         
-        // 添加自发光
+        // 添加自发光贡献（如果材质有自发光）
         if (mat.emission_strength > 0.0) {
             radiance += throughput * mat.emission_color * mat.emission_strength;
-            break; // 击中发光体，终止路径
+            break; // 击中发光体，终止路径（发光体不继续弹射）
         }
         
-        // [透明材质逻辑]
+        // [透明材质逻辑：处理折射和反射]
         if (mat.transmission > 0.01) {
             float etaI = 1.0;
             float etaT = mat.ior;
@@ -302,40 +162,40 @@ float3 TracePath(float3 rayOrigin, float3 rayDir, inout uint seed) {
             }
             
             float cosTheta = abs(dot(normal, V));
-            float Fr = FresnelDielectric(cosTheta, etaI, etaT);
+            float Fr = FresnelDielectric(cosTheta, etaI, etaT); // 计算菲涅尔反射系数
             
             if (Rand01(seed) < Fr) {
-                // 反射
+                // 根据菲涅尔系数随机选择反射
                 rayDir = reflect(-V, normal);
-                rayOrigin = hitPos + normal * 0.001;
+                rayOrigin = hitPos + normal * 0.001; // 偏移起点以避免自相交
             } else {
                 // 折射
                 float3 refracted;
                 if (Refract(-V, normal, etaI/etaT, refracted)) {
                     rayDir = normalize(refracted);
-                    rayOrigin = hitPos - normal * 0.001;
-                    // Beer's Law 吸收
+                    rayOrigin = hitPos - normal * 0.001; // 偏移起点以避免自相交
+                    // Beer's Law 吸收（光线在介质中传播时的颜色衰减）
                     if (entering) throughput *= mat.transmission_color;
                 } else {
-                    rayDir = reflect(-V, normal); // 全反射
+                    rayDir = reflect(-V, normal); // 全反射（当折射角超过临界角时）
                     rayOrigin = hitPos + normal * 0.001;
                 }
             }
         } 
         // [不透明材质逻辑 - 使用 Principled BSDF]
         else {
-            // Sample Principled BSDF
+            // 采样 Principled BSDF 生成新的光线方向
             float pdf_sample;
             float3 bsdf_weight;
             rayDir = SamplePrincipledBSDF(mat, V, N, uv, seed, pdf_sample, bsdf_weight);
             
-            // Check if sampling was successful
+            // 检查采样是否成功
             if (pdf_sample < 1e-7 || dot(N, rayDir) <= 0.0) {
-                break; // Invalid sample or ray goes below surface
+                break; // 无效采样或光线方向在表面下方，终止路径
             }
             
-            rayOrigin = hitPos + N * 0.001;
-            throughput *= bsdf_weight;
+            rayOrigin = hitPos + N * 0.001; // 偏移起点以避免自相交
+            throughput *= bsdf_weight; // 累积BSDF权重
             
             // 关键修复：限制throughput的最大值，防止累积导致数值爆炸
             // 当throughput过大时，说明路径已经不稳定，应该提前终止
@@ -355,9 +215,9 @@ float3 TracePath(float3 rayOrigin, float3 rayDir, inout uint seed) {
             float survivalProb = clamp(maxThroughput, 0.3, 0.95); // 提高最小值从0.1到0.3
             
             if (Rand01(seed) > survivalProb) {
-                break; // 终止路径
+                break; // 随机终止路径（俄罗斯轮盘赌）
             }
-            throughput /= survivalProb; // 无偏估计
+            throughput /= survivalProb; // 无偏估计（补偿终止概率）
             
             // 再次检查throughput是否过大（俄罗斯轮盘赌后可能放大）
             maxThroughput = max(max(throughput.r, throughput.g), throughput.b);
@@ -366,7 +226,7 @@ float3 TracePath(float3 rayOrigin, float3 rayDir, inout uint seed) {
             }
         }
         
-        // 额外的安全检查：如果throughput过小，提前终止
+        // 额外的安全检查：如果throughput过小，提前终止（贡献可忽略）
         if (max(max(throughput.r, throughput.g), throughput.b) < 0.001) {
             break;
         }
@@ -374,6 +234,167 @@ float3 TracePath(float3 rayOrigin, float3 rayDir, inout uint seed) {
     
     return radiance;
 }
+
+// 标准路径追踪入口函数（不启用物体运动模糊）
+float3 TracePath(float3 rayOrigin, float3 rayDir, inout uint seed) {
+    // 不启用物体运动模糊时，使用默认时间 0.5（无偏移）
+    return TracePathWithObjectMotionBlur(rayOrigin, rayDir, 0.5, seed);
+}
+
+// ==================== 物体运动模糊的屏幕空间实现 ====================
+// 
+// 正确的运动模糊原理：
+// 物体在快门时间内从位置 A 移动到位置 B。我们需要模拟的是：
+// 在不同时间点 t，物体位于不同的位置，光线可能击中或错过物体。
+//
+// 由于我们不能真正移动加速结构中的几何体，我们使用**反向思维**：
+// 不移动物体，而是"假装"光线来自物体运动的反方向。
+// 
+// 如果物体向右移动 velocity = (2, 0, 0)，那么在时间 t=0 时物体在左边，
+// t=1 时物体在右边。我们通过将光线起点向速度的**反方向**偏移来模拟这一点：
+// 偏移后的光线相当于从"物体曾经在的位置"发出，从而产生边缘模糊。
+
+float3 TracePathObjectMotionBlur(float3 rayOrigin, float3 rayDir, inout uint seed) {
+    float intensity = camera_info.motion_blur_intensity;
+    
+    // 采样随机时间点 [0, 1]
+    float motion_time = SampleTime(seed);
+    float time_offset = (motion_time - 0.5) * 2.0; // 映射到 [-1, 1]
+    
+    // ===== 关键改进：反向偏移光线起点 =====
+    // 遍历所有可能的运动物体，找到最大速度用于光线偏移
+    // 这样可以让光线在边缘区域"看到"运动物体的拖尾
+    
+    // 首先：追踪原始光线找到击中点
+    RayPayload originalPayload;
+    originalPayload.hit = false;
+    originalPayload.material_idx = 0;
+    
+    RayDesc originalRay;
+    originalRay.Origin = rayOrigin;
+    originalRay.Direction = rayDir;
+    originalRay.TMin = 0.001;
+    originalRay.TMax = 10000.0;
+    TraceRay(as, RAY_FLAG_NONE, 0xFF, 0, 1, 0, originalRay, originalPayload);
+    
+    // 计算用于偏移的速度向量
+    // 策略：如果原始光线击中了运动物体，使用该物体的速度
+    //       否则，尝试用偏移光线来"捕捉"可能的运动物体
+    float3 offset_velocity = float3(0, 0, 0);
+    bool original_hit_moving = false;
+    
+    if (originalPayload.hit) {
+        uint entity_id = originalPayload.material_idx;
+        float3 vel = GetEntityVelocity(entity_id);
+        if (length(vel) > 0.001) {
+            offset_velocity = vel;
+            original_hit_moving = true;
+        }
+    }
+    
+    // ===== 核心运动模糊逻辑 =====
+    // 对于运动物体，我们需要：
+    // 1. 如果原始光线击中运动物体 -> 根据时间偏移，光线可能"错过"物体（产生拖尾）
+    // 2. 如果原始光线没有击中运动物体 -> 根据时间偏移，光线可能"击中"物体（产生前导模糊）
+    
+    if (original_hit_moving) {
+        // 原始光线击中了运动物体
+        // 偏移光线起点（反方向），模拟物体在时间 t 的位置
+        float3 ray_offset = -offset_velocity * time_offset * intensity;
+        float3 adjusted_origin = rayOrigin + ray_offset;
+        
+        RayPayload adjustedPayload;
+        adjustedPayload.hit = false;
+        adjustedPayload.material_idx = 0;
+        
+        RayDesc adjustedRay;
+        adjustedRay.Origin = adjusted_origin;
+        adjustedRay.Direction = rayDir;
+        adjustedRay.TMin = 0.001;
+        adjustedRay.TMax = 10000.0;
+        TraceRay(as, RAY_FLAG_NONE, 0xFF, 0, 1, 0, adjustedRay, adjustedPayload);
+        
+        if (adjustedPayload.hit && adjustedPayload.material_idx == originalPayload.material_idx) {
+            // 偏移后仍然击中同一运动物体 -> 渲染该物体
+            return TracePathWithObjectMotionBlur(adjusted_origin, rayDir, motion_time, seed);
+        } else {
+            // 偏移后没有击中运动物体 -> 这是边缘区域，渲染背景
+            // 这就产生了运动模糊的"拖尾"效果！
+            if (adjustedPayload.hit) {
+                // 击中了其他物体
+                return TracePathWithObjectMotionBlur(adjusted_origin, rayDir, motion_time, seed);
+            } else {
+                // 没有击中任何物体，返回环境贴图或天空色
+                float3 skyDir = normalize(rayDir);
+                float3 sky;
+                if (skybox_info.has_environment_map > 0.5) {
+                    sky = SampleEnvironmentMap(skyDir);
+                } else {
+                    sky = GetProceduralSky(skyDir);
+                }
+                return sky;
+            }
+        }
+    } else {
+        // 原始光线没有击中运动物体
+        // 尝试用偏移光线来"捕捉"可能的运动物体（前导模糊）
+        
+        // 遍历已知的运动物体，尝试不同的偏移
+        // 简化实现：使用多个预定义的偏移方向进行采样
+        const int NUM_VELOCITY_PROBES = 4;
+        float3 probe_velocities[NUM_VELOCITY_PROBES];
+        
+        // 从速度缓冲区采样一些已知的运动物体速度
+        for (int i = 0; i < NUM_VELOCITY_PROBES; i++) {
+            probe_velocities[i] = GetEntityVelocity(i);
+        }
+        
+        // 尝试每个速度方向的偏移
+        for (int i = 0; i < NUM_VELOCITY_PROBES; i++) {
+            float3 vel = probe_velocities[i];
+            if (length(vel) < 0.001) continue;
+            
+            // 反方向偏移
+            float3 ray_offset = -vel * time_offset * intensity;
+            float3 adjusted_origin = rayOrigin + ray_offset;
+            
+            RayPayload probePayload;
+            probePayload.hit = false;
+            probePayload.material_idx = 0;
+            
+            RayDesc probeRay;
+            probeRay.Origin = adjusted_origin;
+            probeRay.Direction = rayDir;
+            probeRay.TMin = 0.001;
+            probeRay.TMax = 10000.0;
+            TraceRay(as, RAY_FLAG_NONE, 0xFF, 0, 1, 0, probeRay, probePayload);
+            
+            // 如果偏移后击中了对应的运动物体
+            if (probePayload.hit) {
+                float3 hit_vel = GetEntityVelocity(probePayload.material_idx);
+                if (length(hit_vel) > 0.001) {
+                    // 找到了运动物体！渲染它（产生前导模糊）
+                    return TracePathWithObjectMotionBlur(adjusted_origin, rayDir, motion_time, seed);
+                }
+            }
+        }
+        
+        // 没有找到任何运动物体，使用原始路径追踪
+        return TracePath(rayOrigin, rayDir, seed);
+    }
+}
+
+// ==================== 物体运动模糊文档 ====================
+// 
+// 当前实现的局限性：
+// 1. 只对第一次击中的物体应用运动模糊检测
+// 2. 通过反射/折射看到的运动物体不会有模糊效果
+// 3. 极高速度可能导致视觉伪影
+//
+// 改进方向（未来工作）：
+// 1. 支持加速结构的运动几何体（需要引擎支持）
+// 2. 在所有弹射中检测运动物体
+// 3. 使用更复杂的时间采样策略（如分层采样）
 
 #endif // RAYTRACING_HLSL
 

@@ -9,6 +9,7 @@
 #include "lighting.hlsl"
 #include "raytracing.hlsl"
 #include "geometry.hlsl"
+#include "motion_blur.hlsl"
 #include "raygen.hlsl"
 
 [shader("raygeneration")] void RayGenMain() {
@@ -87,9 +88,34 @@
         // 生成带景深效果的相机光线
         float3 rayOrigin, rayDir;
         GenerateCameraRayWithDOF(dispatchIndex, jitter, seed, rayOrigin, rayDir);
-
-        // 执行路径追踪
-        float3 radiance = TracePath(rayOrigin, rayDir, seed);
+        
+        // 应用相机/径向/方向运动模糊效果（非物体模糊）
+        if (camera_info.motion_blur_mode > 0 && camera_info.motion_blur_mode != MOTION_BLUR_MODE_OBJECT && 
+            camera_info.motion_blur_intensity > 0.001) {
+            float2 uv = (float2(dispatchIndex) + float2(0.5, 0.5)) / float2(DispatchRaysDimensions().xy);
+            ApplyMotionBlur(
+                rayOrigin, 
+                rayDir, 
+                uv, 
+                1.0,  // shutter_time = 1.0 (full frame)
+                camera_info.motion_blur_intensity, 
+                camera_info.motion_blur_mode, 
+                seed
+            );
+        }
+        
+        // 物体运动模糊的屏幕空间模拟：
+        // 对于每个采样，我们随机选择一个时间点，然后在追踪路径时
+        // 会根据该时间点来偏移有速度物体的光照计算位置
+        float3 radiance;
+        if (camera_info.motion_blur_mode == MOTION_BLUR_MODE_OBJECT && 
+            camera_info.motion_blur_intensity > 0.001) {
+            // 物体运动模糊：使用多次短程追踪来模拟
+            radiance = TracePathObjectMotionBlur(rayOrigin, rayDir, seed);
+        } else {
+            // 执行标准路径追踪
+            radiance = TracePath(rayOrigin, rayDir, seed);
+        }
         
         // 关键修复：限制单个采样radiance的最大值，防止异常采样导致亮点
         // 即使throughput和pointLightContrib都有保护，某些极端角度组合仍可能产生异常值
@@ -135,8 +161,15 @@
 }
 
 [shader("miss")] void MissMain(inout RayPayload payload) {
-	float t = 0.5 * (normalize(WorldRayDirection()).y + 1.0);
-	payload.radiance = lerp(float3(1.0, 1.0, 1.0), float3(0.5, 0.7, 1.0), t);
+	// 使用环境贴图或程序化天空
+	float3 rayDir = normalize(WorldRayDirection());
+	float3 sky;
+	if (skybox_info.has_environment_map > 0.5) {
+		sky = SampleEnvironmentMap(rayDir);
+	} else {
+		sky = GetProceduralSky(rayDir);
+	}
+	payload.radiance = sky;
 	payload.hit = false;
 	payload.material_idx = 0xFFFFFFFF;
 }
@@ -150,23 +183,27 @@
 	float t = RayTCurrent();
 	payload.hit_pos = WorldRayOrigin() + WorldRayDirection() * t;
 	
-	// 使用物体空间位置计算几何法线
+	// 获取实体ID和图元ID
+	uint entity_id = InstanceID();
+	uint primitive_id = PrimitiveIndex();
+	
+	// 转换到物体空间
 	float3 worldPos = payload.hit_pos;
 	float3 objectPos = mul(WorldToObject3x4(), float4(worldPos, 1.0)).xyz;
 	
-	// 根据实体ID计算几何法线
-	uint entity_id = InstanceID();
-	float3 objectNormal = ComputeGeometryNormal(entity_id, objectPos);
+	// 从全局缓冲区获取法线（优先使用OBJ文件中的vn，否则计算面法线）
+	float3 objectNormal = GetVertexNormal(entity_id, primitive_id, attr.barycentrics);
 	
-	// 转换到世界空间
-	float3x3 objectToWorld = (float3x3)ObjectToWorld3x4();
-	payload.normal = normalize(mul(objectToWorld, objectNormal));
+	// 转换到世界空间（法线变换需要使用逆转置矩阵）
+	float3x3 worldToObject = (float3x3)WorldToObject3x4();
+	float3x3 objectToWorldNormal = transpose(worldToObject);
+	payload.normal = normalize(mul(objectToWorldNormal, objectNormal));
 	
 	// 确保法线朝向光线来源
 	if (dot(payload.normal, -WorldRayDirection()) < 0) {
 		payload.normal = -payload.normal;
 	}
 	
-	// 根据实体ID计算UV坐标
-	payload.uv = ComputeGeometryUV(entity_id, objectPos, payload.normal);
+	// 从全局缓冲区获取UV坐标（优先使用OBJ文件中的vt，否则计算UV）
+	payload.uv = GetVertexUV(entity_id, primitive_id, attr.barycentrics, objectPos, objectNormal);
 }

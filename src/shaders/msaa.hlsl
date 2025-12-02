@@ -202,10 +202,4 @@ bool IsMSAAEnabled(int msaa_mode) {
     return msaa_mode != MSAA_MODE_OFF;
 }
 
-// 获取 MSAA 模式名称（用于调试）
-// 注意：HLSL 不支持字符串返回，这里返回模式的数字标识
-int GetMSAAModeID(int msaa_mode) {
-    return msaa_mode;
-}
-
 #endif // MSAA_HLSL
