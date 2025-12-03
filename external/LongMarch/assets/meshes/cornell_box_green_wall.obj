@@ -1,0 +1,11 @@
+# Cornell Box Green Wall
+mtllib cornell_box_green_wall.mtl
+
+o green_wall
+usemtl green
+v    0.0   0.0 559.2
+v    0.0   0.0   0.0
+v    0.0 548.8   0.0
+v    0.0 548.8 559.2
+f 1 2 3 4
+

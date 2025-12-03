@@ -1,0 +1,11 @@
+# Cornell Box Front Wall
+mtllib cornell_box_front_wall.mtl
+
+o front_wall
+usemtl blue
+v 549.6   0.0 0
+v 0.0   0.0 0
+v 0.0 548.8 0
+v 556.0 548.8 0
+f 1 2 3 4
+

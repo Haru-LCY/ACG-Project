@@ -1,0 +1,11 @@
+# Cornell Box Back Wall
+mtllib cornell_box_back_wall.mtl
+
+o back_wall
+usemtl white
+v 549.6   0.0 559.2
+v 0.0   0.0 559.2
+v 0.0 548.8 559.2
+v 556.0 548.8 559.2
+f 1 2 3 4
+

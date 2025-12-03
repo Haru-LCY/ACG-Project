@@ -302,141 +302,172 @@ void Application::OnInit() {
     mouse_y_ = 0.0;
     // Don't grab cursor initially - user can right-click to enable camera mode
 
-    // Create scene - 展览馆场景
+    // Create scene - Cornell Box scene
     scene_ = std::make_unique<Scene>(core_.get());
 
+    // Cornell Box 原始尺寸约为 556x548.8x559.2，需要缩放以适应场景
+    // 缩放因子 0.02 使其约为 11.12x10.98x11.18 单位（扩大一倍）
+    // 同时需要平移使其中心位于原点附近
+    glm::mat4 cornell_box_transform = glm::translate(glm::mat4(1.0f), glm::vec3(-5.56f, 0.0f, -5.6f))
+                                    * glm::scale(glm::mat4(1.0f), glm::vec3(0.02f));
+
+    // Add Cornell Box Floor (white)
     {
-        auto ground = std::make_shared<Entity>(
-            "meshes/cube.obj",
-            Material(glm::vec3(0.8f, 0.8f, 0.8f), 0.8f, 0.0f),
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -1.0f, 0.0f)), 
-                      glm::vec3(10.0f, 0.1f, 10.0f))
+        auto floor = std::make_shared<Entity>(
+            "meshes/cornell_box_floor.obj",
+            Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.8f, 0.0f),  // white
+            cornell_box_transform
         );
-        scene_->AddEntity(ground);
+        scene_->AddEntity(floor);
     }
 
-    // Left wall
-    {
-        auto left_wall = std::make_shared<Entity>(
-            "meshes/cube.obj",
-            Material(glm::vec3(0.9f, 0.9f, 0.9f), 0.9f, 0.0f),
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(-5.0f, 2.0f, 0.0f)), 
-                      glm::vec3(0.1f, 4.0f, 10.0f))
-        );
-        scene_->AddEntity(left_wall);
-    }
-
-    // Right wall - 镜面
-    {
-        auto right_wall = std::make_shared<Entity>(
-            "meshes/cube.obj",
-            Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.02f, 1.0f),  // 镜面：白色，极低粗糙度，全金属
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(5.0f, 2.0f, 0.0f)), 
-                      glm::vec3(0.1f, 4.0f, 10.0f))
-        );
-        scene_->AddEntity(right_wall);
-    }
-
-    // Back wall
-    {
-        auto back_wall = std::make_shared<Entity>(
-            "meshes/cube.obj",
-            Material(glm::vec3(0.9f, 0.9f, 0.9f), 0.9f, 0.0f),
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 2.0f, -5.0f)), 
-                      glm::vec3(10.0f, 4.0f, 0.1f)),
-            "textures/sakura.png"
-        );
-        scene_->AddEntity(back_wall);
-    }
-
-    // Ceiling
+    // Add Cornell Box Ceiling (white)
     {
         auto ceiling = std::make_shared<Entity>(
-            "meshes/cube.obj",
-            Material(glm::vec3(0.9f, 0.9f, 0.9f), 0.9f, 0.0f),
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 5.0f, 0.0f)), 
-                      glm::vec3(10.0f, 0.1f, 10.0f))
+            "meshes/cornell_box_ceiling.obj",
+            Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.8f, 0.0f),  // white
+            cornell_box_transform
         );
         scene_->AddEntity(ceiling);
     }
 
-    // Green metallic sphere (中景 - 作为焦平面目标)
-     {
-         auto green_sphere = std::make_shared<Entity>(
-             "meshes/octahedron.obj",
-             Material(glm::vec3(0.2f, 1.0f, 0.2f), 0.2f, 0.8f),
-             // 放在 z=2 作为中景焦点
-             glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.5f, 2.0f))
-         );
-         green_sphere->SetVelocity(glm::vec3(0.0f, 1.5f, 0.0f));  // 向上移动的运动模糊
-         scene_->AddEntity(green_sphere);
-     }
-     
-    // Textured copper sphere (幕后/中景)
-    {
-        auto copper_sphere = std::make_shared<Entity>(
-            "meshes/octahedron.obj",
-            Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.3f, 0.9f),  // 白色基础,金属
-            // 将铜球移到中景靠后位置，增加前后景深变化
-            glm::translate(glm::mat4(1.0f), glm::vec3(-2.5f, 0.5f, 0.0f)),
-            "textures/copper/Sphere_Base_color.png"
-        );
-        copper_sphere->SetVelocity(glm::vec3(0.0f, 0.0f, 2.0f));  // 向前移动的运动模糊
-        scene_->AddEntity(copper_sphere);
-    }
-
-    // Transparent blue glass cube (背景)
+    // // Add Cornell Box Back Wall (white)
     // {
-    //     auto blue_cube = std::make_shared<Entity>(
-    //         "meshes/cube.obj",
-    //         // Material(glm::vec3(0.3f, 0.3f, 1.0f), 0.05f, 0.0f, 0.95f, 1.5f), // 蓝色玻璃：明显的蓝色色调
-    //         // Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.3f, 0.9f),  // 白色基础,金属
-    //         // 将蓝色玻璃放在稍微靠后的背景位置
-    //         glm::translate(glm::mat4(1.0f), glm::vec3(2.0f, 0.5f, -2.0f))
-    //         // "textures/sakura.png"
+    //     auto back_wall = std::make_shared<Entity>(
+    //         "meshes/cornell_box_back_wall.obj",
+    //         Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.8f, 0.0f),  // white
+    //         cornell_box_transform
     //     );
-    //     scene_->AddEntity(blue_cube);
+    //     scene_->AddEntity(back_wall);
     // }
+
+    // Add Cornell Box Front Wall (glass material with sakura texture, white color)
+    {
+        // Create glass material with lower transmission to allow texture visibility
+        // Lower transmission (0.5) allows some diffuse reflection so texture is visible
+        // Higher roughness (0.2) makes texture more visible in reflections
+        Material front_wall_material(glm::vec3(1.0f, 1.0f, 1.0f), 0.2f, 0.0f, 0.9f, 1.5f);
+        // Set transmission_color to white so texture color shows through in refraction
+        front_wall_material.transmission_color = glm::vec3(1.0f, 1.0f, 1.0f);
+        
+        auto front_wall = std::make_shared<Entity>(
+            "meshes/cornell_box_front_wall.obj",
+            front_wall_material,
+            cornell_box_transform
+        );
+        scene_->AddEntity(front_wall);
+    }
 
     {
         auto blue_cube = std::make_shared<Entity>(
             "meshes/cube.obj",
             Material(glm::vec3(0.3f, 0.3f, 1.0f), 0.05f, 0.0f, 0.95f, 1.5f), // 蓝色玻璃：明显的蓝色色调
             // Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.3f, 0.9f),  // 白色基础,金属
-            // 将蓝色玻璃放在稍微靠后的背景位置
-            glm::translate(glm::mat4(1.0f), glm::vec3(2.0f, 0.5f, -2.0f)),
+            // 将蓝色玻璃往 x 轴靠外移动，更靠近摄像机位置
+            glm::translate(glm::mat4(1.0f), glm::vec3(3.5f, 1.0f, 10.0f)),  // x从2.0改为3.5，更靠近相机
             "textures/sakura.png"
         );
-        blue_cube->SetVelocity(glm::vec3(2.0f, 0.0f, 0.0f));  // 向右移动的运动模糊
+        blue_cube->SetVelocity(glm::vec3(1.0f, 0.0f, 0.0f));  // 向右移动的运动模糊
         scene_->AddEntity(blue_cube);
     }
 
-    // Foreground specular sphere (近景 - 应该被模糊)
+
     {
-        auto fg_sphere = std::make_shared<Entity>(
-            "meshes/octahedron.obj",
-             Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.3f, 0.9f),
-            // Material(glm::vec3(0.3f, 0.3f, 1.0f), 0.05f, 0.0f, 0.95f, 1.5f), // 蓝色玻璃：明显的蓝色色调
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.35f, 4.0f)), glm::vec3(0.5f))
+        // White base material with iiis texture
+        auto white_cube = std::make_shared<Entity>(
+            "meshes/cube.obj",
+            Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.8f, 0.0f),  // white base material (non-metallic, non-transparent)
+            glm::translate(glm::mat4(1.0f), glm::vec3(-3.5f, 1.0f, 10.0f)),
+            "textures/iiis.png"  // Add iiis texture
         );
-        fg_sphere->SetVelocity(glm::vec3(-1.5f, 1.0f, 0.0f));  // 斜向左上方移动的运动模糊
-        scene_->AddEntity(fg_sphere);
+        white_cube->SetVelocity(glm::vec3(1.0f, 0.0f, 0.0f));  // 向右移动的运动模糊
+        scene_->AddEntity(white_cube);
     }
 
-    // Background ornamental sphere (远景 - 强烈模糊形成bokeh高光)
+
+    // Add Cornell Box Green Wall
     {
-        auto bg_sphere = std::make_shared<Entity>(
-            "meshes/octahedron.obj",
-            Material(glm::vec3(1.0f, 1.0f, 0.85f), 0.05f, 1.0f),
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.4f, -7.0f)), glm::vec3(0.6f))
+        auto green_wall = std::make_shared<Entity>(
+            "meshes/cornell_box_green_wall.obj",
+            Material(glm::vec3(0.0f, 1.0f, 0.0f), 0.8f, 0.0f),  // green
+            cornell_box_transform
         );
-        scene_->AddEntity(bg_sphere);
+        scene_->AddEntity(green_wall);
     }
+
+    // Add Cornell Box Red Wall
+    {
+        auto red_wall = std::make_shared<Entity>(
+            "meshes/cornell_box_red_wall.obj",
+            Material(glm::vec3(1.0f, 0.0f, 0.0f), 0.8f, 0.0f),  // red
+            cornell_box_transform
+        );
+        scene_->AddEntity(red_wall);
+    }
+
+    // Add Cornell Box Light (emissive white)
+    {
+        Material light_material(glm::vec3(1.0f, 1.0f, 1.0f), 0.8f, 0.0f);
+        light_material.emission_color = glm::vec3(1.0f, 1.0f, 1.0f);
+        light_material.emission_strength = 20.0f;  // Ka 20 20 20 from MTL
+        
+        auto light = std::make_shared<Entity>(
+            "meshes/cornell_box_light.obj",
+            light_material,
+            cornell_box_transform
+        );
+        scene_->AddEntity(light);
+    }
+
+    // Add Cornell Box Short Block (white base material with tsinghua texture)
+    {
+        // White base material (non-metallic) with tsinghua texture
+        auto short_block = std::make_shared<Entity>(
+            "meshes/cornell_box_short_block.obj",
+            Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.8f, 0.0f),  // white, non-metallic base material
+            cornell_box_transform
+            // "textures/tsinghua.png"  // Add tsinghua texture
+        );
+        short_block->SetVelocity(glm::vec3(0.0f, 0.0f, 1.0f));  // 向 z 轴正方向移动的运动模糊
+        scene_->AddEntity(short_block);
+    }
+
+    // {
+    //     auto blue_cube = std::make_shared<Entity>(
+    //         "meshes/cube.obj",
+    //         Material(glm::vec3(0.3f, 0.3f, 1.0f), 0.05f, 0.0f, 0.95f, 1.5f), // 蓝色玻璃：明显的蓝色色调
+    //         // Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.3f, 0.9f),  // 白色基础,金属
+    //         // 将蓝色玻璃往 x 轴靠外移动，更靠近摄像机位置
+    //         glm::translate(glm::mat4(1.0f), glm::vec3(3.5f, 1.0f, 10.0f)),  // x从2.0改为3.5，更靠近相机
+    //         "textures/sakura.png"
+    //     );
+    //     blue_cube->SetVelocity(glm::vec3(1.0f, 0.0f, 0.0f));  // 向右移动的运动模糊
+    //     scene_->AddEntity(blue_cube);
+    // }
+
+
+
+
+    // Add Cornell Box Tall Block (white) - replaced by flower
+    // {
+    //     auto tall_block = std::make_shared<Entity>(
+    //         "meshes/cornell_box_tall_block.obj",
+    //         Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.8f, 0.0f),  // white
+    //         cornell_box_transform
+    //     );
+    //     scene_->AddEntity(tall_block);
+    // }
 
     // Add small flower asset from assets (scale 0.1) and rotate to stand upright
+    // Positioned at tall_block location: center at (368.5, 165.0, 351.5) in original coordinates
+    // After cornell_box_transform (scale 0.02, translate (-5.56, 0, -5.6)):
+    // x: 368.5 * 0.02 - 5.56 = 1.81
+    // y: 165.0 * 0.02 = 3.3
+    // z: 351.5 * 0.02 - 5.6 = 1.43
     {
         // Build a transform: translate * rotate * scale
-        glm::mat4 flower_transform = glm::translate(glm::mat4(1.0f), glm::vec3(1.8f, 0.0f, 1.5f))
+        // Position at tall_block center, rotate to stand upright
+        glm::mat4 flower_transform = glm::translate(glm::mat4(1.0f), glm::vec3(1.81f, 3.3f, 1.43f))
                                   * glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f))
                                   * glm::scale(glm::mat4(1.0f), glm::vec3(0.1f));
 
@@ -512,11 +543,13 @@ void Application::OnInit() {
     // 初始化面光源数组（最多8个）
     area_lights_.resize(8);
     // 配置主光源 - 天花板白光
-    area_lights_[0].position = glm::vec3(0.0f, 4.8f, 0.0f);      // 接近天花板
+    // Ceiling height: 548.8 * 0.02 = 10.976 (after cornell_box_transform scale)
+    // Position should be near ceiling center, slightly below it
+    area_lights_[0].position = glm::vec3(0.0f, 10.5f, 0.0f);      // 接近天花板（调整到正确位置）
     area_lights_[0].color = glm::vec3(1.0f, 1.0f, 1.0f);         // 白色
     area_lights_[0].strength = 0.0f;                            // 较强的主光源
-    area_lights_[0].width = 3.0f;                                 // 较大面积
-    area_lights_[0].height = 3.0f;                                
+    area_lights_[0].width = 6.0f;                                 // 扩大面积以匹配场景（从3.0改为6.0）
+    area_lights_[0].height = 6.0f;                                // 扩大面积以匹配场景（从3.0改为6.0）
     area_lights_[0].direction = glm::normalize(glm::vec3(0.0f, -1.0f, 0.0f));  // 向下
     area_lights_[0].u_axis = glm::normalize(glm::vec3(1.0f, 0.0f, 0.0f));      // X轴
     area_lights_[0].v_axis = glm::normalize(glm::vec3(0.0f, 0.0f, 1.0f));      // Z轴
