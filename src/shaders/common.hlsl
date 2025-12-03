@@ -60,7 +60,7 @@ struct Material {
   float alpha_threshold;
   float has_alpha_map;
   int texture_id;
-  float padding3;
+  int normal_map_id;
 };
 
 struct HoverInfo {

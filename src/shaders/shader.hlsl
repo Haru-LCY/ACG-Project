@@ -206,4 +206,76 @@
 	
 	// 从全局缓冲区获取UV坐标（优先使用OBJ文件中的vt，否则计算UV）
 	payload.uv = GetVertexUV(entity_id, primitive_id, attr.barycentrics, objectPos, objectNormal);
+	
+	// 应用 Normal Mapping（如果材质有法线贴图）
+	Material mat = materials[payload.material_idx];
+	if (mat.normal_map_id >= 0) {
+		// 获取三角形的三个顶点（用于计算切线）
+		EntityOffset entity_offset = entity_offsets[entity_id];
+		uint idx0 = global_indices[entity_offset.index_offset + primitive_id * 3 + 0];
+		uint idx1 = global_indices[entity_offset.index_offset + primitive_id * 3 + 1];
+		uint idx2 = global_indices[entity_offset.index_offset + primitive_id * 3 + 2];
+		
+		float3 p0 = global_vertices[entity_offset.vertex_offset + idx0];
+		float3 p1 = global_vertices[entity_offset.vertex_offset + idx1];
+		float3 p2 = global_vertices[entity_offset.vertex_offset + idx2];
+		
+		// 转换到世界空间
+		p0 = mul(ObjectToWorld3x4(), float4(p0, 1.0)).xyz;
+		p1 = mul(ObjectToWorld3x4(), float4(p1, 1.0)).xyz;
+		p2 = mul(ObjectToWorld3x4(), float4(p2, 1.0)).xyz;
+		
+		// 获取UV坐标
+		float2 uv0 = global_texcoords[entity_offset.vertex_offset + idx0];
+		float2 uv1 = global_texcoords[entity_offset.vertex_offset + idx1];
+		float2 uv2 = global_texcoords[entity_offset.vertex_offset + idx2];
+		
+		// 计算切线和副切线
+		float3 edge1 = p1 - p0;
+		float3 edge2 = p2 - p0;
+		float2 deltaUV1 = uv1 - uv0;
+		float2 deltaUV2 = uv2 - uv0;
+		
+		// 计算分母，添加容错处理
+		float det = deltaUV1.x * deltaUV2.y - deltaUV2.x * deltaUV1.y;
+		float3 T, B;
+		
+		// 如果 UV 退化（分母接近0），使用几何法线构建一个合理的切线基
+		if (abs(det) < 1e-6) {
+			// 使用几何法线构建正交基
+			float3 N = payload.normal;
+			// 找一个与法线不平行的向量
+			float3 up = abs(N.y) < 0.999 ? float3(0, 1, 0) : float3(1, 0, 0);
+			T = normalize(cross(up, N));
+			B = normalize(cross(N, T));
+		} else {
+
+            
+			// 正常计算切线和副切线
+			float f = 1.0 / det;
+			T = f * (deltaUV2.y * edge1 - deltaUV1.y * edge2);
+			B = f * (-deltaUV2.x * edge1 + deltaUV1.x * edge2);
+			
+			// 正交化（Gram-Schmidt 过程）
+			float3 N = payload.normal;
+			T = normalize(T - N * dot(N, T));
+			// 确保 T 有效
+			if (length(T) < 0.01) {
+				float3 up = abs(N.y) < 0.999 ? float3(0, 1, 0) : float3(1, 0, 0);
+				T = normalize(cross(up, N));
+			}
+			B = normalize(cross(N, T));
+		}
+		
+		// 从法线贴图采样（使用 SampleLevel 代替 Sample，因为在 closesthit shader 中不能使用隐式导数）
+		float3 normalMapSample = textures[mat.normal_map_id].SampleLevel(texSampler, payload.uv, 0).rgb;
+		float3 tangentNormal = normalMapSample * 2.0 - 1.0;
+		
+		// 构建 TBN 矩阵并转换到世界空间
+		float3x3 TBN = float3x3(T, B, payload.normal);
+		float3 perturbedNormal = normalize(mul(tangentNormal, TBN));
+		
+		// 应用法线扰动，但减小强度以避免过度扭曲
+		payload.normal = normalize(perturbedNormal);
+	}
 }
