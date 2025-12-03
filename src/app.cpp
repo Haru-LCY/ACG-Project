@@ -343,17 +343,22 @@ void Application::OnInit() {
 
     // Add Cornell Box Front Wall (glass material with sakura texture, white color)
     {
-        // Create glass material with lower transmission to allow texture visibility
-        // Lower transmission (0.5) allows some diffuse reflection so texture is visible
-        // Higher roughness (0.2) makes texture more visible in reflections
-        Material front_wall_material(glm::vec3(1.0f, 1.0f, 1.0f), 0.2f, 0.0f, 0.9f, 1.5f);
-        // Set transmission_color to white so texture color shows through in refraction
-        front_wall_material.transmission_color = glm::vec3(1.0f, 1.0f, 1.0f);
+        // Base material (non-transparent) with normal map
+        Material front_wall_material(glm::vec3(1.0f, 1.0f, 1.0f), 0.8f, 0.0f);  // white base material, non-metallic, non-transparent
+        
+        // Front wall dimensions: width=556, height=548.8 (in original coordinates)
+        // After cornell_box_transform (scale 0.02): width=11.12, height=10.976
+        // Cube is 2x2x2 unit cube, so scale factors: width=11.12/2=5.56, height=10.976/2=5.488, depth=0.1/2=0.05
+        // Center position: x=(549.6+0)/2*0.02-5.56=-0.064, y=274.4*0.02=5.488, z=0*0.02-5.6=-5.6
+        glm::mat4 front_wall_transform = glm::translate(glm::mat4(1.0f), glm::vec3(-0.064f, 5.488f, -5.6f))
+                                       * glm::scale(glm::mat4(1.0f), glm::vec3(5.56f, 5.488f, 0.05f));  // Scale cube to match wall size
         
         auto front_wall = std::make_shared<Entity>(
-            "meshes/cornell_box_front_wall.obj",
+            "meshes/cube.obj",
             front_wall_material,
-            cornell_box_transform
+            front_wall_transform,
+            "",  // No diffuse texture
+            "textures/normal.png"  // Add normal map
         );
         scene_->AddEntity(front_wall);
     }
@@ -364,8 +369,8 @@ void Application::OnInit() {
             Material(glm::vec3(0.3f, 0.3f, 1.0f), 0.05f, 0.0f, 0.95f, 1.5f), // 蓝色玻璃：明显的蓝色色调
             // Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.3f, 0.9f),  // 白色基础,金属
             // 将蓝色玻璃往 x 轴靠外移动，更靠近摄像机位置
-            glm::translate(glm::mat4(1.0f), glm::vec3(3.5f, 1.0f, 10.0f)),  // x从2.0改为3.5，更靠近相机
-            "textures/sakura.png"
+            glm::translate(glm::mat4(1.0f), glm::vec3(-2.0f, 2.0f, 4.0f))  // x从2.0改为3.5，更靠近相机
+            // "textures/sakura.png"
         );
         blue_cube->SetVelocity(glm::vec3(1.0f, 0.0f, 0.0f));  // 向右移动的运动模糊
         scene_->AddEntity(blue_cube);
@@ -377,7 +382,7 @@ void Application::OnInit() {
         auto white_cube = std::make_shared<Entity>(
             "meshes/cube.obj",
             Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.8f, 0.0f),  // white base material (non-metallic, non-transparent)
-            glm::translate(glm::mat4(1.0f), glm::vec3(-3.5f, 1.0f, 10.0f)),
+            glm::translate(glm::mat4(1.0f), glm::vec3(2.0f, 1.0f, 4.0f)),
             "textures/iiis.png"  // Add iiis texture
         );
         white_cube->SetVelocity(glm::vec3(1.0f, 0.0f, 0.0f));  // 向右移动的运动模糊
@@ -421,14 +426,22 @@ void Application::OnInit() {
 
     // Add Cornell Box Short Block (white base material with tsinghua texture)
     {
-        // White base material (non-metallic) with tsinghua texture
+        // Replace short_block with cube of same size, with tsinghua texture
+        // Short block dimensions: width≈208, height=165, depth≈207 (in original coordinates)
+        // After cornell_box_transform (scale 0.02): width≈4.16, height=3.3, depth≈4.14
+        // Scale to 2x current size: width≈2.496, height=1.98, depth≈2.484
+        // Adjust position so bottom surface aligns with floor (y=0), then move up 1 unit
+        // Cube height = 1.98, so center should be at y = 1.98/2 + 1.0 = 1.99
+        glm::mat4 cube_transform = glm::translate(glm::mat4(1.0f), glm::vec3(-1.84f, 1.99f, -2.23f))
+                                  * glm::scale(glm::mat4(1.0f), glm::vec3(2.496f, 1.98f, 2.484f));  // Scale to 2x current size
+        
         auto short_block = std::make_shared<Entity>(
-            "meshes/cornell_box_short_block.obj",
+            "meshes/cube.obj",
             Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.8f, 0.0f),  // white, non-metallic base material
-            cornell_box_transform
-            // "textures/tsinghua.png"  // Add tsinghua texture
+            cube_transform,
+            "textures/tsinghua.png"  // Add tsinghua texture
         );
-        short_block->SetVelocity(glm::vec3(0.0f, 0.0f, 1.0f));  // 向 z 轴正方向移动的运动模糊
+        // short_block->SetVelocity(glm::vec3(0.0f, 0.0f, 1.0f));  // 向 z 轴正方向移动的运动模糊
         scene_->AddEntity(short_block);
     }
 
@@ -464,25 +477,25 @@ void Application::OnInit() {
     // x: 368.5 * 0.02 - 5.56 = 1.81
     // y: 165.0 * 0.02 = 3.3
     // z: 351.5 * 0.02 - 5.6 = 1.43
-    {
-        // Build a transform: translate * rotate * scale
-        // Position at tall_block center, rotate to stand upright
-        glm::mat4 flower_transform = glm::translate(glm::mat4(1.0f), glm::vec3(1.81f, 3.3f, 1.43f))
-                                  * glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f))
-                                  * glm::scale(glm::mat4(1.0f), glm::vec3(0.1f));
+    // {
+    //     // Build a transform: translate * rotate * scale
+    //     // Position at tall_block center, rotate to stand upright
+    //     glm::mat4 flower_transform = glm::translate(glm::mat4(1.0f), glm::vec3(1.81f, 3.3f, 1.43f))
+    //                               * glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f))
+    //                               * glm::scale(glm::mat4(1.0f), glm::vec3(0.1f));
 
-        auto flower = std::make_shared<Entity>(
-            "meshes/12973_anemone_flower_v1_l2.obj",
-            // diffuse, non-metallic material
-            Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.8f, 0.0f),
-            flower_transform,
-            // use diffuse texture from the mesh's material if available
-            "meshes/12973_anemone_flower_diff.jpg"
-        );
-        // keep static (no velocity) by default
-        flower->SetVelocity(glm::vec3(0.0f, 0.0f, 0.0f));
-        scene_->AddEntity(flower);
-    }
+    //     auto flower = std::make_shared<Entity>(
+    //         "meshes/12973_anemone_flower_v1_l2.obj",
+    //         // diffuse, non-metallic material
+    //         Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.8f, 0.0f),
+    //         flower_transform,
+    //         // use diffuse texture from the mesh's material if available
+    //         "meshes/12973_anemone_flower_diff.jpg"
+    //     );
+    //     // keep static (no velocity) by default
+    //     flower->SetVelocity(glm::vec3(0.0f, 0.0f, 0.0f));
+    //     scene_->AddEntity(flower);
+    // }
 
     // Build acceleration structures
     scene_->BuildAccelerationStructures();
