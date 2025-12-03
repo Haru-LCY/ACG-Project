@@ -40,7 +40,7 @@ struct Material {
     float alpha_threshold;       // Alpha阴影阈值（0-1）
     float has_alpha_map;         // 是否有Alpha贴图标志（>0.5=true）
     int texture_id;              // 纹理ID（-1=无纹理）
-    float padding3;              // 填充（用于16字节对齐）
+    int normal_map_id;           // 法线贴图ID（-1=无法线贴图）
 
     // 默认构造函数：使用默认材质参数
     Material()
@@ -69,7 +69,7 @@ struct Material {
         , alpha_threshold(0.5f)             // 默认Alpha阈值
         , has_alpha_map(0.0f)               // 无Alpha贴图
         , texture_id(-1)                     // 无纹理
-        , padding3(0.0f) {
+        , normal_map_id(-1) {                // 无法线贴图
     }
 
     // 常用构造函数：颜色、粗糙度、金属度
@@ -102,7 +102,7 @@ struct Material {
         , alpha_threshold(0.5f)
         , has_alpha_map(0.0f)
         , texture_id(-1)
-        , padding3(0.0f) {
+        , normal_map_id(-1) {
     }
 
     // 遗留构造函数（用于向后兼容）
@@ -137,7 +137,7 @@ struct Material {
         , alpha_threshold(0.5f)
         , has_alpha_map(0.0f)
         , texture_id(-1)
-        , padding3(0.0f) {
+        , normal_map_id(-1) {
     }
 };
 

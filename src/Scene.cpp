@@ -301,15 +301,26 @@ void Scene::BuildGlobalGeometryBuffers() {
 void Scene::CollectTextures() {
     textures_.clear();
     
-    // 从所有实体收集唯一纹理
+    // 从所有实体收集唯一纹理（包括基础纹理和法线贴图）
     for (auto& entity : entities_) {
+        // 收集基础纹理
         if (entity->HasTexture()) {
             // 将纹理添加到数组，并在实体的材质中设置纹理ID
             int texture_id = static_cast<int>(textures_.size());
             textures_.push_back(entity->GetTexture());
             entity->SetTextureId(texture_id);
             
-            grassland::LogInfo("Assigned texture ID {} to entity with texture", texture_id);
+            grassland::LogInfo("Assigned texture ID {} to entity with base texture", texture_id);
+        }
+        
+        // 收集法线贴图
+        if (entity->HasNormalMap()) {
+            // 将法线贴图添加到数组，并在实体的材质中设置法线贴图ID
+            int normal_map_id = static_cast<int>(textures_.size());
+            textures_.push_back(entity->GetNormalMap());
+            entity->SetNormalMapId(normal_map_id);
+            
+            grassland::LogInfo("Assigned normal map ID {} to entity with normal map", normal_map_id);
         }
     }
     

@@ -4,10 +4,12 @@
 Entity::Entity(const std::string& obj_file_path, 
                const Material& material,
                const glm::mat4& transform,
-               const std::string& texture_path)
+               const std::string& texture_path,
+               const std::string& normal_map_path)
     : material_(material)
     , transform_(transform)
     , texture_path_(texture_path)
+    , normal_map_path_(normal_map_path)
     , mesh_loaded_(false) {
     
     // 立即尝试加载网格
@@ -21,6 +23,7 @@ Entity::~Entity() {
     index_buffer_.reset();
     vertex_buffer_.reset();
     texture_.reset();
+    normal_map_.reset();
 }
 
 // 从OBJ文件加载网格数据
@@ -95,6 +98,11 @@ void Entity::BuildBLAS(grassland::graphics::Core* core) {
     if (!texture_path_.empty()) {
         LoadTexture(core, texture_path_);
     }
+    
+    // 如果提供了法线贴图路径，则加载法线贴图
+    if (!normal_map_path_.empty()) {
+        LoadNormalMap(core, normal_map_path_);
+    }
 }
 
 // 从文件加载纹理
@@ -125,3 +133,30 @@ bool Entity::LoadTexture(grassland::graphics::Core* core, const std::string& tex
     return true;
 }
 
+// 从文件加载法线贴图
+// core: 图形核心对象指针
+// normal_map_path: 法线贴图文件路径（相对路径）
+// 返回：成功返回true，失败返回false
+bool Entity::LoadNormalMap(grassland::graphics::Core* core, const std::string& normal_map_path) {
+    // 检查路径是否为空
+    if (normal_map_path.empty()) {
+        grassland::LogWarning("Empty normal map path provided");
+        return false;
+    }
+    
+    // 查找资源文件的完整路径
+    std::string full_path = grassland::FindAssetFile(normal_map_path);
+    
+    // 使用框架的LoadImageFromFile函数加载图像
+    if (grassland::graphics::LoadImageFromFile(core, full_path, &normal_map_) != 0) {
+        grassland::LogError("Failed to load normal map from: {}", normal_map_path);
+        return false;
+    }
+    
+    // 记录成功加载的信息
+    grassland::LogInfo("Successfully loaded normal map: {} ({}x{})", 
+                       normal_map_path, 
+                       normal_map_->Extent().width, 
+                       normal_map_->Extent().height);
+    return true;
+}
