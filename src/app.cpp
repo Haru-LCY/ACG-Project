@@ -343,8 +343,10 @@ void Application::OnInit() {
 
     // Add Cornell Box Front Wall (glass material with sakura texture, white color)
     {
-        // Base material (non-transparent) with normal map
-        Material front_wall_material(glm::vec3(1.0f, 1.0f, 1.0f), 0.8f, 0.0f);  // white base material, non-metallic, non-transparent
+        // Metallic mirror material with clear coat (softer parameters)
+        Material front_wall_material(glm::vec3(1.0f, 1.0f, 1.0f), 0.05f, 0.9f);  // white, metallic mirror (roughness=0.05, metallic=0.9)
+        front_wall_material.clearcoat = 0.8f;              // Moderate clear coat strength
+        front_wall_material.clearcoat_roughness = 0.05f;   // Slightly rougher clear coat for softer reflection
         
         // Front wall dimensions: width=556, height=548.8 (in original coordinates)
         // After cornell_box_transform (scale 0.02): width=11.12, height=10.976
@@ -356,9 +358,7 @@ void Application::OnInit() {
         auto front_wall = std::make_shared<Entity>(
             "meshes/cube.obj",
             front_wall_material,
-            front_wall_transform,
-            "",  // No diffuse texture
-            "textures/normal.png"  // Add normal map
+            front_wall_transform
         );
         scene_->AddEntity(front_wall);
     }
@@ -515,38 +515,21 @@ void Application::OnInit() {
     // 初始化点光源数组（最多16个）
     point_lights_.resize(16);  // 预留16个点光源槽位
     
-    // 添加一个主光源（强白光）- 正上方偏右后方（更自然的布光）
-    // Move main point light down so it's inside the room (y near ceiling = 4.8)
-    point_lights_[0].position = glm::vec3(2.0f, 3.8f, 5.0f);
-    point_lights_[0].color = glm::vec3(1.0f, 1.0f, 1.0f);
-    point_lights_[0].strength = 1000.0f; // half of original 2000.0f (can tune in UI)
-    point_lights_[0].radius = 0.2f;  // 扩大一倍（从0.1到0.2）避免黑色阴影
-    
-    // 添加一个补光光源（柔和白光）- 左上方，避免产生强反光
-    point_lights_[1].position = glm::vec3(-5.0f, 5.0f, 3.0f);
-    point_lights_[1].color = glm::vec3(1.0f, 1.0f, 1.0f);
-    point_lights_[1].strength = 0.0f; // 暂时关闭
-    point_lights_[1].radius = 0.2f;  // 扩大一倍（从0.1到0.2）
-    
-    // 添加一个环境光（模拟天空反射）
-    point_lights_[2].position = glm::vec3(0.0f, 0.5f, 6.0f);
-    point_lights_[2].color = glm::vec3(0.95f, 0.95f, 1.0f);
-    point_lights_[2].strength = 0.0f; // 暂时关闭
-    point_lights_[2].radius = 0.2f;  // 扩大一倍（从0.1到0.2）
-
-    // 添加一个背景高亮点光源用于产生远处的bokeh高光
-    point_lights_[3].position = glm::vec3(0.0f, 1.2f, -7.0f);
-    point_lights_[3].color = glm::vec3(1.0f, 0.9f, 0.7f);
-    point_lights_[3].strength = 250.0f; // 暂时关闭
-    point_lights_[3].radius = 0.1f;    // 扩大一倍（从0.05到0.1）避免黑色阴影
-    
-    // 其余光源强度设为0（未使用）
-    for (int i = 3; i < 16; ++i) {
+    // 删除所有之前的点光源（强度设为0）
+    for (int i = 0; i < 16; ++i) {
         point_lights_[i].position = glm::vec3(0.0f);
         point_lights_[i].color = glm::vec3(1.0f);
         point_lights_[i].strength = 0.0f;  // 强度为0表示未激活
         point_lights_[i].radius = 0.0f;
     }
+    
+    // 在环境光顶部靠右位置添加一个明显的点光源
+    // 环境光位置：area_lights_[0].position = (0.0f, 10.5f, 0.0f)
+    // 点光源位置：顶部靠右，稍微偏前，强度较高以明显区别于环境光
+    point_lights_[0].position = glm::vec3(3.5f, 10.5f, 2.0f);  // 顶部靠右，稍微偏前
+    point_lights_[0].color = glm::vec3(1.0f, 0.95f, 0.9f);      // 稍微暖色调的白光
+    point_lights_[0].strength = 2000.0f;                        // 高强度，明显区别于环境光
+    point_lights_[0].radius = 0.15f;                            // 较小的半径，产生明显的高光
     
     // 创建并上传点光源缓冲区
     core_->CreateBuffer(sizeof(PointLight) * 16, grassland::graphics::BUFFER_TYPE_DYNAMIC, &point_lights_buffer_);
