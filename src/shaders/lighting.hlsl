@@ -8,9 +8,29 @@
 #include "bsdf.hlsl"
 #include "rng.hlsl"
 
+// 简单的体积密度采样（程序化，基于高度）
+// 返回体积密度值（0-1），0表示无体积介质
+// 在此高度以下都有雾
+float SampleVolumeDensity(float3 pos) {
+    const float TSINGHUA_BOX_TOP = 1.6; 
+    float height = pos.y;
+    
+    // 在盒子高度以下都有雾，密度随高度增加而减少
+    if (height >= TSINGHUA_BOX_TOP) {
+        return 0.0; // 盒子高度以上无雾
+    }
+    
+    // 使用更明显的密度分布：高度越低，密度越高
+    // 在底部（Y=0）密度最大，到盒子顶部（Y=2.98）密度逐渐减少到0
+    float normalizedHeight = height / TSINGHUA_BOX_TOP; // 归一化到 [0, 1]
+    float fogDensity = 1.0 - normalizedHeight; // 线性衰减：底部1.0，顶部0.0
+    return fogDensity * 1.5; // 大幅增加密度到1.5（非常明显）
+}
+
 // Alpha shadow 阴影射线追踪（非递归版本，返回 RGB 可见度，支持有色透射 Beer–Lambert 衰减）
 // 返回值：float3(1,1,1) = 完全可见，float3(0,0,0) = 完全遮挡，其他为按通道衰减后的可见度
 // 支持透明材质的多重弹射，计算光源到表面的可见度
+// 新增：支持体积介质的阴影（Volumetric Alpha Shadow）
 float3 TraceAlphaShadowRGB(float3 rayOrigin, float3 rayDirection, float maxDistance, inout uint seed) {
 	float3 visibility = float3(1.0, 1.0, 1.0);
 	float travelDistance = 0.0;
@@ -37,6 +57,52 @@ float3 TraceAlphaShadowRGB(float3 rayOrigin, float3 rayDirection, float maxDista
 		// 追踪阴影射线
 		TraceRay(as, RAY_FLAG_NONE, 0xFF, 0, 1, 0, shadowRay, shadowPayload);
 
+		// 计算到击中点的距离（如果没有击中，使用最大距离）
+		float distanceToHit = shadowPayload.hit ? length(shadowPayload.hit_pos - rayOrigin) : (maxDistance - travelDistance);
+		
+		// ===== 体积介质采样（在到达表面之前）=====
+		// 简单的步进采样：沿射线路径采样体积密度
+		const float VOLUME_STEP_SIZE = 0.05; // 大幅减小步长以提高精度和效果
+		float3 currentPos = rayOrigin;
+		float remainingDist = distanceToHit;
+		
+		while (remainingDist > VOLUME_STEP_SIZE) {
+			// 采样当前位置的体积密度
+			float density = SampleVolumeDensity(currentPos);
+			
+			if (density > 0.001) {
+				// 计算体积衰减（Beer-Lambert定律）
+				// 大幅增强吸收系数，让雾效果非常明显
+				// 使用更强的吸收：每单位距离的衰减系数
+				float3 absorption = float3(0.8, 0.8, 1.0) * density; // 大幅增强的蓝色雾（非常明显）
+				float extinction = max(max(absorption.r, absorption.g), absorption.b);
+				
+				// 应用透射率：exp(-extinction * distance)
+				float transmittance = exp(-extinction * VOLUME_STEP_SIZE);
+				visibility *= transmittance;
+				
+				// 提前终止检查
+				if (max(max(visibility.r, visibility.g), visibility.b) < MIN_VISIBILITY) {
+					return visibility;
+				}
+			}
+			
+			// 移动到下一个采样点
+			currentPos += shadowRay.Direction * VOLUME_STEP_SIZE;
+			remainingDist -= VOLUME_STEP_SIZE;
+		}
+		
+		// 处理最后一段距离（如果还有剩余）
+		if (remainingDist > 0.001) {
+			float density = SampleVolumeDensity(currentPos);
+			if (density > 0.001) {
+				float3 absorption = float3(0.8, 0.8, 1.0) * density;
+				float extinction = max(max(absorption.r, absorption.g), absorption.b);
+				float transmittance = exp(-extinction * remainingDist);
+				visibility *= transmittance;
+			}
+		}
+		
 		if (!shadowPayload.hit) {
 			// 没有击中任何物体 = 完全可见
 			return visibility;
@@ -44,7 +110,6 @@ float3 TraceAlphaShadowRGB(float3 rayOrigin, float3 rayDirection, float maxDista
 
 		// 获取材质信息
 		Material mat = materials[shadowPayload.material_idx];
-		float distanceToHit = length(shadowPayload.hit_pos - rayOrigin);
 		travelDistance += distanceToHit;
 
 		// 如果材质是透明的，应用有色透射（Beer–Lambert 简化）并继续追踪
