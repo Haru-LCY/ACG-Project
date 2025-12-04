@@ -21,6 +21,183 @@ float3 ACESFilm(float3 x) {
     return saturate((x * (a * x + b)) / (x * (c * x + d) + e));
 }
 
+// ==================== Homogeneous Volume Rendering ====================
+// 发光烟雾 + Volumetric Emission 实现
+
+// 简单的噪声函数（用于烟雾密度变化）
+float Noise3D(float3 p) {
+    // 简单的哈希噪声
+    float3 i = floor(p);
+    float3 f = frac(p);
+    f = f * f * (3.0 - 2.0 * f); // smoothstep
+    
+    float n = i.x + i.y * 57.0 + 113.0 * i.z;
+    return frac(sin(n) * 43758.5453);
+}
+
+// 检查点是否在 iiis box 体积区域内
+// iiis box 位置: (2.0, 1.0, 4.0)，大小: 1x1x1 (cube.obj 默认大小)
+bool IsInIIISBoxVolume(float3 pos) {
+    float3 boxMin = float3(1.5, 0.5, 3.5);  // 稍微扩大范围以确保覆盖
+    float3 boxMax = float3(2.5, 1.5, 4.5);
+    return all(pos >= boxMin) && all(pos <= boxMax);
+}
+
+// 采样体积密度和发光
+// 返回: (density, emission_r, emission_g, emission_b)
+float4 SampleVolumeProperties(float3 pos) {
+    if (IsInIIISBoxVolume(pos)) {
+        // iiis box 区域：发光烟雾
+        // 添加噪声让烟雾密度有变化（使用多层噪声让效果更自然）
+        float noise1 = Noise3D(pos * 2.0);
+        float noise2 = Noise3D(pos * 4.0) * 0.5;
+        float noise = noise1 * 0.7 + noise2 * 0.3;
+        
+        float baseDensity = 0.5; // 基础密度（烟雾）
+        float density = baseDensity * (0.4 + 0.6 * noise); // 密度在 0.2-0.5 之间变化
+        
+        // 发光烟雾：暖色发光（橙黄色），强度随密度变化
+        // 使用更强的发光让效果更明显
+        float3 emission = float3(1.0, 0.7, 0.4) * 12.0 * density; // 发光强度与密度相关
+        
+        return float4(density, emission);
+    }
+    return float4(0, 0, 0, 0); // 无体积介质
+}
+
+// Henyey-Greenstein 相位函数（用于前向/后向散射）
+// g: 各向异性参数 (-1 到 1)，g>0 前向散射，g<0 后向散射，g=0 各向同性
+float PhaseFunctionHG(float cosTheta, float g) {
+    float g2 = g * g;
+    float denom = 1.0 + g2 - 2.0 * g * cosTheta;
+    return (1.0 - g2) / (4.0 * PI * pow(max(denom, 0.0001), 1.5));
+}
+
+// 计算单次散射贡献（从光源到采样点的散射）
+float3 ComputeSingleScattering(float3 pos, float3 viewDir, float density, inout uint seed) {
+    const float3 SCATTERING_COEFF = float3(0.8, 0.8, 0.9); // 烟雾散射系数（略微偏蓝）
+    const float G_PHASE = 0.3; // 前向散射（烟雾通常前向散射）
+    
+    float3 scattering = float3(0, 0, 0);
+    
+    // 采样所有点光源
+    const int MAX_POINT_LIGHTS = 16;
+    for (int i = 0; i < MAX_POINT_LIGHTS; ++i) {
+        PointLight pl = point_lights[i];
+        if (pl.strength <= 0.0) continue;
+        
+        // 计算从采样点到光源的方向
+        float3 lightVec = pl.position - pos;
+        float lightDist = length(lightVec);
+        float3 lightDir = normalize(lightVec);
+        
+        // 计算相位函数（viewDir 和 lightDir 之间的角度）
+        float cosTheta = dot(viewDir, lightDir);
+        float phase = PhaseFunctionHG(cosTheta, G_PHASE);
+        
+        // 计算光源到采样点的可见度（考虑体积衰减）
+        float3 shadowOrigin = pos + lightDir * 0.01; // 稍微偏移避免自相交
+        float shadowDist = max(lightDist - 0.01, 0.0);
+        float3 visibility = TraceAlphaShadowRGB(shadowOrigin, lightDir, shadowDist, seed);
+        
+        // 计算光源衰减
+        float distSq = lightDist * lightDist;
+        float attenuation = pl.strength / (4.0 * PI * distSq);
+        
+        // 单次散射贡献 = 散射系数 * 相位函数 * 光源辐射 * 可见度 * 衰减
+        float3 lightRadiance = pl.color * attenuation * visibility;
+        scattering += SCATTERING_COEFF * phase * lightRadiance * density;
+    }
+    
+    // 采样所有面光源
+    const int MAX_AREA_LIGHTS = 8;
+    for (int j = 0; j < MAX_AREA_LIGHTS; ++j) {
+        AreaLight al = area_lights[j];
+        if (al.strength <= 0.0) continue;
+        
+        // 简化：使用面光源中心点
+        float3 lightVec = al.position - pos;
+        float lightDist = length(lightVec);
+        float3 lightDir = normalize(lightVec);
+        
+        // 检查光源是否在正面
+        float LdotLn = dot(-lightDir, al.direction);
+        if (LdotLn <= 0.0) continue;
+        
+        // 相位函数
+        float cosTheta = dot(viewDir, lightDir);
+        float phase = PhaseFunctionHG(cosTheta, G_PHASE);
+        
+        // 可见度
+        float3 shadowOrigin = pos + lightDir * 0.01;
+        float shadowDist = max(lightDist - 0.01, 0.0);
+        float3 visibility = TraceAlphaShadowRGB(shadowOrigin, lightDir, shadowDist, seed);
+        
+        // 面光源衰减（简化计算）
+        float distSq = lightDist * lightDist;
+        float area = al.width * al.height;
+        float attenuation = al.strength / (4.0 * PI * distSq);
+        
+        float3 lightRadiance = al.color * attenuation * visibility;
+        scattering += SCATTERING_COEFF * phase * lightRadiance * density;
+    }
+    
+    return scattering;
+}
+
+// 体积积分结果结构体
+struct VolumeIntegrationResult {
+    float3 radiance;      // 体积发光贡献（emission + single scattering）
+    float3 transmittance; // 体积透射率
+};
+
+// 沿光线积分体积贡献（完整实现：体积发光 + 单次散射）
+VolumeIntegrationResult IntegrateVolumeAlongRay(float3 rayOrigin, float3 rayDir, float maxDist, float3 throughput, inout uint seed) {
+    const float STEP_SIZE = 0.08; // 更小的步长以提高精度
+    const float3 SCATTERING_COEFF = float3(0.8, 0.8, 0.9); // 烟雾散射系数（略微偏蓝）
+    const float3 ABSORPTION_COEFF = float3(0.05, 0.05, 0.05); // 烟雾吸收系数（很低，烟雾是半透明的）
+    
+    VolumeIntegrationResult result;
+    result.radiance = float3(0, 0, 0);
+    result.transmittance = float3(1, 1, 1); // 透射率
+    
+    float dist = 0.0;
+    int steps = 0;
+    const int MAX_STEPS = 150; // 增加最大步数
+    
+    while (dist < maxDist && steps < MAX_STEPS) {
+        float3 pos = rayOrigin + rayDir * dist;
+        float4 volProps = SampleVolumeProperties(pos);
+        float density = volProps.x;
+        float3 emission = volProps.yzw;
+        
+        if (density > 0.001) {
+            // 计算体积衰减（Beer-Lambert 定律）
+            float3 extinction = SCATTERING_COEFF + ABSORPTION_COEFF;
+            float3 stepTransmittance = exp(-extinction * density * STEP_SIZE);
+            
+            // 1. 累积体积发光（Volumetric Emission）
+            result.radiance += throughput * result.transmittance * emission * STEP_SIZE;
+            
+            // 2. 累积单次散射（Single Scattering）
+            float3 singleScattering = ComputeSingleScattering(pos, rayDir, density, seed);
+            result.radiance += throughput * result.transmittance * singleScattering * STEP_SIZE;
+            
+            // 更新透射率
+            result.transmittance *= stepTransmittance;
+            
+            // 提前终止：如果透射率太低，贡献可忽略
+            float maxTrans = max(max(result.transmittance.r, result.transmittance.g), result.transmittance.b);
+            if (maxTrans < 0.001) break;
+        }
+        
+        dist += STEP_SIZE;
+        steps++;
+    }
+    
+    return result;
+}
+
 // 简单的光线追踪函数，直接使用硬件加速的 TraceRay API
 bool TraceRaySimple(float3 rayOrigin, float3 rayDir, float tMin, float tMax, inout RayPayload payload) {
     RayDesc ray;
@@ -57,7 +234,19 @@ float3 TracePathWithObjectMotionBlur(float3 rayOrigin, float3 rayDir, float moti
         payload.hit_pos = float3(0,0,0);
         payload.normal = float3(0,1,0);
         
+        // ===== 体积渲染：在击中表面前采样体积 =====
+        // 先追踪光线找到最近的表面
         TraceRaySimple(rayOrigin, rayDir, 0.001, 10000.0, payload);
+        
+        // 计算到表面的距离
+        float distToSurface = payload.hit ? length(payload.hit_pos - rayOrigin) : 10000.0;
+        
+        // 沿光线积分体积贡献（从起点到表面）
+        VolumeIntegrationResult volumeResult = IntegrateVolumeAlongRay(rayOrigin, rayDir, distToSurface, throughput, seed);
+        radiance += volumeResult.radiance;
+        
+        // 应用体积衰减到 throughput
+        throughput *= volumeResult.transmittance;
         
         if (!payload.hit) {
             // 光线未击中任何物体，使用环境贴图或程序化天空
