@@ -9,6 +9,67 @@
 
 #include "common.hlsl"
 
+// ==================== Height Map / Parallax Mapping ====================
+// Height Map 高度贴图实现（基础视差贴图）
+// 
+// Parallax mapping 通过偏移 UV 坐标来模拟表面深度，产生视差效果。
+// 高度信息通常存储在法线贴图的 alpha 通道或 R 通道中。
+
+// 基础视差映射：根据高度值偏移 UV 坐标
+// normalMap: 法线贴图纹理（高度信息存储在 alpha 通道或 R 通道）
+// uv: 原始纹理坐标
+// viewDir: 视线方向（世界空间）
+// T: 切线（世界空间）
+// B: 副切线（世界空间）
+// N: 法线（世界空间）
+// heightScale: 高度缩放系数（控制视差强度，通常 0.01-0.1）
+// 返回: 偏移后的 UV 坐标
+float2 ParallaxMapping(Texture2D normalMap, float2 uv, float3 viewDir, float3 T, float3 B, float3 N, float heightScale) {
+    // 将视线方向转换到切线空间
+    float3x3 TBN = float3x3(
+        normalize(T),  // 切线
+        normalize(B),  // 副切线
+        normalize(N)   // 法线
+    );
+    float3 viewDirTS = mul(TBN, viewDir);
+    
+    // 采样高度值
+    // 注意：标准的法线贴图（RGB存储法线方向）通常不包含高度信息
+    // 要使用 height map，需要：
+    // 1. 使用单独的高度贴图纹理（灰度图，白色=高，黑色=低）
+    // 2. 或者使用包含高度信息的法线贴图（高度存储在 alpha 通道）
+    float4 normalMapSample = normalMap.SampleLevel(texSampler, uv, 0);
+    
+    // 尝试从 alpha 通道读取高度（如果法线贴图包含高度信息）
+    float height = normalMapSample.a;
+    
+    // 如果 alpha 通道接近 1.0（标准法线贴图的默认值，表示完全不透明）
+    // 或者接近 0（没有 alpha 通道），则使用 R 通道作为高度值
+    // 注意：如果法线贴图没有高度信息，R 通道存储的是法线的 X 分量，不适合作为高度
+    // 这种情况下 height map 效果会很弱或无效
+    if (height > 0.95 || height < 0.05) {
+        // 使用 R 通道作为高度值（假设是灰度高度图，或法线贴图的 R 通道）
+        height = normalMapSample.r;
+    }
+    
+    // 确保高度值在合理范围内（0-1）
+    // 高度值越大（越白），表面越突出
+    height = saturate(height);
+    
+    // 防止除零：如果 viewDirTS.z 太小，限制偏移量
+    // viewDirTS.z 是视线方向在法线方向的分量
+    float parallaxDepth = height * heightScale;
+    
+    // 计算视差偏移
+    // viewDirTS.xy / viewDirTS.z 将视线方向投影到切线平面
+    // 乘以高度值得到偏移量
+    // 添加小的 epsilon 防止除零
+    float2 parallaxOffset = viewDirTS.xy / max(viewDirTS.z, 0.001) * parallaxDepth;
+    
+    // 返回偏移后的 UV（减去是因为高度值越大，应该向前偏移）
+    return uv - parallaxOffset;
+}
+
 // 从法线贴图采样并转换到世界空间
 // normalMap: 法线贴图纹理
 // uv: 纹理坐标
