@@ -8,6 +8,9 @@
 #include "bsdf.hlsl"
 #include "rng.hlsl"
 
+//Volumetric Alpha Shadow: 加上之前没有雾气阴影边缘是硬的，现在有散射阴影边缘是软的柔和的。
+
+
 // 简单的体积密度采样（程序化，基于高度）
 // 返回体积密度值（0-1），0表示无体积介质
 // 在此高度以下都有雾
