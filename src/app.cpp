@@ -655,13 +655,15 @@ void Application::OnInit() {
     core_->CreateSampler(env_sampler_info, &environment_sampler_);
 
     // Initialize camera state member variables
-    camera_pos_ = glm::vec3{ 1.76f, 2.55f, 5.13f }; // 展览馆内部视角
+    camera_pos_ = glm::vec3{ -0.3f, 2.1f, 10.2f }; // 新相机位置
     camera_up_ = glm::vec3{ 0.0f, 1.0f, 0.0f }; // World up
     camera_speed_ = 0.05f; // 提升5倍速度（从0.01到0.05）
 
     // Initialize new mouse/view variables
-    yaw_ = -111.6f; // 根据相机方向设置
-    pitch_ = -12.5f;
+    // 方向向量 (0.05, 0.19, -1) 归一化后计算 yaw 和 pitch
+    glm::vec3 target_dir = glm::normalize(glm::vec3(0.05f, 0.19f, -1.0f));
+    pitch_ = glm::degrees(asin(target_dir.y)); // pitch = asin(y)
+    yaw_ = glm::degrees(atan2(target_dir.z, target_dir.x)); // yaw = atan2(z, x)
     last_x_ = (float)window_->GetWidth() / 2.0f;
     last_y_ = (float)window_->GetHeight() / 2.0f;
     mouse_sensitivity_ = 0.1f;
