@@ -342,33 +342,12 @@ void Application::OnInit() {
     // }
 
 // BSDF mirrow with clear coat implement. backup
-    // // Add Cornell Box Front Wall (glass material with sakura texture, white color)
-    // {
-    //     // Metallic mirror material with clear coat (softer parameters)
-    //     Material front_wall_material(glm::vec3(1.0f, 1.0f, 1.0f), 0.05f, 0.9f);  // white, metallic mirror (roughness=0.05, metallic=0.9)
-    //     front_wall_material.clearcoat = 0.8f;              // Moderate clear coat strength
-    //     front_wall_material.clearcoat_roughness = 0.05f;   // Slightly rougher clear coat for softer reflection
-        
-    //     // Front wall dimensions: width=556, height=548.8 (in original coordinates)
-    //     // After cornell_box_transform (scale 0.02): width=11.12, height=10.976
-    //     // Cube is 2x2x2 unit cube, so scale factors: width=11.12/2=5.56, height=10.976/2=5.488, depth=0.1/2=0.05
-    //     // Center position: x=(549.6+0)/2*0.02-5.56=-0.064, y=274.4*0.02=5.488, z=0*0.02-5.6=-5.6
-    //     glm::mat4 front_wall_transform = glm::translate(glm::mat4(1.0f), glm::vec3(-0.064f, 5.488f, -5.6f))
-    //                                    * glm::scale(glm::mat4(1.0f), glm::vec3(5.56f, 5.488f, 0.05f));  // Scale cube to match wall size
-        
-    //     auto front_wall = std::make_shared<Entity>(
-    //         "meshes/cube.obj",
-    //         front_wall_material,
-    //         front_wall_transform
-    //     );
-    //     scene_->AddEntity(front_wall);
-    // }
-
-    // Add Cornell Box Front Wall (white block material with height map)
+    // Add Cornell Box Front Wall (glass material with sakura texture, white color)
     {
-        // White block material (high roughness, more diffuse reflection)
-        Material front_wall_material(glm::vec3(1.0f, 1.0f, 1.0f), 0.8f, 0.0f);  // white, high roughness, non-metallic
-        front_wall_material.height_scale = 0.1f;  // Enable height map with strong effect
+        // Metallic mirror material with clear coat (softer parameters)
+        Material front_wall_material(glm::vec3(1.0f, 1.0f, 1.0f), 0.05f, 0.9f);  // white, metallic mirror (roughness=0.05, metallic=0.9)
+        front_wall_material.clearcoat = 0.8f;              // Moderate clear coat strength
+        front_wall_material.clearcoat_roughness = 0.05f;   // Slightly rougher clear coat for softer reflection
         
         // Front wall dimensions: width=556, height=548.8 (in original coordinates)
         // After cornell_box_transform (scale 0.02): width=11.12, height=10.976
@@ -380,12 +359,33 @@ void Application::OnInit() {
         auto front_wall = std::make_shared<Entity>(
             "meshes/cube.obj",
             front_wall_material,
-            front_wall_transform,
-            "",
-            "textures/normal.png"
+            front_wall_transform
         );
         scene_->AddEntity(front_wall);
     }
+
+    // Add Cornell Box Front Wall (white block material with height map)
+    // {
+    //     // White block material (high roughness, more diffuse reflection)
+    //     Material front_wall_material(glm::vec3(1.0f, 1.0f, 1.0f), 0.8f, 0.0f);  // white, high roughness, non-metallic
+    //     front_wall_material.height_scale = 0.1f;  // Enable height map with strong effect
+        
+    //     // Front wall dimensions: width=556, height=548.8 (in original coordinates)
+    //     // After cornell_box_transform (scale 0.02): width=11.12, height=10.976
+    //     // Cube is 2x2x2 unit cube, so scale factors: width=11.12/2=5.56, height=10.976/2=5.488, depth=0.1/2=0.05
+    //     // Center position: x=(549.6+0)/2*0.02-5.56=-0.064, y=274.4*0.02=5.488, z=0*0.02-5.6=-5.6
+    //     glm::mat4 front_wall_transform = glm::translate(glm::mat4(1.0f), glm::vec3(-0.064f, 5.488f, -5.6f))
+    //                                    * glm::scale(glm::mat4(1.0f), glm::vec3(5.56f, 5.488f, 0.05f));  // Scale cube to match wall size
+        
+    //     auto front_wall = std::make_shared<Entity>(
+    //         "meshes/cube.obj",
+    //         front_wall_material,
+    //         front_wall_transform,
+    //         "",
+    //         "textures/normal.png"
+    //     );
+    //     scene_->AddEntity(front_wall);
+    // }
 
     {
         auto blue_cube = std::make_shared<Entity>(
@@ -654,7 +654,7 @@ void Application::OnInit() {
     core_->CreateSampler(env_sampler_info, &environment_sampler_);
 
     // Initialize camera state member variables
-    camera_pos_ = glm::vec3{ 1.76f, 2.55f, 5.13f }; // 展览馆内部视角
+    camera_pos_ = glm::vec3{ -0.3f, 2.1f, 10.2f }; // 展览馆内部视角
     camera_up_ = glm::vec3{ 0.0f, 1.0f, 0.0f }; // World up
     camera_speed_ = 0.05f; // 提升5倍速度（从0.01到0.05）
 

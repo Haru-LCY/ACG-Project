@@ -151,19 +151,19 @@ float3 TraceAlphaShadowRGB(float3 rayOrigin, float3 rayDirection, float maxDista
 	return visibility;
 }
 
-// 计算面光源的直接光照贡献（使用 Principled BSDF，支持 MIS）
+// 计算面光源的直接光照贡献（使用完整的 MIS：光源采样 + BRDF 采样）
 float3 ComputeAreaLightContribution(float3 hitPos, float3 normal, float3 viewDir, Material material, float2 uv, AreaLight light, inout uint seed) {
-    const int NUM_LIGHT_SAMPLES = 1; // 面光源采样次数
     float3 totalContribution = float3(0, 0, 0);
     
-    for (int sample_idx = 0; sample_idx < NUM_LIGHT_SAMPLES; ++sample_idx) {
-        // 1. 在光源表面上随机采样一个点
+    // ==================== 策略1: 光源采样 ====================
+    // 在光源表面上随机采样一个点
+    {
         float u_base = Rand01(seed) - 0.5;
         float v_base = Rand01(seed) - 0.5;
         
         float3 samplePos = light.position + (light.u_axis * u_base * light.width) + (light.v_axis * v_base * light.height);
         
-        // 2. 几何计算：计算从击中点到光源采样点的方向和距离
+        // 几何计算：计算从击中点到光源采样点的方向和距离
         float3 lightVec = samplePos - hitPos;
         float distSq = dot(lightVec, lightVec);
         float dist = sqrt(distSq);
@@ -174,40 +174,102 @@ float3 ComputeAreaLightContribution(float3 hitPos, float3 normal, float3 viewDir
         float LdotLn = dot(-lightDir, lightNormal);
         
         // 检查光源是否在表面正面，以及采样点是否在光源正面
-        if (NdotL <= 0.0 || LdotLn <= 0.0) {
-            continue;
+        if (NdotL > 0.0 && LdotLn > 0.0) {
+            // 阴影检测：计算光源到表面的可见度
+            const float RAY_EPSILON = 0.001;
+            float3 visibility = TraceAlphaShadowRGB(hitPos + normal * RAY_EPSILON, lightDir, dist - RAY_EPSILON, seed);
+            
+            if (max(max(visibility.r, visibility.g), visibility.b) >= 0.001) {
+                // 计算光源采样的概率密度函数（PDF）
+                float area = light.width * light.height;
+                float pdf_light = distSq / (area * LdotLn + 1e-8);
+                
+                // 光源的辐射度（自发光）
+                float3 Le = light.color * light.strength;
+                
+                // 使用 Principled BSDF 评估材质响应
+                float pdf_brdf;
+                float3 brdf_eval = EvaluatePrincipledBSDF(material, viewDir, lightDir, normal, uv, pdf_brdf);
+                
+                // MIS 权重：平衡光源采样和 BRDF 采样
+                float w_light = BalanceHeuristic(pdf_light, pdf_brdf);
+                
+                // 计算光照贡献
+                // contribution = Le * brdf_eval * visibility * weight / pdf
+                float3 contribution = Le * brdf_eval * visibility * w_light / (pdf_light + 1e-8);
+                
+                totalContribution += contribution;
+            }
         }
-        
-        // 3. 阴影检测：计算光源到表面的可见度
-        const float RAY_EPSILON = 0.001;
-        float3 visibility = TraceAlphaShadowRGB(hitPos + normal * RAY_EPSILON, lightDir, dist - RAY_EPSILON, seed);
-        
-        if (max(max(visibility.r, visibility.g), visibility.b) < 0.001) {
-            continue; // 完全被遮挡，跳过此采样
-        }
-        
-        // 4. 计算光源采样的概率密度函数（PDF）
-        float area = light.width * light.height;
-        float pdf_light = distSq / (area * LdotLn + 1e-8);
-        
-        // 5. 光源的辐射度（自发光）
-        float3 Le = light.color * light.strength;
-        
-        // 6. 使用 Principled BSDF 评估材质响应
-        float pdf_brdf;
-        float3 brdf_eval = EvaluatePrincipledBSDF(material, viewDir, lightDir, normal, uv, pdf_brdf);
-        
-        // 7. MIS权重：平衡光源采样和BSDF采样
-        float w_light = BalanceHeuristic(pdf_light, pdf_brdf);
-        
-        // 8. 计算最终的光照贡献
-        float geometryFactor = (NdotL * LdotLn * area) / (distSq + 1e-8);
-        float3 contribution = Le * brdf_eval * visibility * w_light / (pdf_light + 1e-8);
-        
-        totalContribution += contribution;
     }
     
-    return totalContribution / float(NUM_LIGHT_SAMPLES);
+    // ==================== 策略2: BRDF 采样 ====================
+    // 根据 BRDF 的重要性采样方向
+    {
+        float pdf_brdf;
+        float3 brdf_weight;
+        
+        // 使用 BRDF 重要性采样生成光线方向
+        float3 sampledDir = SamplePrincipledBSDF(material, viewDir, normal, uv, seed, pdf_brdf, brdf_weight);
+        
+        // 检查采样方向是否有效
+        float NdotL = dot(normal, sampledDir);
+        if (NdotL > 0.0 && pdf_brdf > 1e-8) {
+            // 检查光线是否击中光源
+            // 计算光线与光源平面的交点
+            float3 lightNormal = light.direction;
+            float denom = dot(sampledDir, lightNormal);
+            
+            // 确保光线朝向光源（从表面射向光源的正面）
+            if (denom < -1e-6) {
+                // 计算光线与光源平面的交点距离
+                float3 planeOrigin = light.position;
+                float t = dot(planeOrigin - hitPos, lightNormal) / denom;
+                
+                if (t > 0.0) {
+                    // 计算交点位置
+                    float3 hitPoint = hitPos + sampledDir * t;
+                    
+                    // 检查交点是否在矩形光源范围内
+                    float3 localPos = hitPoint - light.position;
+                    float u_coord = dot(localPos, light.u_axis);
+                    float v_coord = dot(localPos, light.v_axis);
+                    
+                    float halfWidth = light.width * 0.5;
+                    float halfHeight = light.height * 0.5;
+                    
+                    if (abs(u_coord) <= halfWidth && abs(v_coord) <= halfHeight) {
+                        // 击中了光源！计算阴影
+                        const float RAY_EPSILON = 0.001;
+                        float3 visibility = TraceAlphaShadowRGB(hitPos + normal * RAY_EPSILON, sampledDir, t - RAY_EPSILON, seed);
+                        
+                        if (max(max(visibility.r, visibility.g), visibility.b) >= 0.001) {
+                            // 计算光源采样的 PDF（从这个采样点看）
+                            float distSq = t * t;
+                            float area = light.width * light.height;
+                            float LdotLn = -denom; // 已经计算过了
+                            float pdf_light = distSq / (area * LdotLn + 1e-8);
+                            
+                            // 光源的辐射度
+                            float3 Le = light.color * light.strength;
+                            
+                            // MIS 权重：平衡 BRDF 采样和光源采样
+                            float w_brdf = BalanceHeuristic(pdf_brdf, pdf_light);
+                            
+                            // 计算光照贡献
+                            // BRDF 采样的贡献 = Le * brdf_weight * visibility * w_brdf
+                            // 注意：brdf_weight 已经包含了 BRDF * NdotL / pdf_brdf
+                            float3 contribution = Le * brdf_weight * visibility * w_brdf;
+                            
+                            totalContribution += contribution;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    return totalContribution;
 }
 
 // 计算点光源的直接光照贡献（使用 Principled BSDF）
