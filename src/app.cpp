@@ -336,7 +336,8 @@ void Application::OnInit() {
         auto entity = std::make_shared<Entity>(
             "meshes/staircase/BrushedAluminium.obj",
             Material(glm::vec3(0.7f, 0.7f, 0.7f), 0.3f, 0.9f),  // 拉丝铝材质
-            staircase_transform
+            staircase_transform,
+            "meshes/staircase/textures/BrushedAluminium.png"
         );
         scene_->AddEntity(entity);
     }
@@ -360,7 +361,8 @@ void Application::OnInit() {
         auto entity = std::make_shared<Entity>(
             "meshes/staircase/ChairSeat.obj",
             Material(glm::vec3(0.4f, 0.3f, 0.2f), 0.6f, 0.0f),  // 椅子座位材质
-            staircase_transform
+            staircase_transform,
+            "meshes/staircase/textures/Fabric.png"
         );
         scene_->AddEntity(entity);
     }
@@ -424,7 +426,8 @@ void Application::OnInit() {
         auto entity = std::make_shared<Entity>(
             "meshes/staircase/Painting1.obj",
             Material(glm::vec3(0.8f, 0.7f, 0.6f), 0.6f, 0.0f),  // 画作1材质
-            staircase_transform
+            staircase_transform,
+            "meshes/staircase/textures/Painting1.png"
         );
         scene_->AddEntity(entity);
     }
@@ -434,7 +437,8 @@ void Application::OnInit() {
         auto entity = std::make_shared<Entity>(
             "meshes/staircase/Painting2.obj",
             Material(glm::vec3(0.7f, 0.6f, 0.5f), 0.6f, 0.0f),  // 画作2材质
-            staircase_transform
+            staircase_transform,
+            "meshes/staircase/textures/Painting2.png"
         );
         scene_->AddEntity(entity);
     }
@@ -444,7 +448,8 @@ void Application::OnInit() {
         auto entity = std::make_shared<Entity>(
             "meshes/staircase/Painting3.obj",
             Material(glm::vec3(0.6f, 0.7f, 0.6f), 0.6f, 0.0f),  // 画作3材质
-            staircase_transform
+            staircase_transform,
+            "meshes/staircase/textures/Painting3.png"
         );
         scene_->AddEntity(entity);
     }
@@ -464,7 +469,8 @@ void Application::OnInit() {
         auto entity = std::make_shared<Entity>(
             "meshes/staircase/Wallpaper.obj",
             Material(glm::vec3(0.85f, 0.82f, 0.78f), 0.8f, 0.0f),  // 壁纸材质
-            staircase_transform
+            staircase_transform,
+            "meshes/staircase/textures/Wallpaper.png"
         );
         scene_->AddEntity(entity);
     }
@@ -494,7 +500,8 @@ void Application::OnInit() {
         auto entity = std::make_shared<Entity>(
             "meshes/staircase/WoodChair.obj",
             Material(glm::vec3(0.5f, 0.3f, 0.2f), 0.7f, 0.0f),  // 木质椅子材质
-            staircase_transform
+            staircase_transform,
+            "meshes/staircase/textures/WoodChair.png"
         );
         scene_->AddEntity(entity);
     }
@@ -504,7 +511,8 @@ void Application::OnInit() {
         auto entity = std::make_shared<Entity>(
             "meshes/staircase/WoodFloor.obj",
             Material(glm::vec3(0.6f, 0.4f, 0.25f), 0.65f, 0.0f),  // 木地板材质
-            staircase_transform
+            staircase_transform,
+            "meshes/staircase/textures/WoodFloor.png"
         );
         scene_->AddEntity(entity);
     }
@@ -514,7 +522,8 @@ void Application::OnInit() {
         auto entity = std::make_shared<Entity>(
             "meshes/staircase/WoodLamp.obj",
             Material(glm::vec3(0.55f, 0.35f, 0.22f), 0.7f, 0.0f),  // 木质灯具材质
-            staircase_transform
+            staircase_transform,
+            "meshes/staircase/textures/WoodPanel.png"
         );
         scene_->AddEntity(entity);
     }
@@ -524,7 +533,8 @@ void Application::OnInit() {
         auto entity = std::make_shared<Entity>(
             "meshes/staircase/WoodStairs.obj",
             Material(glm::vec3(0.5f, 0.35f, 0.2f), 0.7f, 0.0f),  // 木质楼梯材质
-            staircase_transform
+            staircase_transform,
+            "meshes/staircase/textures/WoodPanel.png"
         );
         scene_->AddEntity(entity);
     }
