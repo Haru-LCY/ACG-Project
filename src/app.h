@@ -42,6 +42,17 @@ struct SkyboxInfo {
     float sun_angular_radius;     // 太阳角半径（弧度）
 };
 
+// 体积雾信息 (与 shader 中的定义匹配)
+struct VolumetricFogInfo {
+    float fog_top_height;           // 雾的顶部高度（高于此高度无雾）
+    float fog_density_multiplier;   // 雾密度倍增系数
+    float volume_step_size;         // 体积采样步长（越小越精确但性能越低）
+    float padding1;
+    
+    glm::vec3 fog_absorption_color; // 体积吸收颜色（RGB，影响雾的颜色）
+    float padding2;
+};
+
 // MSAA 模式枚举 (与 shader 中的定义匹配)
 enum MSAAMode {
     MSAA_MODE_OFF = 0,      // 关闭 MSAA
@@ -139,6 +150,11 @@ private:
     std::unique_ptr<grassland::graphics::Sampler> environment_sampler_;
     SkyboxInfo skybox_info_;
     bool skybox_need_upload_ = false;
+
+    // Volumetric Fog
+    std::unique_ptr<grassland::graphics::Buffer> fog_info_buffer_;
+    VolumetricFogInfo fog_info_;
+    bool fog_need_upload_ = false;
 
     // Shaders
     std::unique_ptr<grassland::graphics::Shader> raygen_shader_;

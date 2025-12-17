@@ -654,6 +654,19 @@ void Application::OnInit() {
     env_sampler_info.address_mode_w = grassland::graphics::ADDRESS_MODE_REPEAT;
     core_->CreateSampler(env_sampler_info, &environment_sampler_);
 
+    // ==================== 初始化体积雾 ====================
+    fog_info_.fog_top_height = 1.6f;                           // 雾的顶部高度（清华盒子高度）
+    fog_info_.fog_density_multiplier = 1.5f;                   // 雾密度倍增系数（原硬编码值）
+    fog_info_.volume_step_size = 0.05f;                        // 体积采样步长（原硬编码值）
+    fog_info_.padding1 = 0.0f;                                 // padding
+    fog_info_.fog_absorption_color = glm::vec3(0.8f, 0.8f, 1.0f); // 蓝色雾（原硬编码值）
+    fog_info_.padding2 = 0.0f;                                 // padding
+    
+    // 创建并上传体积雾缓冲区
+    core_->CreateBuffer(sizeof(VolumetricFogInfo), grassland::graphics::BUFFER_TYPE_DYNAMIC, &fog_info_buffer_);
+    fog_info_buffer_->UploadData(&fog_info_, sizeof(VolumetricFogInfo));
+    grassland::LogInfo("Initialized volumetric fog");
+
     // Initialize camera state member variables
     camera_pos_ = glm::vec3{ -0.3f, 2.1f, 10.2f }; // 新相机位置
     camera_up_ = glm::vec3{ 0.0f, 1.0f, 0.0f }; // World up
@@ -766,6 +779,7 @@ void Application::OnInit() {
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space21 - global texcoords
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space22 - global indices
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space23 - entity offsets
+    program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_UNIFORM_BUFFER, 1);          // space24 - fog info
     program_->Finalize();
 }
 
@@ -792,6 +806,9 @@ void Application::OnClose() {
     skybox_info_buffer_.reset();
     environment_map_.reset();
     environment_sampler_.reset();
+    
+    // 清理体积雾资源
+    fog_info_buffer_.reset();
     
     // Don't call TerminateImGui - let the window destructor handle it
     // Just reset window which will clean everything up properly
@@ -1254,6 +1271,52 @@ void Application::RenderInfoOverlay() {
         }
     }
 
+    // ==================== Volumetric Fog 控制 ====================
+    ImGui::SeparatorText("Volumetric Fog");
+    bool fog_changed = false;
+    
+    // 雾的顶部高度
+    if (ImGui::SliderFloat("Fog Top Height", &fog_info_.fog_top_height, 0.0f, 5.0f, "%.2f")) {
+        fog_changed = true;
+    }
+    ImGui::TextWrapped("Height above which no fog exists (meters)");
+    
+    // 雾密度倍增系数
+    if (ImGui::SliderFloat("Fog Density", &fog_info_.fog_density_multiplier, 0.0f, 5.0f, "%.2f")) {
+        fog_changed = true;
+    }
+    ImGui::TextWrapped("Multiplier for fog density (higher = denser fog)");
+    
+    // 体积采样步长
+    if (ImGui::SliderFloat("Volume Step Size", &fog_info_.volume_step_size, 0.01f, 0.2f, "%.3f")) {
+        fog_changed = true;
+    }
+    ImGui::TextWrapped("Volume sampling step size (smaller = more accurate but slower)");
+    
+    // 雾吸收颜色
+    if (ImGui::ColorEdit3("Fog Color", &fog_info_.fog_absorption_color.x)) {
+        fog_changed = true;
+    }
+    ImGui::TextWrapped("Color tint of the fog (affects light absorption)");
+    
+    // 重置按钮
+    if (ImGui::Button("Reset Fog", ImVec2(-1, 0))) {
+        fog_info_.fog_top_height = 1.6f;
+        fog_info_.fog_density_multiplier = 1.5f;
+        fog_info_.volume_step_size = 0.05f;
+        fog_info_.fog_absorption_color = glm::vec3(0.8f, 0.8f, 1.0f);
+        fog_changed = true;
+    }
+    
+    // 体积雾参数改变时重置累积
+    if (fog_changed) {
+        fog_need_upload_ = true;
+        if (film_) {
+            film_->Reset();
+            accumulated_frames_ = 0;
+        }
+    }
+
     // Scene Information
     ImGui::SeparatorText("Scene");
     size_t entity_count = scene_->GetEntityCount();
@@ -1673,6 +1736,9 @@ void Application::OnRender() {
     command_context->CmdBindResources(21, { scene_->GetGlobalTexcoordBuffer() }, grassland::graphics::BIND_POINT_RAYTRACING);
     command_context->CmdBindResources(22, { scene_->GetGlobalIndexBuffer() }, grassland::graphics::BIND_POINT_RAYTRACING);
     command_context->CmdBindResources(23, { scene_->GetEntityOffsetsBuffer() }, grassland::graphics::BIND_POINT_RAYTRACING);
+    
+    // 绑定体积雾参数
+    command_context->CmdBindResources(24, { fog_info_buffer_.get() }, grassland::graphics::BIND_POINT_RAYTRACING);
 
     // If UI changed lights, re-upload data to GPU buffer (so shader sees changes)
     if (lights_need_upload_) {
@@ -1689,6 +1755,15 @@ void Application::OnRender() {
         }
         skybox_need_upload_ = false;
         grassland::LogInfo("Skybox info updated (uploaded to GPU)");
+    }
+    
+    // If fog parameters changed, re-upload
+    if (fog_need_upload_) {
+        if (fog_info_buffer_) {
+            fog_info_buffer_->UploadData(&fog_info_, sizeof(VolumetricFogInfo));
+        }
+        fog_need_upload_ = false;
+        grassland::LogInfo("Volumetric fog info updated (uploaded to GPU)");
     }
     
     // Bind textures and sampler (space10)

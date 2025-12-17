@@ -130,6 +130,17 @@ struct SkyboxInfo {
     float sun_angular_radius; // 太阳角半径（弧度）
 };
 
+// 体积雾信息结构体
+struct VolumetricFogInfo {
+    float fog_top_height;           // 雾的顶部高度（高于此高度无雾）
+    float fog_density_multiplier;   // 雾密度倍增系数
+    float volume_step_size;         // 体积采样步长（越小越精确但性能越低）
+    float padding1;
+    
+    float3 fog_absorption_color;    // 体积吸收颜色（RGB，影响雾的颜色）
+    float padding2;
+};
+
 // ==================== Resources ====================
 RaytracingAccelerationStructure as : register(t0, space0);
 RWTexture2D<float4> output : register(u0, space1);
@@ -158,6 +169,9 @@ StructuredBuffer<float2> global_texcoords : register(t0, space21);     // 全局
 StructuredBuffer<uint> global_indices : register(t0, space22);         // 全局索引缓冲区
 StructuredBuffer<EntityOffset> entity_offsets : register(t0, space23); // 实体偏移缓冲区
 
+// 体积雾参数
+ConstantBuffer<VolumetricFogInfo> fog_info : register(b0, space24);   // 体积雾信息
+
 //t，u，space分别表示纹理寄存器、采样器寄存器和常量缓冲区寄存器的空间索引
 
 // ==================== Constants ====================
@@ -167,6 +181,29 @@ static const float PI = 3.14159265359;
 // 路径追踪和阴影追踪的最大弹射次数
 #define MAX_PATH_BOUNCES 8      // 路径追踪最大弹射次数
 #define MAX_SHADOW_BOUNCES 6    // 阴影追踪最大弹射次数（用于透明材质）
+
+// ==================== 射线追踪精度常量 ====================
+static const float RAY_TMIN = 0.0001;           // 射线起始最小距离（防止自相交）
+static const float RAY_EPSILON = 0.001;         // 射线偏移量（阴影射线、反射等）
+static const float MIN_VISIBILITY = 0.001;      // 最小可见度阈值（低于此值提前终止）
+static const float MIN_DENSITY_THRESHOLD = 0.001; // 体积密度阈值
+static const float MIN_DISTANCE_THRESHOLD = 0.001; // 最小距离阈值
+
+// ==================== 材质判断阈值 ====================
+static const float TRANSMISSION_THRESHOLD = 0.01;  // 透射材质判断阈值
+static const float ALPHA_MAP_THRESHOLD = 0.5;      // alpha 贴图存在判断阈值
+static const float MIN_VISIBILITY_CUTOFF = 0.001;  // 可见度截止阈值
+
+// ==================== RGB 亮度转换权重 ====================
+static const float3 RGB_LUMINANCE_WEIGHTS = float3(0.299, 0.587, 0.114); // ITU-R BT.601标准
+
+// ==================== 光照计算常量 ====================
+static const int NUM_AREA_LIGHT_SAMPLES = 1;      // 面光源采样次数
+static const float EPSILON_DIVIDE_ZERO = 1e-8;    // 防止除零的极小值
+static const float MIN_LIGHT_DISTANCE = 0.05;     // 点光源最小距离（数值稳定性）
+static const float MIN_LIGHT_RADIUS = 0.01;       // 点光源最小半径
+static const float MAX_ATTENUATION = 1e4;         // 光源衰减最大值（防止过曝）
+static const float MAX_RADIANCE_PER_LIGHT = 100.0; // 单光源最大辐射度（防止异常亮点）
 
 #endif // COMMON_HLSL
 
