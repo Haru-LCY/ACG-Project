@@ -656,17 +656,17 @@ void Application::OnInit() {
 
     // ==================== 初始化体积渲染系统 ====================
     // 全局控制
-    volumetric_info_.min_step_size = 0.08f;      // 最小步长（高密度区域）
-    volumetric_info_.max_step_size = 0.25f;      // 最大步长（低密度区域）
+    volumetric_info_.min_step_size = 0.1f;       // 最小步长（高密度区域，增大以提高性能）
+    volumetric_info_.max_step_size = 0.3f;       // 最大步长（低密度区域）
     volumetric_info_.max_distance = 100.0f;      // 最大追踪距离
     volumetric_info_.enable = 1.0f;              // 启用体积渲染
     
     // 环境雾配置（基于高度的程序化雾）
     volumetric_info_.environment_fog.top_height = 1.6f;          // 雾的顶部高度（清华盒子高度）
     volumetric_info_.environment_fog.bottom_height = 0.0f;       // 雾的底部高度
-    volumetric_info_.environment_fog.density_multiplier = 0.0f;  // 默认关闭环境雾
-    volumetric_info_.environment_fog.enable = 0.0f;              // 关闭环境雾（避免与光柱重叠）
-    volumetric_info_.environment_fog.absorption_color = glm::vec3(0.8f, 0.8f, 1.0f); // 蓝色雾
+    volumetric_info_.environment_fog.density_multiplier = 0.8f;  // 启用环境雾，较低密度（优化性能）
+    volumetric_info_.environment_fog.enable = 1.0f;              // 启用环境雾
+    volumetric_info_.environment_fog.absorption_color = glm::vec3(0.85f, 0.88f, 0.95f); // 非常淡的蓝灰色雾
     volumetric_info_.environment_fog.padding1 = 0.0f;
     
     // 发光光柱配置（从点光源发出的体积光柱）
@@ -682,9 +682,9 @@ void Application::OnInit() {
     volumetric_info_.light_beam.padding2 = glm::vec3(0.0f);
     
     // 体积散射配置（单次散射光照）
-    volumetric_info_.scattering.scattering_coeff = glm::vec3(0.8f, 0.8f, 0.9f); // 散射系数（略微偏蓝）
+    volumetric_info_.scattering.scattering_coeff = glm::vec3(0.4f, 0.4f, 0.5f); // 散射系数（降低以提高性能）
     volumetric_info_.scattering.phase_g = 0.3f;                  // 前向散射（原硬编码值）
-    volumetric_info_.scattering.absorption_coeff = glm::vec3(0.05f, 0.05f, 0.05f); // 吸收系数
+    volumetric_info_.scattering.absorption_coeff = glm::vec3(0.02f, 0.02f, 0.02f); // 吸收系数（降低）
     volumetric_info_.scattering.enable = 1.0f;                   // 启用单次散射
     
     // 创建并上传体积渲染缓冲区
@@ -1415,14 +1415,14 @@ void Application::RenderInfoOverlay() {
         
         // 重置按钮
         if (ImGui::Button("Reset All Volumetric Settings", ImVec2(-1, 0))) {
-            volumetric_info_.min_step_size = 0.08f;
-            volumetric_info_.max_step_size = 0.25f;
+            volumetric_info_.min_step_size = 0.1f;
+            volumetric_info_.max_step_size = 0.3f;
             volumetric_info_.max_distance = 100.0f;
             volumetric_info_.environment_fog.top_height = 1.6f;
             volumetric_info_.environment_fog.bottom_height = 0.0f;
-            volumetric_info_.environment_fog.density_multiplier = 0.0f;
-            volumetric_info_.environment_fog.enable = 0.0f;
-            volumetric_info_.environment_fog.absorption_color = glm::vec3(0.8f, 0.8f, 1.0f);
+            volumetric_info_.environment_fog.density_multiplier = 0.8f;
+            volumetric_info_.environment_fog.enable = 1.0f;
+            volumetric_info_.environment_fog.absorption_color = glm::vec3(0.85f, 0.88f, 0.95f);
             volumetric_info_.light_beam.radius = 2.0f;
             volumetric_info_.light_beam.length = 10.0f;
             volumetric_info_.light_beam.density = 0.8f;
@@ -1431,9 +1431,9 @@ void Application::RenderInfoOverlay() {
             volumetric_info_.light_beam.enable = 1.0f;
             volumetric_info_.light_beam.radial_falloff_power = 1.5f;
             volumetric_info_.light_beam.longitudinal_falloff_power = 0.8f;
-            volumetric_info_.scattering.scattering_coeff = glm::vec3(0.8f, 0.8f, 0.9f);
+            volumetric_info_.scattering.scattering_coeff = glm::vec3(0.4f, 0.4f, 0.5f);
             volumetric_info_.scattering.phase_g = 0.3f;
-            volumetric_info_.scattering.absorption_coeff = glm::vec3(0.05f, 0.05f, 0.05f);
+            volumetric_info_.scattering.absorption_coeff = glm::vec3(0.02f, 0.02f, 0.02f);
             volumetric_info_.scattering.enable = 1.0f;
             volumetric_changed = true;
         }

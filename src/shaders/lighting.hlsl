@@ -115,26 +115,31 @@ float3 TraceAlphaShadowRGB(float3 rayOrigin, float3 rayDirection, float maxDista
 		if (volumetric_info.enable > 0.5) {
 			float3 currentPos = rayOrigin;
 			float remainingDist = distanceToHit;
-			float volumeStepSize = volumetric_info.min_step_size;
+			float volumeStepSize = max(volumetric_info.min_step_size, 0.05f); // 确保最小步长不会太小
 			
-			while (remainingDist > volumeStepSize) {
+			int volumeSteps = 0;
+			const int MAX_VOLUME_STEPS = 50; // 阴影射线的最大步数限制（防止GPU超时）
+			
+			while (remainingDist > volumeStepSize && volumeSteps < MAX_VOLUME_STEPS) {
 				// 采样当前位置的体积密度
 				float density = SampleVolumeDensity(currentPos);
 				
 				if (density > MIN_DENSITY_THRESHOLD) {
 					// 计算体积衰减（Beer-Lambert定律）
-					// 使用散射和吸收系数计算消光系数
-					float3 extinction = volumetric_info.scattering.scattering_coeff + volumetric_info.scattering.absorption_coeff;
+					// 基础消光系数（散射+吸收）
+					float3 baseExtinction = volumetric_info.scattering.scattering_coeff + volumetric_info.scattering.absorption_coeff;
 					
-					// 如果启用环境雾，也考虑环境雾的吸收颜色
+					// 应用密度和环境雾的吸收颜色调制
+					// 注意：absorption_color 作为颜色调制，不是直接乘到系数上
+					float3 extinction = baseExtinction * density;
+					
+					// 如果启用环境雾，使用环境雾的吸收颜色来调制消光
 					if (volumetric_info.environment_fog.enable > 0.5) {
-						extinction *= volumetric_info.environment_fog.absorption_color;
+						// 降低环境雾对阴影的影响，避免过度变暗
+						extinction = extinction * lerp(float3(1, 1, 1), volumetric_info.environment_fog.absorption_color, 0.3);
 					}
 					
-					extinction *= density;
-					
 					// 应用透射率：exp(-extinction * distance)
-					float transmittance_scalar = exp(-max(max(extinction.r, extinction.g), extinction.b) * volumeStepSize);
 					float3 transmittance = exp(-extinction * volumeStepSize);
 					visibility *= transmittance;
 					
@@ -147,17 +152,18 @@ float3 TraceAlphaShadowRGB(float3 rayOrigin, float3 rayDirection, float maxDista
 				// 移动到下一个采样点
 				currentPos += shadowRay.Direction * volumeStepSize;
 				remainingDist -= volumeStepSize;
+				volumeSteps++;
 			}
 			
-			// 处理最后一段距离（如果还有剩余）
-			if (remainingDist > MIN_DISTANCE_THRESHOLD) {
+			// 处理最后一段距离（如果还有剩余且未超过步数限制）
+			if (remainingDist > MIN_DISTANCE_THRESHOLD && volumeSteps < MAX_VOLUME_STEPS) {
 				float density = SampleVolumeDensity(currentPos);
 				if (density > MIN_DENSITY_THRESHOLD) {
-					float3 extinction = volumetric_info.scattering.scattering_coeff + volumetric_info.scattering.absorption_coeff;
+					float3 baseExtinction = volumetric_info.scattering.scattering_coeff + volumetric_info.scattering.absorption_coeff;
+					float3 extinction = baseExtinction * density;
 					if (volumetric_info.environment_fog.enable > 0.5) {
-						extinction *= volumetric_info.environment_fog.absorption_color;
+						extinction = extinction * lerp(float3(1, 1, 1), volumetric_info.environment_fog.absorption_color, 0.3);
 					}
-					extinction *= density;
 					float3 transmittance = exp(-extinction * remainingDist);
 					visibility *= transmittance;
 				}

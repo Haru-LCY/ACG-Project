@@ -279,7 +279,7 @@ VolumeIntegrationResult IntegrateVolumeAlongRay(float3 rayOrigin, float3 rayDir,
     
     float dist = 0.0;
     int steps = 0;
-    const int MAX_STEPS = 150; // 最大步数
+    const int MAX_STEPS = 100; // 最大步数（降低以提高性能）
     
     // 预采样第一个点以确定初始步长
     float3 pos = rayOrigin;
@@ -321,8 +321,15 @@ VolumeIntegrationResult IntegrateVolumeAlongRay(float3 rayOrigin, float3 rayDir,
             result.radiance += throughput * result.transmittance * emission * stepSize;
             
             // 2. 累积单次散射（Single Scattering）
-            float3 singleScattering = ComputeSingleScattering(pos, rayDir, density, seed);
-            result.radiance += throughput * result.transmittance * singleScattering * stepSize;
+            // 优化：在环境雾模式下降低散射采样频率以提高性能
+            if (volumetric_info.scattering.enable > 0.5) {
+                // 每N步才计算一次散射，减少计算量
+                bool shouldComputeScattering = (steps % 3 == 0) || (density > 0.5); // 高密度区域或每3步
+                if (shouldComputeScattering) {
+                    float3 singleScattering = ComputeSingleScattering(pos, rayDir, density, seed);
+                    result.radiance += throughput * result.transmittance * singleScattering * stepSize;
+                }
+            }
             
             // 更新透射率
             result.transmittance *= stepTransmittance;
