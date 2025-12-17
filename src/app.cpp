@@ -305,223 +305,234 @@ void Application::OnInit() {
     // Create scene - Cornell Box scene
     scene_ = std::make_unique<Scene>(core_.get());
 
-    // Cornell Box 原始尺寸约为 556x548.8x559.2，需要缩放以适应场景
-    // 缩放因子 0.02 使其约为 11.12x10.98x11.18 单位（扩大一倍）
-    // 同时需要平移使其中心位于原点附近
-    glm::mat4 cornell_box_transform = glm::translate(glm::mat4(1.0f), glm::vec3(-5.56f, 0.0f, -5.6f))
-                                    * glm::scale(glm::mat4(1.0f), glm::vec3(0.02f));
+    // ==================== 加载 Staircase 场景 ====================
+    // Staircase 场景变换 - 缩放并平移到原点附近以便相机进入观看
+    // 许多外部模型使用较大的原始单位，这里先缩小 0.02（可根据运行结果再调整）并向后移至 -3.0
+    glm::mat4 staircase_transform = glm::translate(glm::mat4(1.0f), glm::vec3(-0.5f, 0.0f, -3.0f))
+                                   * glm::scale(glm::mat4(1.0f), glm::vec3(0.02f));
 
-    // Add Cornell Box Floor (white)
+    // 加载 Black 物体
     {
-        auto floor = std::make_shared<Entity>(
-            "meshes/cornell_box_floor.obj",
-            Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.8f, 0.0f),  // white
-            cornell_box_transform
+        auto entity = std::make_shared<Entity>(
+            "meshes/staircase/Black.obj",
+            Material(glm::vec3(0.05f, 0.05f, 0.05f), 0.3f, 0.0f),  // 黑色材质
+            staircase_transform
         );
-        scene_->AddEntity(floor);
+        scene_->AddEntity(entity);
     }
 
-    // Add Cornell Box Ceiling (white)
+    // 加载 Brass 物体
     {
-        auto ceiling = std::make_shared<Entity>(
-            "meshes/cornell_box_ceiling.obj",
-            Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.8f, 0.0f),  // white
-            cornell_box_transform
+        auto entity = std::make_shared<Entity>(
+            "meshes/staircase/Brass.obj",
+            Material(glm::vec3(0.8f, 0.6f, 0.3f), 0.2f, 0.9f),  // 黄铜金属材质
+            staircase_transform
         );
-        scene_->AddEntity(ceiling);
+        scene_->AddEntity(entity);
     }
 
-    // // Add Cornell Box Back Wall (white)
-    // {
-    //     auto back_wall = std::make_shared<Entity>(
-    //         "meshes/cornell_box_back_wall.obj",
-    //         Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.8f, 0.0f),  // white
-    //         cornell_box_transform
-    //     );
-    //     scene_->AddEntity(back_wall);
-    // }
-
-// BSDF mirrow with clear coat implement. backup
-    // Add Cornell Box Front Wall (glass material with sakura texture, white color)
+    // 加载 BrushedAluminium 物体
     {
-        // Metallic mirror material with clear coat (softer parameters)
-        Material front_wall_material(glm::vec3(1.0f, 1.0f, 1.0f), 0.05f, 0.9f);  // white, metallic mirror (roughness=0.05, metallic=0.9)
-        front_wall_material.clearcoat = 0.8f;              // Moderate clear coat strength
-        front_wall_material.clearcoat_roughness = 0.05f;   // Slightly rougher clear coat for softer reflection
+        auto entity = std::make_shared<Entity>(
+            "meshes/staircase/BrushedAluminium.obj",
+            Material(glm::vec3(0.7f, 0.7f, 0.7f), 0.3f, 0.9f),  // 拉丝铝材质
+            staircase_transform
+        );
+        scene_->AddEntity(entity);
+    }
+
+    // 加载 Candles 物体
+    {
+        Material candle_material(glm::vec3(0.9f, 0.85f, 0.7f), 0.4f, 0.0f);  // 蜡烛材质
+        candle_material.emission_color = glm::vec3(1.0f, 0.7f, 0.3f);  // 暖黄色发光
+        candle_material.emission_strength = 2.0f;  // 中等发光强度
         
-        // Front wall dimensions: width=556, height=548.8 (in original coordinates)
-        // After cornell_box_transform (scale 0.02): width=11.12, height=10.976
-        // Cube is 2x2x2 unit cube, so scale factors: width=11.12/2=5.56, height=10.976/2=5.488, depth=0.1/2=0.05
-        // Center position: x=(549.6+0)/2*0.02-5.56=-0.064, y=274.4*0.02=5.488, z=0*0.02-5.6=-5.6
-        glm::mat4 front_wall_transform = glm::translate(glm::mat4(1.0f), glm::vec3(-0.064f, 5.488f, -5.6f))
-                                       * glm::scale(glm::mat4(1.0f), glm::vec3(5.56f, 5.488f, 0.05f));  // Scale cube to match wall size
+        auto entity = std::make_shared<Entity>(
+            "meshes/staircase/Candles.obj",
+            candle_material,
+            staircase_transform
+        );
+        scene_->AddEntity(entity);
+    }
+
+    // 加载 ChairSeat 物体
+    {
+        auto entity = std::make_shared<Entity>(
+            "meshes/staircase/ChairSeat.obj",
+            Material(glm::vec3(0.4f, 0.3f, 0.2f), 0.6f, 0.0f),  // 椅子座位材质
+            staircase_transform
+        );
+        scene_->AddEntity(entity);
+    }
+
+    // 加载 Emission 物体（发光物体）
+    {
+        Material emission_material(glm::vec3(1.0f, 1.0f, 1.0f), 0.0f, 0.0f);
+        emission_material.emission_color = glm::vec3(1.0f, 0.95f, 0.9f);  // 白色光
+        emission_material.emission_strength = 10.0f;  // 强发光
         
-        auto front_wall = std::make_shared<Entity>(
-            "meshes/cube.obj",
-            front_wall_material,
-            front_wall_transform
+        auto entity = std::make_shared<Entity>(
+            "meshes/staircase/Emission.obj",
+            emission_material,
+            staircase_transform
         );
-        scene_->AddEntity(front_wall);
+        scene_->AddEntity(entity);
     }
 
-    // Add Cornell Box Front Wall (white block material with height map)
-    // {
-    //     // White block material (high roughness, more diffuse reflection)
-    //     Material front_wall_material(glm::vec3(1.0f, 1.0f, 1.0f), 0.8f, 0.0f);  // white, high roughness, non-metallic
-    //     front_wall_material.height_scale = 0.1f;  // Enable height map with strong effect
-        
-    //     // Front wall dimensions: width=556, height=548.8 (in original coordinates)
-    //     // After cornell_box_transform (scale 0.02): width=11.12, height=10.976
-    //     // Cube is 2x2x2 unit cube, so scale factors: width=11.12/2=5.56, height=10.976/2=5.488, depth=0.1/2=0.05
-    //     // Center position: x=(549.6+0)/2*0.02-5.56=-0.064, y=274.4*0.02=5.488, z=0*0.02-5.6=-5.6
-    //     glm::mat4 front_wall_transform = glm::translate(glm::mat4(1.0f), glm::vec3(-0.064f, 5.488f, -5.6f))
-    //                                    * glm::scale(glm::mat4(1.0f), glm::vec3(5.56f, 5.488f, 0.05f));  // Scale cube to match wall size
-        
-    //     auto front_wall = std::make_shared<Entity>(
-    //         "meshes/cube.obj",
-    //         front_wall_material,
-    //         front_wall_transform,
-    //         "",
-    //         "textures/normal.png"
-    //     );
-    //     scene_->AddEntity(front_wall);
-    // }
-
+    // 加载 Glass 物体
     {
-        auto blue_cube = std::make_shared<Entity>(
-            "meshes/cube.obj",
-            Material(glm::vec3(0.3f, 0.3f, 1.0f), 0.05f, 0.0f, 0.95f, 1.5f), // 蓝色玻璃：明显的蓝色色调
-            // Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.3f, 0.9f),  // 白色基础,金属
-            // 将蓝色玻璃往 x 轴靠外移动，更靠近摄像机位置
-            glm::translate(glm::mat4(1.0f), glm::vec3(-2.0f, 2.0f, 4.0f))  // x从2.0改为3.5，更靠近相机
-            // "textures/sakura.png"
+        auto entity = std::make_shared<Entity>(
+            "meshes/staircase/Glass.obj",
+            Material(glm::vec3(0.95f, 0.95f, 0.95f), 0.02f, 0.0f, 0.95f, 1.5f),  // 玻璃材质
+            staircase_transform
         );
-        blue_cube->SetVelocity(glm::vec3(1.0f, 0.0f, 0.0f));  // 向右移动的运动模糊
-        scene_->AddEntity(blue_cube);
+        scene_->AddEntity(entity);
     }
 
-
+    // 加载 Gold 物体
     {
-        // White base material with iiis texture
-        auto white_cube = std::make_shared<Entity>(
-            "meshes/cube.obj",
-            Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.8f, 0.0f),  // white base material (non-metallic, non-transparent)
-            glm::translate(glm::mat4(1.0f), glm::vec3(2.0f, 1.0f, 4.0f)),
-            "textures/iiis.png"  // Add iiis texture
+        auto entity = std::make_shared<Entity>(
+            "meshes/staircase/Gold.obj",
+            Material(glm::vec3(1.0f, 0.8f, 0.3f), 0.15f, 1.0f),  // 金色金属材质
+            staircase_transform
         );
-        white_cube->SetVelocity(glm::vec3(1.0f, 0.0f, 0.0f));  // 向右移动的运动模糊
-        scene_->AddEntity(white_cube);
+        scene_->AddEntity(entity);
     }
 
-
-    // Add Cornell Box Green Wall
+    // 加载 Lampshade 物体
     {
-        auto green_wall = std::make_shared<Entity>(
-            "meshes/cornell_box_green_wall.obj",
-            Material(glm::vec3(0.0f, 1.0f, 0.0f), 0.8f, 0.0f),  // green
-            cornell_box_transform
+        auto entity = std::make_shared<Entity>(
+            "meshes/staircase/Lampshade.obj",
+            Material(glm::vec3(0.9f, 0.9f, 0.85f), 0.5f, 0.0f),  // 灯罩材质
+            staircase_transform
         );
-        scene_->AddEntity(green_wall);
+        scene_->AddEntity(entity);
     }
 
-    // Add Cornell Box Red Wall
+    // 加载 MagnoliaPaint 物体
     {
-        auto red_wall = std::make_shared<Entity>(
-            "meshes/cornell_box_red_wall.obj",
-            Material(glm::vec3(1.0f, 0.0f, 0.0f), 0.8f, 0.0f),  // red
-            cornell_box_transform
+        auto entity = std::make_shared<Entity>(
+            "meshes/staircase/MagnoliaPaint.obj",
+            Material(glm::vec3(0.95f, 0.93f, 0.88f), 0.7f, 0.0f),  // 玉兰白油漆材质
+            staircase_transform
         );
-        scene_->AddEntity(red_wall);
+        scene_->AddEntity(entity);
     }
 
-    // Add Cornell Box Light (emissive white)
+    // 加载 Painting1 物体
     {
-        Material light_material(glm::vec3(1.0f, 1.0f, 1.0f), 0.8f, 0.0f);
-        light_material.emission_color = glm::vec3(1.0f, 1.0f, 1.0f);
-        light_material.emission_strength = 20.0f;  // Ka 20 20 20 from MTL
-        
-        auto light = std::make_shared<Entity>(
-            "meshes/cornell_box_light.obj",
-            light_material,
-            cornell_box_transform
+        auto entity = std::make_shared<Entity>(
+            "meshes/staircase/Painting1.obj",
+            Material(glm::vec3(0.8f, 0.7f, 0.6f), 0.6f, 0.0f),  // 画作1材质
+            staircase_transform
         );
-        scene_->AddEntity(light);
+        scene_->AddEntity(entity);
     }
 
-    // Add Cornell Box Short Block (white base material with tsinghua texture)
+    // 加载 Painting2 物体
     {
-        // Replace short_block with cube of same size, with tsinghua texture
-        // Short block dimensions: width≈208, height=165, depth≈207 (in original coordinates)
-        // After cornell_box_transform (scale 0.02): width≈4.16, height=3.3, depth≈4.14
-        // Scale to 2x current size: width≈2.496, height=1.98, depth≈2.484
-        // Adjust position so bottom surface aligns with floor (y=0), then move up 1 unit
-        // Cube height = 1.98, so center should be at y = 1.98/2 + 1.0 = 1.99
-        glm::mat4 cube_transform = glm::translate(glm::mat4(1.0f), glm::vec3(-1.84f, 1.99f, -2.23f))
-                                  * glm::scale(glm::mat4(1.0f), glm::vec3(2.496f, 1.98f, 2.484f));  // Scale to 2x current size
-        
-        auto short_block = std::make_shared<Entity>(
-            "meshes/cube.obj",
-            Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.8f, 0.0f),  // white, non-metallic base material
-            cube_transform,
-            "textures/tsinghua.png"  // Add tsinghua texture
+        auto entity = std::make_shared<Entity>(
+            "meshes/staircase/Painting2.obj",
+            Material(glm::vec3(0.7f, 0.6f, 0.5f), 0.6f, 0.0f),  // 画作2材质
+            staircase_transform
         );
-        // short_block->SetVelocity(glm::vec3(0.0f, 0.0f, 1.0f));  // 向 z 轴正方向移动的运动模糊
-        scene_->AddEntity(short_block);
+        scene_->AddEntity(entity);
     }
 
-    // {
-    //     auto blue_cube = std::make_shared<Entity>(
-    //         "meshes/cube.obj",
-    //         Material(glm::vec3(0.3f, 0.3f, 1.0f), 0.05f, 0.0f, 0.95f, 1.5f), // 蓝色玻璃：明显的蓝色色调
-    //         // Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.3f, 0.9f),  // 白色基础,金属
-    //         // 将蓝色玻璃往 x 轴靠外移动，更靠近摄像机位置
-    //         glm::translate(glm::mat4(1.0f), glm::vec3(3.5f, 1.0f, 10.0f)),  // x从2.0改为3.5，更靠近相机
-    //         "textures/sakura.png"
-    //     );
-    //     blue_cube->SetVelocity(glm::vec3(1.0f, 0.0f, 0.0f));  // 向右移动的运动模糊
-    //     scene_->AddEntity(blue_cube);
-    // }
+    // 加载 Painting3 物体
+    {
+        auto entity = std::make_shared<Entity>(
+            "meshes/staircase/Painting3.obj",
+            Material(glm::vec3(0.6f, 0.7f, 0.6f), 0.6f, 0.0f),  // 画作3材质
+            staircase_transform
+        );
+        scene_->AddEntity(entity);
+    }
 
+    // 加载 StainlessSteel 物体
+    {
+        auto entity = std::make_shared<Entity>(
+            "meshes/staircase/StainlessSteel.obj",
+            Material(glm::vec3(0.75f, 0.75f, 0.75f), 0.25f, 1.0f),  // 不锈钢材质
+            staircase_transform
+        );
+        scene_->AddEntity(entity);
+    }
 
+    // 加载 Wallpaper 物体
+    {
+        auto entity = std::make_shared<Entity>(
+            "meshes/staircase/Wallpaper.obj",
+            Material(glm::vec3(0.85f, 0.82f, 0.78f), 0.8f, 0.0f),  // 壁纸材质
+            staircase_transform
+        );
+        scene_->AddEntity(entity);
+    }
 
+    // 加载 WhitePaint 物体
+    {
+        auto entity = std::make_shared<Entity>(
+            "meshes/staircase/WhitePaint.obj",
+            Material(glm::vec3(0.95f, 0.95f, 0.95f), 0.7f, 0.0f),  // 白色油漆材质
+            staircase_transform
+        );
+        scene_->AddEntity(entity);
+    }
 
-    // Add Cornell Box Tall Block (white) - replaced by flower
-    // {
-    //     auto tall_block = std::make_shared<Entity>(
-    //         "meshes/cornell_box_tall_block.obj",
-    //         Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.8f, 0.0f),  // white
-    //         cornell_box_transform
-    //     );
-    //     scene_->AddEntity(tall_block);
-    // }
+    // 加载 WhitePlastic 物体
+    {
+        auto entity = std::make_shared<Entity>(
+            "meshes/staircase/WhitePlastic.obj",
+            Material(glm::vec3(0.9f, 0.9f, 0.9f), 0.4f, 0.0f),  // 白色塑料材质
+            staircase_transform
+        );
+        scene_->AddEntity(entity);
+    }
 
-    // Add small flower asset from assets (scale 0.1) and rotate to stand upright
-    // Positioned at tall_block location: center at (368.5, 165.0, 351.5) in original coordinates
-    // After cornell_box_transform (scale 0.02, translate (-5.56, 0, -5.6)):
-    // x: 368.5 * 0.02 - 5.56 = 1.81
-    // y: 165.0 * 0.02 = 3.3
-    // z: 351.5 * 0.02 - 5.6 = 1.43
-    // {
-    //     // Build a transform: translate * rotate * scale
-    //     // Position at tall_block center, rotate to stand upright
-    //     glm::mat4 flower_transform = glm::translate(glm::mat4(1.0f), glm::vec3(1.81f, 3.3f, 1.43f))
-    //                               * glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f))
-    //                               * glm::scale(glm::mat4(1.0f), glm::vec3(0.1f));
+    // 加载 WoodChair 物体
+    {
+        auto entity = std::make_shared<Entity>(
+            "meshes/staircase/WoodChair.obj",
+            Material(glm::vec3(0.5f, 0.3f, 0.2f), 0.7f, 0.0f),  // 木质椅子材质
+            staircase_transform
+        );
+        scene_->AddEntity(entity);
+    }
 
-    //     auto flower = std::make_shared<Entity>(
-    //         "meshes/12973_anemone_flower_v1_l2.obj",
-    //         // diffuse, non-metallic material
-    //         Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.8f, 0.0f),
-    //         flower_transform,
-    //         // use diffuse texture from the mesh's material if available
-    //         "meshes/12973_anemone_flower_diff.jpg"
-    //     );
-    //     // keep static (no velocity) by default
-    //     flower->SetVelocity(glm::vec3(0.0f, 0.0f, 0.0f));
-    //     scene_->AddEntity(flower);
-    // }
+    // 加载 WoodFloor 物体
+    {
+        auto entity = std::make_shared<Entity>(
+            "meshes/staircase/WoodFloor.obj",
+            Material(glm::vec3(0.6f, 0.4f, 0.25f), 0.65f, 0.0f),  // 木地板材质
+            staircase_transform
+        );
+        scene_->AddEntity(entity);
+    }
 
-    // Build acceleration structures
+    // 加载 WoodLamp 物体
+    {
+        auto entity = std::make_shared<Entity>(
+            "meshes/staircase/WoodLamp.obj",
+            Material(glm::vec3(0.55f, 0.35f, 0.22f), 0.7f, 0.0f),  // 木质灯具材质
+            staircase_transform
+        );
+        scene_->AddEntity(entity);
+    }
+
+    // 加载 WoodStairs 物体
+    {
+        auto entity = std::make_shared<Entity>(
+            "meshes/staircase/WoodStairs.obj",
+            Material(glm::vec3(0.5f, 0.35f, 0.2f), 0.7f, 0.0f),  // 木质楼梯材质
+            staircase_transform
+        );
+        scene_->AddEntity(entity);
+    }
+    
+    grassland::LogInfo("Loaded staircase scene with {} objects", 21);
+    // ==================== Staircase 场景加载完成 ====================
+
+    
     scene_->BuildAccelerationStructures();
 
     // Create film for accumulation
@@ -554,6 +565,19 @@ void Application::OnInit() {
     point_lights_[0].color = glm::vec3(1.0f, 0.95f, 0.9f);      // 稍微暖色调的白光
     point_lights_[0].strength = 2000.0f;                        // 高强度，明显区别于环境光
     point_lights_[0].radius = 0.15f;                            // 较小的半径，产生明显的高光
+
+    // 为 Staircase 场景添加若干点光源（烛光与台灯）
+    // Candle/emission cluster (soft warm lights)
+    point_lights_[1].position = glm::vec3(1.0f, 1.25f, -1.0f);
+    point_lights_[1].color = glm::vec3(1.0f, 0.75f, 0.45f);
+    point_lights_[1].strength = 120.0f;   // 温暖的局部光
+    point_lights_[1].radius = 0.35f;      // 更大的半径以产生柔和衰减
+
+    // Small lamp near stairs
+    point_lights_[2].position = glm::vec3(-0.8f, 1.6f, -0.5f);
+    point_lights_[2].color = glm::vec3(1.0f, 0.95f, 0.9f);
+    point_lights_[2].strength = 300.0f;
+    point_lights_[2].radius = 0.25f;
     
     // 创建并上传点光源缓冲区
     core_->CreateBuffer(sizeof(PointLight) * 16, grassland::graphics::BUFFER_TYPE_DYNAMIC, &point_lights_buffer_);
@@ -567,7 +591,7 @@ void Application::OnInit() {
     // Position should be near ceiling center, slightly below it
     area_lights_[0].position = glm::vec3(0.0f, 10.5f, 0.0f);      // 接近天花板（调整到正确位置）
     area_lights_[0].color = glm::vec3(1.0f, 1.0f, 1.0f);         // 白色
-    area_lights_[0].strength = 0.0f;                            // 较强的主光源
+    area_lights_[0].strength = 60.0f;                            // 主顶面光，用于整体照明
     area_lights_[0].width = 6.0f;                                 // 扩大面积以匹配场景（从3.0改为6.0）
     area_lights_[0].height = 6.0f;                                // 扩大面积以匹配场景（从3.0改为6.0）
     area_lights_[0].direction = glm::normalize(glm::vec3(0.0f, -1.0f, 0.0f));  // 向下
@@ -577,9 +601,9 @@ void Application::OnInit() {
     area_lights_[0].pad2 = 0.0f;
     
     // 配置左侧光
-    area_lights_[1].position = glm::vec3(-4.9f, 2.0f, 0.0f);     // 靠近左墙
-    area_lights_[1].color = glm::vec3(0.4f, 0.4f, 1.0f);         // 柔和蓝色
-    area_lights_[1].strength = 0.0f;                             // 中等强度
+    area_lights_[1].position = glm::vec3(-3.0f, 2.2f, -0.5f);     // 靠近楼梯侧面
+    area_lights_[1].color = glm::vec3(0.95f, 0.9f, 0.8f);         // 偏暖的填充光
+    area_lights_[1].strength = 18.0f;                             // 中等强度，用于侧向补光
     area_lights_[1].width = 0.5f;                                 // 窄条
     area_lights_[1].height = 2.5f;                                // 高条
     area_lights_[1].direction = glm::normalize(glm::vec3(1.0f, 0.0f, 0.0f));   // 向右
@@ -589,9 +613,9 @@ void Application::OnInit() {
     area_lights_[1].pad2 = 0.0f;
     
     // 配置右侧光
-    area_lights_[2].position = glm::vec3(4.9f, 2.0f, 0.0f);      // 靠近右墙
-    area_lights_[2].color = glm::vec3(1.0f, 0.6f, 0.4f);         // 暖橙色
-    area_lights_[2].strength = 0.0f;                             // 中等强度
+    area_lights_[2].position = glm::vec3(2.5f, 2.2f, -0.5f);      // 靠近楼梯另一侧
+    area_lights_[2].color = glm::vec3(1.0f, 0.85f, 0.7f);         // 偏暖的补光
+    area_lights_[2].strength = 14.0f;                             // 中等强度，柔和补光
     area_lights_[2].width = 0.5f;                                 // 窄条
     area_lights_[2].height = 2.5f;                                // 高条
     area_lights_[2].direction = glm::normalize(glm::vec3(-1.0f, 0.0f, 0.0f));  // 向左
@@ -654,13 +678,16 @@ void Application::OnInit() {
     core_->CreateSampler(env_sampler_info, &environment_sampler_);
 
     // Initialize camera state member variables
-    camera_pos_ = glm::vec3{ -0.3f, 2.1f, 10.2f }; // 展览馆内部视角
     camera_up_ = glm::vec3{ 0.0f, 1.0f, 0.0f }; // World up
-    camera_speed_ = 0.05f; // 提升5倍速度（从0.01到0.05）
+    camera_speed_ = 0.05f;
 
-    // Initialize new mouse/view variables
-    yaw_ = -111.6f; // 根据相机方向设置
-    pitch_ = -12.5f;
+    // 将相机放在场景入口处，略低并向内看以匹配示意图构图
+    // 位置可根据运行时效果微调
+    camera_pos_ = glm::vec3(0.0f, 4.0f, 2.0f); // 在场景前方，略高于地面
+    camera_front_ = glm::normalize(glm::vec3(0.0f, 0.08f, -1.0f));
+    // 从前向量计算 yaw/pitch 以保持鼠标控制一致性
+    yaw_ = glm::degrees(atan2(camera_front_.z, camera_front_.x));
+    pitch_ = glm::degrees(asin(glm::clamp(camera_front_.y, -1.0f, 1.0f)));
     last_x_ = (float)window_->GetWidth() / 2.0f;
     last_y_ = (float)window_->GetHeight() / 2.0f;
     mouse_sensitivity_ = 0.1f;
@@ -697,7 +724,7 @@ void Application::OnInit() {
     // Set initial camera buffer data
     CameraObject camera_object{};
     camera_object.screen_to_camera = glm::inverse(
-        glm::perspective(glm::radians(60.0f), (float)window_->GetWidth() / (float)window_->GetHeight(), 0.1f, 10.0f));
+        glm::perspective(glm::radians(45.0f), (float)window_->GetWidth() / (float)window_->GetHeight(), 0.1f, 100.0f));
     camera_object.camera_to_world =
         glm::inverse(glm::lookAt(camera_pos_, camera_pos_ + camera_front_, camera_up_));
     camera_object.aperture = aperture_;
