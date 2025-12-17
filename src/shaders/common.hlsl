@@ -22,6 +22,11 @@ struct CameraInfo {
   int motion_blur_mode;     // 0=Off, 1=Camera, 2=Object, 3=Radial, 4=Directional
   float motion_blur_intensity; // 运动模糊强度
   float2 motion_blur_direction; // 方向性模糊的方向
+  // Cartoon Rendering 参数
+  int enable_toon_shading;  // 是否启用卡通渲染 (0=Off, 1=On)
+  int enable_toon_outline;  // 是否启用轮廓线 (0=Off, 1=On)
+  int toon_color_levels;    // 色彩量化级别 (3-10)
+  int toon_shading_steps;   // 光照阶梯数 (2-5)
 };
 
 // Principled BSDF Material (matches C++ struct layout)
@@ -244,6 +249,54 @@ static const float MIN_LIGHT_DISTANCE = 0.05;     // 点光源最小距离（数
 static const float MIN_LIGHT_RADIUS = 0.01;       // 点光源最小半径
 static const float MAX_ATTENUATION = 1e4;         // 光源衰减最大值（防止过曝）
 static const float MAX_RADIANCE_PER_LIGHT = 100.0; // 单光源最大辐射度（防止异常亮点）
+
+// ==================== Cartoon Rendering (NPR) 参数 ====================
+// 卡通渲染全局参数（可通过UI调整）
+static const int TOON_COLOR_LEVELS = 4;           // 色彩量化级别 (3-10)
+static const int TOON_SHADING_STEPS = 3;          // 光照阶梯数 (2-5)
+static const float TOON_OUTLINE_THRESHOLD = 0.15; // 轮廓检测阈值（法线差异）
+static const float3 TOON_OUTLINE_COLOR = float3(0.0, 0.0, 0.0); // 轮廓线颜色（黑色）
+
+// ==================== Cartoon Rendering 辅助函数 ====================
+
+// 色彩量化函数：将连续色彩离散化为固定数量的色阶
+// color: 输入颜色 (HDR或LDR)
+// levels: 量化级别数 (建议 3-10)
+// 返回：量化后的颜色
+float3 QuantizeColor(float3 color, int levels) {
+    // 确保 levels 至少为 2
+    levels = max(2, levels);
+    // 量化每个通道
+    return floor(color * float(levels)) / float(levels);
+}
+
+// 阶梯光照函数：将平滑的光照强度转换为阶梯式
+// NdotL: 法线与光线方向的点积 (0-1)
+// steps: 阶梯数量 (建议 2-5)
+// 返回：阶梯化后的光照强度 (0-1)
+float StepShading(float NdotL, int steps) {
+    // 确保 steps 至少为 2
+    steps = max(2, steps);
+    // 将 [0,1] 范围分为 steps 个阶梯
+    return floor(NdotL * float(steps)) / float(steps);
+}
+
+// Sobel 边缘检测：检测法线不连续性
+// 返回：边缘强度 (0-1)，1 表示边缘
+float DetectEdge(uint2 pixelCoord, float3 centerNormal, float centerDepth) {
+    // Sobel 算子的 3x3 卷积核
+    // Gx 用于水平边缘检测，Gy 用于垂直边缘检测
+    float3 Gx = float3(0, 0, 0);
+    float3 Gy = float3(0, 0, 0);
+    
+    // 采样周围 8 个像素的法线（简化版：只采样上下左右）
+    // 注意：在 ray generation shader 中无法直接读取其他像素的法线
+    // 这需要额外的法线缓冲区，在后续步骤中实现
+    
+    // 简化版本：只比较中心像素和采样像素的法线差异
+    // 这里返回 0，实际边缘检测在 RayGenMain 中实现
+    return 0.0;
+}
 
 #endif // COMMON_HLSL
 

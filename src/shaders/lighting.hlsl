@@ -241,6 +241,12 @@ float3 ComputeAreaLightContribution(float3 hitPos, float3 normal, float3 viewDir
             continue;
         }
         
+        // ===== 卡通渲染：应用阶梯光照 =====
+        if (camera_info.enable_toon_shading > 0) {
+            int steps = max(2, camera_info.toon_shading_steps);
+            NdotL = StepShading(NdotL, steps);
+        }
+        
         // 3. 阴影检测：计算光源到表面的可见度
         float3 visibility = TraceAlphaShadowRGB(hitPos + normal * RAY_EPSILON, lightDir, dist - RAY_EPSILON, seed);
         
@@ -302,6 +308,13 @@ float3 ComputePointLightContribution(float3 hitPos, float3 normal, float3 viewDi
 	float NdotL = dot(normal, lightDir);
 	if (NdotL <= 0.0) {
 		return float3(0.0, 0.0, 0.0);
+	}
+	
+	// ===== 卡通渲染：应用阶梯光照 =====
+	// 将平滑的 NdotL 转换为阶梯式（如果启用）
+	if (camera_info.enable_toon_shading > 0) {
+		int steps = max(2, camera_info.toon_shading_steps);
+		NdotL = StepShading(NdotL, steps);
 	}
 	
 	// 检查阴影遮挡：计算光源到表面的可见度

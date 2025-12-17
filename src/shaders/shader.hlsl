@@ -157,6 +157,85 @@
     // Gamma 校正
     mappedColor = pow(mappedColor, 1.0 / 2.2);
     
+    // ==================== 方案一：色彩量化（卡通效果）====================
+    // 将连续色彩离散化为固定色阶，产生扁平化的卡通风格
+    if (camera_info.enable_toon_shading > 0) {
+        int levels = max(2, camera_info.toon_color_levels);
+        mappedColor = QuantizeColor(mappedColor, levels);
+    }
+    
+    // ==================== 方案二：边缘检测与描边 ====================
+    // 检测法线不连续性来绘制轮廓线
+    bool isOutline = false;
+    
+    if (camera_info.enable_toon_outline > 0) {
+    
+    // 只有在击中物体时才进行边缘检测
+    if (pickPayload.hit) {
+        float3 centerNormal = pickPayload.normal;
+        float centerDepth = length(pickPayload.hit_pos - camera_info.camera_to_world[3].xyz);
+        
+        // 采样周围像素的法线（简化版：只检查上下左右4个方向）
+        int2 offsets[4] = {
+            int2(1, 0),   // 右
+            int2(-1, 0),  // 左
+            int2(0, 1),   // 下
+            int2(0, -1)   // 上
+        };
+        
+        float maxNormalDiff = 0.0;
+        
+        for (int i = 0; i < 4; i++) {
+            int2 neighborCoord = int2(dispatchIndex) + offsets[i];
+            
+            // 边界检查
+            if (neighborCoord.x >= 0 && neighborCoord.x < (int)DispatchRaysDimensions().x &&
+                neighborCoord.y >= 0 && neighborCoord.y < (int)DispatchRaysDimensions().y) {
+                
+                // 追踪邻近像素的光线以获取法线
+                RayPayload neighborPayload;
+                neighborPayload.hit = false;
+                
+                float3 neighborOrigin, neighborDir;
+                GeneratePickRay(uint2(neighborCoord), neighborOrigin, neighborDir);
+                
+                RayDesc neighborRay;
+                neighborRay.Origin = neighborOrigin;
+                neighborRay.Direction = neighborDir;
+                neighborRay.TMin = 0.001;
+                neighborRay.TMax = 10000.0;
+                TraceRay(as, RAY_FLAG_NONE, 0xFF, 0, 1, 0, neighborRay, neighborPayload);
+                
+                if (neighborPayload.hit) {
+                    // 计算法线差异
+                    float normalDiff = 1.0 - dot(centerNormal, neighborPayload.normal);
+                    maxNormalDiff = max(maxNormalDiff, normalDiff);
+                    
+                    // 也检查深度差异（用于检测物体边缘）
+                    float neighborDepth = length(neighborPayload.hit_pos - camera_info.camera_to_world[3].xyz);
+                    float depthDiff = abs(centerDepth - neighborDepth) / centerDepth;
+                    if (depthDiff > 0.1) { // 深度差异阈值
+                        maxNormalDiff = max(maxNormalDiff, depthDiff);
+                    }
+                } else {
+                    // 邻近像素没有击中物体 = 这是轮廓边缘
+                    maxNormalDiff = 1.0;
+                }
+            }
+        }
+        
+        // 如果法线差异超过阈值，标记为轮廓线
+        if (maxNormalDiff > TOON_OUTLINE_THRESHOLD) {
+            isOutline = true;
+        }
+    }
+    
+        // 应用轮廓线颜色
+        if (isOutline) {
+            mappedColor = TOON_OUTLINE_COLOR;
+        }
+    } // end if (camera_info.enable_toon_outline > 0)
+    
     output[dispatchIndex] = float4(mappedColor, 1.0);
     entity_id_output[dispatchIndex] = pickPayload.hit ? (int)pickPayload.material_idx : -1;
 }

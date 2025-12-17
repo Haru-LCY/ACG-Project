@@ -730,6 +730,12 @@ void Application::OnInit() {
     motion_blur_mode_ = 0;          // 默认关闭运动模糊
     motion_blur_intensity_ = 0.5f;  // 默认强度
     motion_blur_direction_ = glm::vec2(1.0f, 0.0f); // 默认水平方向
+    
+    // Initialize Cartoon Rendering parameters
+    enable_toon_shading_ = 0;       // 默认关闭卡通渲染
+    enable_toon_outline_ = 0;       // 默认关闭轮廓线
+    toon_color_levels_ = 4;         // 默认4个色阶
+    toon_shading_steps_ = 3;        // 默认3个光照阶梯
 
     // Calculate initial camera_front_ based on yaw and pitch
     glm::vec3 front;
@@ -755,6 +761,10 @@ void Application::OnInit() {
     camera_object.motion_blur_mode = motion_blur_mode_;
     camera_object.motion_blur_intensity = motion_blur_intensity_;
     camera_object.motion_blur_direction = motion_blur_direction_;
+    camera_object.enable_toon_shading = enable_toon_shading_;
+    camera_object.enable_toon_outline = enable_toon_outline_;
+    camera_object.toon_color_levels = toon_color_levels_;
+    camera_object.toon_shading_steps = toon_shading_steps_;
     camera_object_buffer_->UploadData(&camera_object, sizeof(CameraObject));
 
     core_->CreateImage(window_->GetWidth(), window_->GetHeight(), grassland::graphics::IMAGE_FORMAT_R32G32B32A32_SFLOAT,
@@ -993,6 +1003,10 @@ void Application::OnUpdate() {
         current_camera_object.motion_blur_mode = motion_blur_mode_;
         current_camera_object.motion_blur_intensity = motion_blur_intensity_;
         current_camera_object.motion_blur_direction = motion_blur_direction_;
+        current_camera_object.enable_toon_shading = enable_toon_shading_;
+        current_camera_object.enable_toon_outline = enable_toon_outline_;
+        current_camera_object.toon_color_levels = toon_color_levels_;
+        current_camera_object.toon_shading_steps = toon_shading_steps_;
         camera_object_buffer_->UploadData(&current_camera_object, sizeof(CameraObject));
         // --------------- 修改结束 ---------------
 
@@ -1194,6 +1208,62 @@ void Application::RenderInfoOverlay() {
         film_->Reset();
         accumulated_frames_ = 0;
     };
+    
+    // ==================== Cartoon Rendering 控制 ====================
+    ImGui::SeparatorText("Cartoon Rendering (NPR)");
+    bool toon_changed = false;
+    
+    // 启用/禁用卡通渲染
+    bool toon_shading_enabled = (enable_toon_shading_ > 0);
+    if (ImGui::Checkbox("Enable Toon Shading", &toon_shading_enabled)) {
+        enable_toon_shading_ = toon_shading_enabled ? 1 : 0;
+        toon_changed = true;
+    }
+    ImGui::TextWrapped("Applies cel-shading effect with quantized colors and stepped lighting.");
+    
+    // 如果启用了卡通渲染，显示详细参数
+    if (enable_toon_shading_ > 0) {
+        ImGui::Spacing();
+        
+        // 色彩量化级别
+        if (ImGui::SliderInt("Color Levels", &toon_color_levels_, 2, 10)) {
+            toon_changed = true;
+        }
+        ImGui::TextWrapped("Number of color steps (lower = more cartoonish)");
+        
+        // 光照阶梯数
+        if (ImGui::SliderInt("Shading Steps", &toon_shading_steps_, 2, 5)) {
+            toon_changed = true;
+        }
+        ImGui::TextWrapped("Number of lighting steps (typically 2-4)");
+        
+        ImGui::Spacing();
+    }
+    
+    // 启用/禁用轮廓线
+    bool toon_outline_enabled = (enable_toon_outline_ > 0);
+    if (ImGui::Checkbox("Enable Outlines", &toon_outline_enabled)) {
+        enable_toon_outline_ = toon_outline_enabled ? 1 : 0;
+        toon_changed = true;
+    }
+    ImGui::TextWrapped("Draws black outlines around objects (computationally expensive!)");
+    
+    // 重置按钮
+    if (ImGui::Button("Reset Toon Settings", ImVec2(-1, 0))) {
+        enable_toon_shading_ = 0;
+        enable_toon_outline_ = 0;
+        toon_color_levels_ = 4;
+        toon_shading_steps_ = 3;
+        toon_changed = true;
+    }
+    
+    // 如果卡通渲染参数改变，重置累积
+    if (toon_changed && film_) {
+        film_->Reset();
+        accumulated_frames_ = 0;
+    }
+    
+    ImGui::Spacing();
     
     // ==================== Motion Blur 控制 ====================
     ImGui::SeparatorText("Motion Blur");

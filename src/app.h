@@ -20,6 +20,11 @@ struct CameraObject {
     int motion_blur_mode;         // 运动模糊模式: 0=Off, 1=Camera, 2=Object, 3=Radial, 4=Directional
     float motion_blur_intensity;  // 运动模糊强度
     glm::vec2 motion_blur_direction; // 方向性模糊的方向向量
+    // 卡通渲染参数
+    int enable_toon_shading;      // 是否启用卡通渲染: 0=Off, 1=On
+    int enable_toon_outline;      // 是否启用轮廓线: 0=Off, 1=On
+    int toon_color_levels;        // 色彩量化级别 (3-10)
+    int toon_shading_steps;       // 光照阶梯数 (2-5)
 };
 
 // Skybox / Environment Map 信息 (与 shader 中的定义匹配)
@@ -274,6 +279,12 @@ private:
     int motion_blur_mode_;        // 运动模糊模式
     float motion_blur_intensity_; // 运动模糊强度
     glm::vec2 motion_blur_direction_; // 方向性模糊的方向
+    
+    // Cartoon Rendering 参数
+    int enable_toon_shading_;     // 是否启用卡通渲染
+    int enable_toon_outline_;     // 是否启用轮廓线
+    int toon_color_levels_;       // 色彩量化级别
+    int toon_shading_steps_;      // 光照阶梯数
     
     // Mouse hovering
     double mouse_x_;
