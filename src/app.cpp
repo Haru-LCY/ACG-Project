@@ -664,8 +664,8 @@ void Application::OnInit() {
     // 环境雾配置（基于高度的程序化雾）
     volumetric_info_.environment_fog.top_height = 1.6f;          // 雾的顶部高度（清华盒子高度）
     volumetric_info_.environment_fog.bottom_height = 0.0f;       // 雾的底部高度
-    volumetric_info_.environment_fog.density_multiplier = 0.8f;  // 启用环境雾，较低密度（优化性能）
-    volumetric_info_.environment_fog.enable = 1.0f;              // 启用环境雾
+    volumetric_info_.environment_fog.density_multiplier = 0.8f;  // 密度保留配置
+    volumetric_info_.environment_fog.enable = 0.0f;              // 暂时关闭环境雾
     volumetric_info_.environment_fog.absorption_color = glm::vec3(0.85f, 0.88f, 0.95f); // 非常淡的蓝灰色雾
     volumetric_info_.environment_fog.padding1 = 0.0f;
     
@@ -675,7 +675,7 @@ void Application::OnInit() {
     volumetric_info_.light_beam.density = 0.8f;                  // 光柱密度（原硬编码值）
     volumetric_info_.light_beam.emission_intensity = 30.0f;      // 发光强度（原硬编码值）
     volumetric_info_.light_beam.emission_color = glm::vec3(1.0f, 0.15f, 0.15f); // 红色光柱（原硬编码值）
-    volumetric_info_.light_beam.enable = 1.0f;                   // 启用发光光柱
+    volumetric_info_.light_beam.enable = 0.0f;                   // 暂时关闭发光光柱
     volumetric_info_.light_beam.beam_direction = glm::vec3(0.0f, -1.0f, 0.0f); // 向下
     volumetric_info_.light_beam.radial_falloff_power = 1.5f;     // 径向衰减指数
     volumetric_info_.light_beam.longitudinal_falloff_power = 0.8f; // 纵向衰减指数
