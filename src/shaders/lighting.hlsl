@@ -11,22 +11,71 @@
 //Volumetric Alpha Shadow: 加上之前没有雾气阴影边缘是硬的，现在有散射阴影边缘是软的柔和的。
 
 
-// 简单的体积密度采样（程序化，基于高度）
-// 返回体积密度值（0-1），0表示无体积介质
-// 在此高度以下都有雾
+// 采样体积密度（统一使用 volumetric_info，支持环境雾和发光光柱）
+// 返回总体积密度值（0-1），用于阴影追踪中的透射率计算
 float SampleVolumeDensity(float3 pos) {
-    float height = pos.y;
-    
-    // 在盒子高度以下都有雾，密度随高度增加而减少
-    if (height >= fog_info.fog_top_height) {
-        return 0.0; // 盒子高度以上无雾
+    if (volumetric_info.enable < 0.5) {
+        return 0.0; // 体积渲染未启用
     }
     
-    // 使用更明显的密度分布：高度越低，密度越高
-    // 在底部（Y=0）密度最大，到顶部密度逐渐减少到0
-    float normalizedHeight = height / fog_info.fog_top_height; // 归一化到 [0, 1]
-    float fogDensity = 1.0 - normalizedHeight; // 线性衰减：底部1.0，顶部0.0
-    return fogDensity * fog_info.fog_density_multiplier; // 应用密度倍增系数
+    float totalDensity = 0.0;
+    
+    // 采样环境雾密度
+    if (volumetric_info.environment_fog.enable > 0.5) {
+        float height = pos.y;
+        float top_height = volumetric_info.environment_fog.top_height;
+        float bottom_height = volumetric_info.environment_fog.bottom_height;
+        
+        if (height < top_height) {
+            float fogDensity = 0.0;
+            if (height <= bottom_height) {
+                fogDensity = 1.0;
+            } else {
+                float normalizedHeight = (height - bottom_height) / (top_height - bottom_height);
+                fogDensity = 1.0 - normalizedHeight;
+            }
+            totalDensity += fogDensity * volumetric_info.environment_fog.density_multiplier;
+        }
+    }
+    
+    // 采样发光光柱密度（仅密度，不包括发光）
+    if (volumetric_info.light_beam.enable > 0.5) {
+        const int MAX_POINT_LIGHTS = 16;
+        for (int i = 0; i < MAX_POINT_LIGHTS; ++i) {
+            PointLight pl = point_lights[i];
+            if (pl.strength <= 0.0) continue;
+            
+            float3 lightVec = pos - pl.position;
+            float distToLight = length(lightVec);
+            
+            float beamRadius = volumetric_info.light_beam.radius;
+            float beamLength = volumetric_info.light_beam.length;
+            
+            if (distToLight > beamLength) continue;
+            
+            float3 lightDir = normalize(volumetric_info.light_beam.beam_direction);
+            float alongBeam = dot(lightVec, lightDir);
+            
+            if (alongBeam < 0.0 || alongBeam > beamLength) continue;
+            
+            float3 projected = alongBeam * lightDir;
+            float3 perpendicular = lightVec - projected;
+            float radialDist = length(perpendicular);
+            
+            if (radialDist > beamRadius) continue;
+            
+            float radialFalloff = 1.0 - saturate(radialDist / beamRadius);
+            radialFalloff = pow(radialFalloff, volumetric_info.light_beam.radial_falloff_power);
+            
+            float longitudinalFalloff = 1.0 - saturate(alongBeam / beamLength);
+            longitudinalFalloff = pow(longitudinalFalloff, volumetric_info.light_beam.longitudinal_falloff_power);
+            
+            float beamDensity = volumetric_info.light_beam.density * radialFalloff * longitudinalFalloff;
+            totalDensity = max(totalDensity, beamDensity);
+        }
+    }
+    
+    return totalDensity;
 }
 
 // Alpha shadow 阴影射线追踪（非递归版本，返回 RGB 可见度，支持有色透射 Beer–Lambert 衰减）
@@ -63,42 +112,55 @@ float3 TraceAlphaShadowRGB(float3 rayOrigin, float3 rayDirection, float maxDista
 		
 		// ===== 体积介质采样（在到达表面之前）=====
 		// 简单的步进采样：沿射线路径采样体积密度
-		float3 currentPos = rayOrigin;
-		float remainingDist = distanceToHit;
-		
-		while (remainingDist > fog_info.volume_step_size) {
-			// 采样当前位置的体积密度
-			float density = SampleVolumeDensity(currentPos);
+		if (volumetric_info.enable > 0.5) {
+			float3 currentPos = rayOrigin;
+			float remainingDist = distanceToHit;
+			float volumeStepSize = volumetric_info.min_step_size;
 			
-			if (density > MIN_DENSITY_THRESHOLD) {
-				// 计算体积衰减（Beer-Lambert定律）
-				// 使用配置的吸收颜色和密度计算衰减系数
-				float3 absorption = fog_info.fog_absorption_color * density;
-				float extinction = max(max(absorption.r, absorption.g), absorption.b);
+			while (remainingDist > volumeStepSize) {
+				// 采样当前位置的体积密度
+				float density = SampleVolumeDensity(currentPos);
 				
-				// 应用透射率：exp(-extinction * distance)
-				float transmittance = exp(-extinction * fog_info.volume_step_size);
-				visibility *= transmittance;
-				
-				// 提前终止检查
-				if (max(max(visibility.r, visibility.g), visibility.b) < MIN_VISIBILITY) {
-					return visibility;
+				if (density > MIN_DENSITY_THRESHOLD) {
+					// 计算体积衰减（Beer-Lambert定律）
+					// 使用散射和吸收系数计算消光系数
+					float3 extinction = volumetric_info.scattering.scattering_coeff + volumetric_info.scattering.absorption_coeff;
+					
+					// 如果启用环境雾，也考虑环境雾的吸收颜色
+					if (volumetric_info.environment_fog.enable > 0.5) {
+						extinction *= volumetric_info.environment_fog.absorption_color;
+					}
+					
+					extinction *= density;
+					
+					// 应用透射率：exp(-extinction * distance)
+					float transmittance_scalar = exp(-max(max(extinction.r, extinction.g), extinction.b) * volumeStepSize);
+					float3 transmittance = exp(-extinction * volumeStepSize);
+					visibility *= transmittance;
+					
+					// 提前终止检查
+					if (max(max(visibility.r, visibility.g), visibility.b) < MIN_VISIBILITY) {
+						return visibility;
+					}
 				}
+				
+				// 移动到下一个采样点
+				currentPos += shadowRay.Direction * volumeStepSize;
+				remainingDist -= volumeStepSize;
 			}
 			
-			// 移动到下一个采样点
-			currentPos += shadowRay.Direction * fog_info.volume_step_size;
-			remainingDist -= fog_info.volume_step_size;
-		}
-		
-		// 处理最后一段距离（如果还有剩余）
-		if (remainingDist > MIN_DISTANCE_THRESHOLD) {
-			float density = SampleVolumeDensity(currentPos);
-			if (density > MIN_DENSITY_THRESHOLD) {
-				float3 absorption = fog_info.fog_absorption_color * density;
-				float extinction = max(max(absorption.r, absorption.g), absorption.b);
-				float transmittance = exp(-extinction * remainingDist);
-				visibility *= transmittance;
+			// 处理最后一段距离（如果还有剩余）
+			if (remainingDist > MIN_DISTANCE_THRESHOLD) {
+				float density = SampleVolumeDensity(currentPos);
+				if (density > MIN_DENSITY_THRESHOLD) {
+					float3 extinction = volumetric_info.scattering.scattering_coeff + volumetric_info.scattering.absorption_coeff;
+					if (volumetric_info.environment_fog.enable > 0.5) {
+						extinction *= volumetric_info.environment_fog.absorption_color;
+					}
+					extinction *= density;
+					float3 transmittance = exp(-extinction * remainingDist);
+					visibility *= transmittance;
+				}
 			}
 		}
 		

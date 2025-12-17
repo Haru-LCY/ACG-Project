@@ -654,18 +654,46 @@ void Application::OnInit() {
     env_sampler_info.address_mode_w = grassland::graphics::ADDRESS_MODE_REPEAT;
     core_->CreateSampler(env_sampler_info, &environment_sampler_);
 
-    // ==================== 初始化体积雾 ====================
-    fog_info_.fog_top_height = 1.6f;                           // 雾的顶部高度（清华盒子高度）
-    fog_info_.fog_density_multiplier = 1.5f;                   // 雾密度倍增系数（原硬编码值）
-    fog_info_.volume_step_size = 0.05f;                        // 体积采样步长（原硬编码值）
-    fog_info_.padding1 = 0.0f;                                 // padding
-    fog_info_.fog_absorption_color = glm::vec3(0.8f, 0.8f, 1.0f); // 蓝色雾（原硬编码值）
-    fog_info_.padding2 = 0.0f;                                 // padding
+    // ==================== 初始化体积渲染系统 ====================
+    // 全局控制
+    volumetric_info_.min_step_size = 0.08f;      // 最小步长（高密度区域）
+    volumetric_info_.max_step_size = 0.25f;      // 最大步长（低密度区域）
+    volumetric_info_.max_distance = 100.0f;      // 最大追踪距离
+    volumetric_info_.enable = 1.0f;              // 启用体积渲染
     
-    // 创建并上传体积雾缓冲区
-    core_->CreateBuffer(sizeof(VolumetricFogInfo), grassland::graphics::BUFFER_TYPE_DYNAMIC, &fog_info_buffer_);
-    fog_info_buffer_->UploadData(&fog_info_, sizeof(VolumetricFogInfo));
-    grassland::LogInfo("Initialized volumetric fog");
+    // 环境雾配置（基于高度的程序化雾）
+    volumetric_info_.environment_fog.top_height = 1.6f;          // 雾的顶部高度（清华盒子高度）
+    volumetric_info_.environment_fog.bottom_height = 0.0f;       // 雾的底部高度
+    volumetric_info_.environment_fog.density_multiplier = 0.0f;  // 默认关闭环境雾
+    volumetric_info_.environment_fog.enable = 0.0f;              // 关闭环境雾（避免与光柱重叠）
+    volumetric_info_.environment_fog.absorption_color = glm::vec3(0.8f, 0.8f, 1.0f); // 蓝色雾
+    volumetric_info_.environment_fog.padding1 = 0.0f;
+    
+    // 发光光柱配置（从点光源发出的体积光柱）
+    volumetric_info_.light_beam.radius = 2.0f;                   // 光柱半径（原硬编码值）
+    volumetric_info_.light_beam.length = 10.0f;                  // 光柱长度（原硬编码值）
+    volumetric_info_.light_beam.density = 0.8f;                  // 光柱密度（原硬编码值）
+    volumetric_info_.light_beam.emission_intensity = 30.0f;      // 发光强度（原硬编码值）
+    volumetric_info_.light_beam.emission_color = glm::vec3(1.0f, 0.15f, 0.15f); // 红色光柱（原硬编码值）
+    volumetric_info_.light_beam.enable = 1.0f;                   // 启用发光光柱
+    volumetric_info_.light_beam.beam_direction = glm::vec3(0.0f, -1.0f, 0.0f); // 向下
+    volumetric_info_.light_beam.radial_falloff_power = 1.5f;     // 径向衰减指数
+    volumetric_info_.light_beam.longitudinal_falloff_power = 0.8f; // 纵向衰减指数
+    volumetric_info_.light_beam.padding2 = glm::vec3(0.0f);
+    
+    // 体积散射配置（单次散射光照）
+    volumetric_info_.scattering.scattering_coeff = glm::vec3(0.8f, 0.8f, 0.9f); // 散射系数（略微偏蓝）
+    volumetric_info_.scattering.phase_g = 0.3f;                  // 前向散射（原硬编码值）
+    volumetric_info_.scattering.absorption_coeff = glm::vec3(0.05f, 0.05f, 0.05f); // 吸收系数
+    volumetric_info_.scattering.enable = 1.0f;                   // 启用单次散射
+    
+    // 创建并上传体积渲染缓冲区
+    core_->CreateBuffer(sizeof(VolumetricRenderingInfo), grassland::graphics::BUFFER_TYPE_DYNAMIC, &volumetric_info_buffer_);
+    volumetric_info_buffer_->UploadData(&volumetric_info_, sizeof(VolumetricRenderingInfo));
+    grassland::LogInfo("Initialized volumetric rendering system (size: {} bytes)", sizeof(VolumetricRenderingInfo));
+    grassland::LogInfo("  - EnvironmentFogInfo: {} bytes", sizeof(EnvironmentFogInfo));
+    grassland::LogInfo("  - LightBeamInfo: {} bytes", sizeof(LightBeamInfo));
+    grassland::LogInfo("  - VolumeScatteringInfo: {} bytes", sizeof(VolumeScatteringInfo));
 
     // Initialize camera state member variables
     camera_pos_ = glm::vec3{ -0.3f, 2.1f, 10.2f }; // 新相机位置
@@ -807,8 +835,8 @@ void Application::OnClose() {
     environment_map_.reset();
     environment_sampler_.reset();
     
-    // 清理体积雾资源
-    fog_info_buffer_.reset();
+    // 清理体积渲染资源
+    volumetric_info_buffer_.reset();
     
     // Don't call TerminateImGui - let the window destructor handle it
     // Just reset window which will clean everything up properly
@@ -1271,46 +1299,149 @@ void Application::RenderInfoOverlay() {
         }
     }
 
-    // ==================== Volumetric Fog 控制 ====================
-    ImGui::SeparatorText("Volumetric Fog");
-    bool fog_changed = false;
+    // ==================== 体积渲染控制 ====================
+    ImGui::SeparatorText("Volumetric Rendering");
+    bool volumetric_changed = false;
     
-    // 雾的顶部高度
-    if (ImGui::SliderFloat("Fog Top Height", &fog_info_.fog_top_height, 0.0f, 5.0f, "%.2f")) {
-        fog_changed = true;
-    }
-    ImGui::TextWrapped("Height above which no fog exists (meters)");
-    
-    // 雾密度倍增系数
-    if (ImGui::SliderFloat("Fog Density", &fog_info_.fog_density_multiplier, 0.0f, 5.0f, "%.2f")) {
-        fog_changed = true;
-    }
-    ImGui::TextWrapped("Multiplier for fog density (higher = denser fog)");
-    
-    // 体积采样步长
-    if (ImGui::SliderFloat("Volume Step Size", &fog_info_.volume_step_size, 0.01f, 0.2f, "%.3f")) {
-        fog_changed = true;
-    }
-    ImGui::TextWrapped("Volume sampling step size (smaller = more accurate but slower)");
-    
-    // 雾吸收颜色
-    if (ImGui::ColorEdit3("Fog Color", &fog_info_.fog_absorption_color.x)) {
-        fog_changed = true;
-    }
-    ImGui::TextWrapped("Color tint of the fog (affects light absorption)");
-    
-    // 重置按钮
-    if (ImGui::Button("Reset Fog", ImVec2(-1, 0))) {
-        fog_info_.fog_top_height = 1.6f;
-        fog_info_.fog_density_multiplier = 1.5f;
-        fog_info_.volume_step_size = 0.05f;
-        fog_info_.fog_absorption_color = glm::vec3(0.8f, 0.8f, 1.0f);
-        fog_changed = true;
+    // 全局开关
+    bool vol_enable = volumetric_info_.enable > 0.5f;
+    if (ImGui::Checkbox("Enable Volumetric Rendering", &vol_enable)) {
+        volumetric_info_.enable = vol_enable ? 1.0f : 0.0f;
+        volumetric_changed = true;
     }
     
-    // 体积雾参数改变时重置累积
-    if (fog_changed) {
-        fog_need_upload_ = true;
+    if (vol_enable) {
+        // 全局参数
+        if (ImGui::TreeNode("Global Settings")) {
+            if (ImGui::SliderFloat("Min Step Size", &volumetric_info_.min_step_size, 0.01f, 0.2f, "%.3f")) {
+                volumetric_changed = true;
+            }
+            ImGui::TextWrapped("Minimum step size in high density regions");
+            
+            if (ImGui::SliderFloat("Max Step Size", &volumetric_info_.max_step_size, 0.1f, 1.0f, "%.3f")) {
+                volumetric_changed = true;
+            }
+            ImGui::TextWrapped("Maximum step size in low density regions");
+            
+            if (ImGui::SliderFloat("Max Distance", &volumetric_info_.max_distance, 10.0f, 200.0f, "%.1f")) {
+                volumetric_changed = true;
+            }
+            ImGui::TextWrapped("Maximum ray marching distance");
+            
+            ImGui::TreePop();
+        }
+        
+        // 环境雾配置
+        if (ImGui::TreeNode("Environment Fog")) {
+            bool env_fog_enable = volumetric_info_.environment_fog.enable > 0.5f;
+            if (ImGui::Checkbox("Enable Environment Fog", &env_fog_enable)) {
+                volumetric_info_.environment_fog.enable = env_fog_enable ? 1.0f : 0.0f;
+                volumetric_changed = true;
+            }
+            
+            if (env_fog_enable) {
+                if (ImGui::SliderFloat("Top Height", &volumetric_info_.environment_fog.top_height, 0.0f, 10.0f, "%.2f")) {
+                    volumetric_changed = true;
+                }
+                if (ImGui::SliderFloat("Bottom Height", &volumetric_info_.environment_fog.bottom_height, 0.0f, 5.0f, "%.2f")) {
+                    volumetric_changed = true;
+                }
+                if (ImGui::SliderFloat("Density", &volumetric_info_.environment_fog.density_multiplier, 0.0f, 5.0f, "%.2f")) {
+                    volumetric_changed = true;
+                }
+                if (ImGui::ColorEdit3("Absorption Color", &volumetric_info_.environment_fog.absorption_color.x)) {
+                    volumetric_changed = true;
+                }
+            }
+            ImGui::TreePop();
+        }
+        
+        // 发光光柱配置
+        if (ImGui::TreeNode("Light Beams")) {
+            bool beam_enable = volumetric_info_.light_beam.enable > 0.5f;
+            if (ImGui::Checkbox("Enable Light Beams", &beam_enable)) {
+                volumetric_info_.light_beam.enable = beam_enable ? 1.0f : 0.0f;
+                volumetric_changed = true;
+            }
+            
+            if (beam_enable) {
+                if (ImGui::SliderFloat("Radius", &volumetric_info_.light_beam.radius, 0.1f, 10.0f, "%.2f")) {
+                    volumetric_changed = true;
+                }
+                if (ImGui::SliderFloat("Length", &volumetric_info_.light_beam.length, 1.0f, 50.0f, "%.2f")) {
+                    volumetric_changed = true;
+                }
+                if (ImGui::SliderFloat("Beam Density", &volumetric_info_.light_beam.density, 0.0f, 2.0f, "%.2f")) {
+                    volumetric_changed = true;
+                }
+                if (ImGui::SliderFloat("Emission Intensity", &volumetric_info_.light_beam.emission_intensity, 0.0f, 100.0f, "%.1f")) {
+                    volumetric_changed = true;
+                }
+                if (ImGui::ColorEdit3("Emission Color", &volumetric_info_.light_beam.emission_color.x)) {
+                    volumetric_changed = true;
+                }
+                if (ImGui::SliderFloat("Radial Falloff", &volumetric_info_.light_beam.radial_falloff_power, 0.5f, 5.0f, "%.2f")) {
+                    volumetric_changed = true;
+                }
+                if (ImGui::SliderFloat("Longitudinal Falloff", &volumetric_info_.light_beam.longitudinal_falloff_power, 0.1f, 3.0f, "%.2f")) {
+                    volumetric_changed = true;
+                }
+            }
+            ImGui::TreePop();
+        }
+        
+        // 体积散射配置
+        if (ImGui::TreeNode("Volume Scattering")) {
+            bool scatter_enable = volumetric_info_.scattering.enable > 0.5f;
+            if (ImGui::Checkbox("Enable Scattering", &scatter_enable)) {
+                volumetric_info_.scattering.enable = scatter_enable ? 1.0f : 0.0f;
+                volumetric_changed = true;
+            }
+            
+            if (scatter_enable) {
+                if (ImGui::ColorEdit3("Scattering Coeff", &volumetric_info_.scattering.scattering_coeff.x)) {
+                    volumetric_changed = true;
+                }
+                if (ImGui::SliderFloat("Phase G", &volumetric_info_.scattering.phase_g, -1.0f, 1.0f, "%.2f")) {
+                    volumetric_changed = true;
+                }
+                ImGui::TextWrapped("Phase function anisotropy: -1=backward, 0=isotropic, 1=forward");
+                if (ImGui::ColorEdit3("Absorption Coeff", &volumetric_info_.scattering.absorption_coeff.x)) {
+                    volumetric_changed = true;
+                }
+            }
+            ImGui::TreePop();
+        }
+        
+        // 重置按钮
+        if (ImGui::Button("Reset All Volumetric Settings", ImVec2(-1, 0))) {
+            volumetric_info_.min_step_size = 0.08f;
+            volumetric_info_.max_step_size = 0.25f;
+            volumetric_info_.max_distance = 100.0f;
+            volumetric_info_.environment_fog.top_height = 1.6f;
+            volumetric_info_.environment_fog.bottom_height = 0.0f;
+            volumetric_info_.environment_fog.density_multiplier = 0.0f;
+            volumetric_info_.environment_fog.enable = 0.0f;
+            volumetric_info_.environment_fog.absorption_color = glm::vec3(0.8f, 0.8f, 1.0f);
+            volumetric_info_.light_beam.radius = 2.0f;
+            volumetric_info_.light_beam.length = 10.0f;
+            volumetric_info_.light_beam.density = 0.8f;
+            volumetric_info_.light_beam.emission_intensity = 30.0f;
+            volumetric_info_.light_beam.emission_color = glm::vec3(1.0f, 0.15f, 0.15f);
+            volumetric_info_.light_beam.enable = 1.0f;
+            volumetric_info_.light_beam.radial_falloff_power = 1.5f;
+            volumetric_info_.light_beam.longitudinal_falloff_power = 0.8f;
+            volumetric_info_.scattering.scattering_coeff = glm::vec3(0.8f, 0.8f, 0.9f);
+            volumetric_info_.scattering.phase_g = 0.3f;
+            volumetric_info_.scattering.absorption_coeff = glm::vec3(0.05f, 0.05f, 0.05f);
+            volumetric_info_.scattering.enable = 1.0f;
+            volumetric_changed = true;
+        }
+    }
+    
+    // 体积渲染参数改变时重置累积
+    if (volumetric_changed) {
+        volumetric_need_upload_ = true;
         if (film_) {
             film_->Reset();
             accumulated_frames_ = 0;
@@ -1737,8 +1868,8 @@ void Application::OnRender() {
     command_context->CmdBindResources(22, { scene_->GetGlobalIndexBuffer() }, grassland::graphics::BIND_POINT_RAYTRACING);
     command_context->CmdBindResources(23, { scene_->GetEntityOffsetsBuffer() }, grassland::graphics::BIND_POINT_RAYTRACING);
     
-    // 绑定体积雾参数
-    command_context->CmdBindResources(24, { fog_info_buffer_.get() }, grassland::graphics::BIND_POINT_RAYTRACING);
+    // 绑定体积渲染参数
+    command_context->CmdBindResources(24, { volumetric_info_buffer_.get() }, grassland::graphics::BIND_POINT_RAYTRACING);
 
     // If UI changed lights, re-upload data to GPU buffer (so shader sees changes)
     if (lights_need_upload_) {
@@ -1757,13 +1888,13 @@ void Application::OnRender() {
         grassland::LogInfo("Skybox info updated (uploaded to GPU)");
     }
     
-    // If fog parameters changed, re-upload
-    if (fog_need_upload_) {
-        if (fog_info_buffer_) {
-            fog_info_buffer_->UploadData(&fog_info_, sizeof(VolumetricFogInfo));
+    // If volumetric rendering parameters changed, re-upload
+    if (volumetric_need_upload_) {
+        if (volumetric_info_buffer_) {
+            volumetric_info_buffer_->UploadData(&volumetric_info_, sizeof(VolumetricRenderingInfo));
         }
-        fog_need_upload_ = false;
-        grassland::LogInfo("Volumetric fog info updated (uploaded to GPU)");
+        volumetric_need_upload_ = false;
+        grassland::LogInfo("Volumetric rendering info updated (uploaded to GPU)");
     }
     
     // Bind textures and sampler (space10)

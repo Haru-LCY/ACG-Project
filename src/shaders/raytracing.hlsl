@@ -36,10 +36,39 @@ float Noise3D(float3 p) {
     return frac(sin(n) * 43758.5453);
 }
 
-// 采样体积密度和发光
+// 采样环境雾密度（基于高度的程序化雾）
+float SampleEnvironmentFogDensity(float3 pos) {
+    if (volumetric_info.environment_fog.enable < 0.5) {
+        return 0.0; // 环境雾未启用
+    }
+    
+    float height = pos.y;
+    float top_height = volumetric_info.environment_fog.top_height;
+    float bottom_height = volumetric_info.environment_fog.bottom_height;
+    
+    // 在顶部高度以上无雾
+    if (height >= top_height) {
+        return 0.0;
+    }
+    
+    // 在底部高度以下雾密度最大
+    if (height <= bottom_height) {
+        return volumetric_info.environment_fog.density_multiplier;
+    }
+    
+    // 线性插值：高度越低密度越高
+    float normalizedHeight = (height - bottom_height) / (top_height - bottom_height);
+    float fogDensity = 1.0 - normalizedHeight; // 底部=1.0，顶部=0.0
+    return fogDensity * volumetric_info.environment_fog.density_multiplier;
+}
+
+// 采样发光光柱的密度和发光（从点光源发出的体积光柱）
 // 返回: (density, emission_r, emission_g, emission_b)
-// 实现方案4：体积光柱效果（从点光源向下扩散的红色发光体积光柱）
-float4 SampleVolumeProperties(float3 pos) {
+float4 SampleLightBeamProperties(float3 pos) {
+    if (volumetric_info.light_beam.enable < 0.5) {
+        return float4(0, 0, 0, 0); // 光柱未启用
+    }
+    
     const int MAX_POINT_LIGHTS = 16;
     float maxDensity = 0.0;
     float3 totalEmission = float3(0, 0, 0);
@@ -53,25 +82,25 @@ float4 SampleVolumeProperties(float3 pos) {
         float3 lightVec = pos - pl.position;
         float distToLight = length(lightVec);
         
-        // 体积光柱参数（可调整）
-        const float LIGHT_BEAM_RADIUS = 2.0;      // 光柱半径（增大以覆盖更大范围）
-        const float LIGHT_BEAM_LENGTH = 10.0;      // 光柱最大长度
-        const float BASE_DENSITY = 0.8;            // 基础密度（增大以增强效果）
-        const float EMISSION_INTENSITY = 30.0;     // 发光强度（增大以增强红光）
+        // 使用配置参数
+        float beamRadius = volumetric_info.light_beam.radius;
+        float beamLength = volumetric_info.light_beam.length;
+        float baseDensity = volumetric_info.light_beam.density;
+        float emissionIntensity = volumetric_info.light_beam.emission_intensity;
         
         // 检查是否在光柱长度范围内
-        if (distToLight > LIGHT_BEAM_LENGTH) continue;
+        if (distToLight > beamLength) continue;
         
-        // 计算光柱方向（向下，即 -Y 方向）
-        float3 lightDir = normalize(float3(0, -1, 0));
+        // 计算光柱方向（使用配置的方向，默认向下）
+        float3 lightDir = normalize(volumetric_info.light_beam.beam_direction);
         float3 toPos = lightVec;
         
-        // 计算沿光柱方向的投影距离（向下为正）
+        // 计算沿光柱方向的投影距离
         float alongBeam = dot(toPos, lightDir);
         
-        // 只考虑光源下方的点（向下扩散）
+        // 只考虑光柱方向的正面（如果向下，则只考虑光源下方）
         if (alongBeam < 0.0) continue;
-        if (alongBeam > LIGHT_BEAM_LENGTH) continue;
+        if (alongBeam > beamLength) continue;
         
         // 计算垂直于光柱方向的横向距离
         float3 projected = alongBeam * lightDir;
@@ -79,21 +108,22 @@ float4 SampleVolumeProperties(float3 pos) {
         float radialDist = length(perpendicular);
         
         // 如果横向距离超过半径，跳过
-        if (radialDist > LIGHT_BEAM_RADIUS) continue;
+        if (radialDist > beamRadius) continue;
         
         // 计算径向衰减（距离中心越远，密度越小）
-        float radialFalloff = 1.0 - saturate(radialDist / LIGHT_BEAM_RADIUS);
-        radialFalloff = pow(radialFalloff, 1.5); // 平滑衰减
+        float radialFalloff = 1.0 - saturate(radialDist / beamRadius);
+        radialFalloff = pow(radialFalloff, volumetric_info.light_beam.radial_falloff_power);
         
         // 计算纵向衰减（距离光源越远，密度越小）
-        float longitudinalFalloff = 1.0 - saturate(alongBeam / LIGHT_BEAM_LENGTH);
-        longitudinalFalloff = pow(longitudinalFalloff, 0.8); // 较慢的衰减
+        float longitudinalFalloff = 1.0 - saturate(alongBeam / beamLength);
+        longitudinalFalloff = pow(longitudinalFalloff, volumetric_info.light_beam.longitudinal_falloff_power);
         
         // 计算密度（结合径向和纵向衰减）
-        float density = BASE_DENSITY * radialFalloff * longitudinalFalloff;
+        float density = baseDensity * radialFalloff * longitudinalFalloff;
         
-        // 红色发光，强度明显
-        float3 emission = float3(1.0, 0.15, 0.15) * EMISSION_INTENSITY * density; // 鲜艳的红色发光
+        // 发光颜色：混合配置的颜色和光源颜色
+        float3 emissionColor = volumetric_info.light_beam.emission_color * pl.color;
+        float3 emission = emissionColor * emissionIntensity * density;
         
         // 累积密度和发光（取最大值，避免过度叠加）
         if (density > maxDensity) {
@@ -103,7 +133,7 @@ float4 SampleVolumeProperties(float3 pos) {
             // 如果多个光源重叠，混合发光颜色
             float blendFactor = density / (maxDensity + density + 0.001);
             totalEmission = lerp(totalEmission, emission, blendFactor);
-            maxDensity = max(maxDensity, density * 0.8); // 稍微降低以避免过度叠加
+            maxDensity = max(maxDensity, density * 0.8);
         }
     }
     
@@ -111,7 +141,27 @@ float4 SampleVolumeProperties(float3 pos) {
         return float4(maxDensity, totalEmission);
     }
     
-    return float4(0, 0, 0, 0); // 无体积介质
+    return float4(0, 0, 0, 0); // 无光柱
+}
+
+// 采样体积属性（合并环境雾和发光光柱）
+// 返回: (density, emission_r, emission_g, emission_b)
+float4 SampleVolumeProperties(float3 pos) {
+    // 采样环境雾密度
+    float envFogDensity = SampleEnvironmentFogDensity(pos);
+    
+    // 采样发光光柱
+    float4 beamProps = SampleLightBeamProperties(pos);
+    float beamDensity = beamProps.x;
+    float3 beamEmission = beamProps.yzw;
+    
+    // 合并密度（取最大值或叠加，这里使用最大值避免过度累积）
+    float totalDensity = max(envFogDensity, beamDensity);
+    
+    // 发光只来自光柱
+    float3 totalEmission = beamEmission;
+    
+    return float4(totalDensity, totalEmission);
 }
 
 // Henyey-Greenstein 相位函数（用于前向/后向散射）
@@ -124,8 +174,12 @@ float PhaseFunctionHG(float cosTheta, float g) {
 
 // 计算单次散射贡献（从光源到采样点的散射）
 float3 ComputeSingleScattering(float3 pos, float3 viewDir, float density, inout uint seed) {
-    const float3 SCATTERING_COEFF = float3(0.8, 0.8, 0.9); // 烟雾散射系数（略微偏蓝）
-    const float G_PHASE = 0.3; // 前向散射（烟雾通常前向散射）
+    if (volumetric_info.scattering.enable < 0.5) {
+        return float3(0, 0, 0); // 散射未启用
+    }
+    
+    float3 scatteringCoeff = volumetric_info.scattering.scattering_coeff;
+    float phaseG = volumetric_info.scattering.phase_g;
     
     float3 scattering = float3(0, 0, 0);
     
@@ -142,7 +196,7 @@ float3 ComputeSingleScattering(float3 pos, float3 viewDir, float density, inout 
         
         // 计算相位函数（viewDir 和 lightDir 之间的角度）
         float cosTheta = dot(viewDir, lightDir);
-        float phase = PhaseFunctionHG(cosTheta, G_PHASE);
+        float phase = PhaseFunctionHG(cosTheta, phaseG);
         
         // 计算光源到采样点的可见度（考虑体积衰减）
         float3 shadowOrigin = pos + lightDir * 0.01; // 稍微偏移避免自相交
@@ -155,7 +209,7 @@ float3 ComputeSingleScattering(float3 pos, float3 viewDir, float density, inout 
         
         // 单次散射贡献 = 散射系数 * 相位函数 * 光源辐射 * 可见度 * 衰减
         float3 lightRadiance = pl.color * attenuation * visibility;
-        scattering += SCATTERING_COEFF * phase * lightRadiance * density;
+        scattering += scatteringCoeff * phase * lightRadiance * density;
     }
     
     // 采样所有面光源
@@ -175,7 +229,7 @@ float3 ComputeSingleScattering(float3 pos, float3 viewDir, float density, inout 
         
         // 相位函数
         float cosTheta = dot(viewDir, lightDir);
-        float phase = PhaseFunctionHG(cosTheta, G_PHASE);
+        float phase = PhaseFunctionHG(cosTheta, phaseG);
         
         // 可见度
         float3 shadowOrigin = pos + lightDir * 0.01;
@@ -188,7 +242,7 @@ float3 ComputeSingleScattering(float3 pos, float3 viewDir, float density, inout 
         float attenuation = al.strength / (4.0 * PI * distSq);
         
         float3 lightRadiance = al.color * attenuation * visibility;
-        scattering += SCATTERING_COEFF * phase * lightRadiance * density;
+        scattering += scatteringCoeff * phase * lightRadiance * density;
     }
     
     return scattering;
@@ -203,12 +257,21 @@ struct VolumeIntegrationResult {
 // 沿光线积分体积贡献（完整实现：体积发光 + 单次散射）
 // 优化：使用自适应步长，在低密度区域使用大步长以提高性能
 VolumeIntegrationResult IntegrateVolumeAlongRay(float3 rayOrigin, float3 rayDir, float maxDist, float3 throughput, inout uint seed) {
-    const float MIN_STEP_SIZE = 0.08;  // 最小步长（高密度区域）
-    const float MAX_STEP_SIZE = 0.25;   // 最大步长（低密度区域）
+    // 检查是否启用体积渲染
+    if (volumetric_info.enable < 0.5) {
+        VolumeIntegrationResult result;
+        result.radiance = float3(0, 0, 0);
+        result.transmittance = float3(1, 1, 1);
+        return result;
+    }
+    
+    // 使用配置参数
+    float minStepSize = volumetric_info.min_step_size;
+    float maxStepSize = volumetric_info.max_step_size;
     const float DENSITY_THRESHOLD_LOW = 0.1;   // 低密度阈值
     const float DENSITY_THRESHOLD_HIGH = 0.3;  // 高密度阈值
-    const float3 SCATTERING_COEFF = float3(0.8, 0.8, 0.9); // 烟雾散射系数（略微偏蓝）
-    const float3 ABSORPTION_COEFF = float3(0.05, 0.05, 0.05); // 烟雾吸收系数（很低，烟雾是半透明的）
+    float3 scatteringCoeff = volumetric_info.scattering.scattering_coeff;
+    float3 absorptionCoeff = volumetric_info.scattering.absorption_coeff;
     
     VolumeIntegrationResult result;
     result.radiance = float3(0, 0, 0);
@@ -222,9 +285,9 @@ VolumeIntegrationResult IntegrateVolumeAlongRay(float3 rayOrigin, float3 rayDir,
     float3 pos = rayOrigin;
     float4 volProps = SampleVolumeProperties(pos);
     float prevDensity = volProps.x;
-    float currentStepSize = prevDensity > DENSITY_THRESHOLD_HIGH ? MIN_STEP_SIZE : 
-                           (prevDensity < DENSITY_THRESHOLD_LOW ? MAX_STEP_SIZE : 
-                           lerp(MIN_STEP_SIZE, MAX_STEP_SIZE, (DENSITY_THRESHOLD_HIGH - prevDensity) / (DENSITY_THRESHOLD_HIGH - DENSITY_THRESHOLD_LOW)));
+    float currentStepSize = prevDensity > DENSITY_THRESHOLD_HIGH ? minStepSize : 
+                           (prevDensity < DENSITY_THRESHOLD_LOW ? maxStepSize : 
+                           lerp(minStepSize, maxStepSize, (DENSITY_THRESHOLD_HIGH - prevDensity) / (DENSITY_THRESHOLD_HIGH - DENSITY_THRESHOLD_LOW)));
     
     while (dist < maxDist && steps < MAX_STEPS) {
         pos = rayOrigin + rayDir * dist;
@@ -236,13 +299,13 @@ VolumeIntegrationResult IntegrateVolumeAlongRay(float3 rayOrigin, float3 rayDir,
         // 高密度区域使用小步长，低密度区域使用大步长
         float stepSize = currentStepSize;
         if (density > DENSITY_THRESHOLD_HIGH) {
-            stepSize = MIN_STEP_SIZE; // 高密度：小步长
+            stepSize = minStepSize; // 高密度：小步长
         } else if (density < DENSITY_THRESHOLD_LOW) {
-            stepSize = MAX_STEP_SIZE; // 低密度：大步长
+            stepSize = maxStepSize; // 低密度：大步长
         } else {
             // 中等密度：线性插值
             float t = (DENSITY_THRESHOLD_HIGH - density) / (DENSITY_THRESHOLD_HIGH - DENSITY_THRESHOLD_LOW);
-            stepSize = lerp(MIN_STEP_SIZE, MAX_STEP_SIZE, t);
+            stepSize = lerp(minStepSize, maxStepSize, t);
         }
         
         // 确保不超过剩余距离
@@ -251,7 +314,7 @@ VolumeIntegrationResult IntegrateVolumeAlongRay(float3 rayOrigin, float3 rayDir,
         
         if (density > 0.001) {
             // 计算体积衰减（Beer-Lambert 定律）
-            float3 extinction = SCATTERING_COEFF + ABSORPTION_COEFF;
+            float3 extinction = scatteringCoeff + absorptionCoeff;
             float3 stepTransmittance = exp(-extinction * density * stepSize);
             
             // 1. 累积体积发光（Volumetric Emission）

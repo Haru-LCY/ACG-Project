@@ -42,16 +42,62 @@ struct SkyboxInfo {
     float sun_angular_radius;     // 太阳角半径（弧度）
 };
 
-// 体积雾信息 (与 shader 中的定义匹配)
-struct VolumetricFogInfo {
-    float fog_top_height;           // 雾的顶部高度（高于此高度无雾）
-    float fog_density_multiplier;   // 雾密度倍增系数
-    float volume_step_size;         // 体积采样步长（越小越精确但性能越低）
-    float padding1;
+// ==================== 体积渲染结构体（分层设计，与 shader 中的定义匹配）====================
+
+// 全局环境雾配置
+struct alignas(16) EnvironmentFogInfo {
+    float top_height;               // 雾的顶部高度
+    float bottom_height;            // 雾的底部高度
+    float density_multiplier;       // 雾密度倍增系数
+    float enable;                   // 是否启用环境雾
     
-    glm::vec3 fog_absorption_color; // 体积吸收颜色（RGB，影响雾的颜色）
-    float padding2;
+    glm::vec3 absorption_color;     // 吸收颜色
+    float padding1;
 };
+
+// 发光光柱配置
+struct alignas(16) LightBeamInfo {
+    float radius;                   // 光柱半径
+    float length;                   // 光柱最大长度
+    float density;                  // 基础密度
+    float emission_intensity;       // 发光强度倍增器
+    
+    glm::vec3 emission_color;       // 发光颜色
+    float enable;                   // 是否启用发光光柱
+    
+    glm::vec3 beam_direction;       // 光柱方向
+    float radial_falloff_power;     // 径向衰减指数
+    
+    float longitudinal_falloff_power; // 纵向衰减指数
+    glm::vec3 padding2;
+};
+
+// 体积散射配置
+struct alignas(16) VolumeScatteringInfo {
+    glm::vec3 scattering_coeff;     // 散射系数
+    float phase_g;                  // 相位函数参数
+    
+    glm::vec3 absorption_coeff;     // 吸收系数
+    float enable;                   // 是否启用单次散射
+};
+
+// 统一的体积渲染配置
+struct alignas(16) VolumetricRenderingInfo {
+    float min_step_size;            // 最小步长
+    float max_step_size;            // 最大步长
+    float max_distance;             // 最大追踪距离
+    float enable;                   // 是否启用体积渲染
+    
+    EnvironmentFogInfo environment_fog;
+    LightBeamInfo light_beam;
+    VolumeScatteringInfo scattering;
+};
+
+// 静态断言：验证结构体大小与GPU对齐要求一致
+static_assert(sizeof(EnvironmentFogInfo) == 32, "EnvironmentFogInfo must be 32 bytes (2 float4)");
+static_assert(sizeof(LightBeamInfo) == 64, "LightBeamInfo must be 64 bytes (4 float4)");
+static_assert(sizeof(VolumeScatteringInfo) == 32, "VolumeScatteringInfo must be 32 bytes (2 float4)");
+static_assert(sizeof(VolumetricRenderingInfo) == 144, "VolumetricRenderingInfo must be 144 bytes (9 float4)");
 
 // MSAA 模式枚举 (与 shader 中的定义匹配)
 enum MSAAMode {
@@ -151,10 +197,10 @@ private:
     SkyboxInfo skybox_info_;
     bool skybox_need_upload_ = false;
 
-    // Volumetric Fog
-    std::unique_ptr<grassland::graphics::Buffer> fog_info_buffer_;
-    VolumetricFogInfo fog_info_;
-    bool fog_need_upload_ = false;
+    // Volumetric Rendering
+    std::unique_ptr<grassland::graphics::Buffer> volumetric_info_buffer_;
+    VolumetricRenderingInfo volumetric_info_;
+    bool volumetric_need_upload_ = false;
 
     // Shaders
     std::unique_ptr<grassland::graphics::Shader> raygen_shader_;

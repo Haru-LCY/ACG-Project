@@ -130,15 +130,55 @@ struct SkyboxInfo {
     float sun_angular_radius; // 太阳角半径（弧度）
 };
 
-// 体积雾信息结构体
-struct VolumetricFogInfo {
-    float fog_top_height;           // 雾的顶部高度（高于此高度无雾）
-    float fog_density_multiplier;   // 雾密度倍增系数
-    float volume_step_size;         // 体积采样步长（越小越精确但性能越低）
-    float padding1;
+// ==================== 体积渲染结构体（分层设计） ====================
+
+// 全局环境雾配置
+struct EnvironmentFogInfo {
+    float top_height;               // 雾的顶部高度（高于此高度无雾）
+    float bottom_height;            // 雾的底部高度（低于此高度雾密度最大）
+    float density_multiplier;       // 雾密度倍增系数
+    float enable;                   // 是否启用环境雾 (>0.5 = true)
     
-    float3 fog_absorption_color;    // 体积吸收颜色（RGB，影响雾的颜色）
-    float padding2;
+    float3 absorption_color;        // 吸收颜色（影响雾的颜色和透明度）
+    float padding1;
+};
+
+// 发光光柱配置（全局默认值，用于所有光源）
+struct LightBeamInfo {
+    float radius;                   // 光柱半径（米）
+    float length;                   // 光柱最大长度（米）
+    float density;                  // 基础密度（0-1）
+    float emission_intensity;       // 发光强度倍增器
+    
+    float3 emission_color;          // 发光颜色（RGB，将与光源颜色混合）
+    float enable;                   // 是否启用发光光柱 (>0.5 = true)
+    
+    float3 beam_direction;          // 光柱方向（归一化向量，默认向下 (0,-1,0)）
+    float radial_falloff_power;     // 径向衰减指数（越大边缘越锐利，1.0-3.0）
+    
+    float longitudinal_falloff_power; // 纵向衰减指数（沿光柱方向的衰减）
+    float3 padding2;
+};
+
+// 体积散射配置
+struct VolumeScatteringInfo {
+    float3 scattering_coeff;        // 散射系数（RGB，影响光的散射量）
+    float phase_g;                  // Henyey-Greenstein相位函数参数 (-1到1，0=各向同性）
+    
+    float3 absorption_coeff;        // 吸收系数（RGB，影响光的吸收量）
+    float enable;                   // 是否启用单次散射 (>0.5 = true)
+};
+
+// 统一的体积渲染配置（主结构体）
+struct VolumetricRenderingInfo {
+    float min_step_size;            // 最小步长（高密度区域）
+    float max_step_size;            // 最大步长（低密度区域）
+    float max_distance;             // 最大追踪距离
+    float enable;                   // 是否启用体积渲染 (>0.5 = true)
+    
+    EnvironmentFogInfo environment_fog;   // 环境雾配置 (32 bytes)
+    LightBeamInfo light_beam;             // 发光光柱配置 (64 bytes)
+    VolumeScatteringInfo scattering;      // 散射配置 (32 bytes)
 };
 
 // ==================== Resources ====================
@@ -169,8 +209,8 @@ StructuredBuffer<float2> global_texcoords : register(t0, space21);     // 全局
 StructuredBuffer<uint> global_indices : register(t0, space22);         // 全局索引缓冲区
 StructuredBuffer<EntityOffset> entity_offsets : register(t0, space23); // 实体偏移缓冲区
 
-// 体积雾参数
-ConstantBuffer<VolumetricFogInfo> fog_info : register(b0, space24);   // 体积雾信息
+// 体积渲染参数
+ConstantBuffer<VolumetricRenderingInfo> volumetric_info : register(b0, space24);   // 体积渲染配置
 
 //t，u，space分别表示纹理寄存器、采样器寄存器和常量缓冲区寄存器的空间索引
 
