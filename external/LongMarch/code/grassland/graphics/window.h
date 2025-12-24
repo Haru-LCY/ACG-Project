@@ -65,6 +65,7 @@ class Window {
 
  private:
   GLFWwindow *window_;
+  std::string title_;
   // Resize, mouse, keyboard, etc.
   EventManager<void(int, int)> resize_event_;
   EventManager<void(double, double)> mouse_move_event_;
