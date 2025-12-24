@@ -86,6 +86,18 @@ struct alignas(16) VolumeScatteringInfo {
     float enable;                   // 是否启用单次散射
 };
 
+// 黑色雾气盒子配置
+struct alignas(16) FogBoxInfo {
+    glm::vec3 center;               // 盒子中心位置
+    float enable;                   // 是否启用雾气盒子
+    
+    glm::vec3 size;                 // 盒子尺寸（半边长，即从中心到边的距离）
+    float density;                  // 雾气密度
+    
+    glm::vec3 absorption_color;     // 吸收颜色（黑色为 0,0,0）
+    float edge_softness;            // 边缘柔和度（米）
+};
+
 // 统一的体积渲染配置
 struct alignas(16) VolumetricRenderingInfo {
     float min_step_size;            // 最小步长
@@ -96,13 +108,15 @@ struct alignas(16) VolumetricRenderingInfo {
     EnvironmentFogInfo environment_fog;
     LightBeamInfo light_beam;
     VolumeScatteringInfo scattering;
+    FogBoxInfo fog_box;             // 黑色雾气盒子配置
 };
 
 // 静态断言：验证结构体大小与GPU对齐要求一致
 static_assert(sizeof(EnvironmentFogInfo) == 32, "EnvironmentFogInfo must be 32 bytes (2 float4)");
 static_assert(sizeof(LightBeamInfo) == 64, "LightBeamInfo must be 64 bytes (4 float4)");
 static_assert(sizeof(VolumeScatteringInfo) == 32, "VolumeScatteringInfo must be 32 bytes (2 float4)");
-static_assert(sizeof(VolumetricRenderingInfo) == 144, "VolumetricRenderingInfo must be 144 bytes (9 float4)");
+static_assert(sizeof(FogBoxInfo) == 48, "FogBoxInfo must be 48 bytes (3 float4)");
+static_assert(sizeof(VolumetricRenderingInfo) == 192, "VolumetricRenderingInfo must be 192 bytes (12 float4)");
 
 // MSAA 模式枚举 (与 shader 中的定义匹配)
 enum MSAAMode {

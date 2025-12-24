@@ -174,6 +174,18 @@ struct VolumeScatteringInfo {
     float enable;                   // 是否启用单次散射 (>0.5 = true)
 };
 
+// 黑色雾气盒子配置
+struct FogBoxInfo {
+    float3 center;                  // 盒子中心位置
+    float enable;                   // 是否启用雾气盒子 (>0.5 = true)
+    
+    float3 size;                    // 盒子尺寸（半边长，即从中心到边的距离）
+    float density;                  // 雾气密度
+    
+    float3 absorption_color;        // 吸收颜色（黑色为 0,0,0）
+    float edge_softness;            // 边缘柔和度（米）
+};
+
 // 统一的体积渲染配置（主结构体）
 struct VolumetricRenderingInfo {
     float min_step_size;            // 最小步长（高密度区域）
@@ -184,6 +196,7 @@ struct VolumetricRenderingInfo {
     EnvironmentFogInfo environment_fog;   // 环境雾配置 (32 bytes)
     LightBeamInfo light_beam;             // 发光光柱配置 (64 bytes)
     VolumeScatteringInfo scattering;      // 散射配置 (32 bytes)
+    FogBoxInfo fog_box;                   // 黑色雾气盒子配置 (48 bytes)
 };
 
 // ==================== Resources ====================

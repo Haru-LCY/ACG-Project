@@ -144,7 +144,37 @@ float4 SampleLightBeamProperties(float3 pos) {
     return float4(0, 0, 0, 0); // 无光柱
 }
 
-// 采样体积属性（合并环境雾和发光光柱）
+// 采样黑色雾气盒子密度
+float SampleFogBoxDensity(float3 pos) {
+    if (volumetric_info.fog_box.enable < 0.5) {
+        return 0.0; // 雾气盒子未启用
+    }
+    
+    // 计算相对于盒子中心的位置（取绝对值用于对称判断）
+    float3 localPos = abs(pos - volumetric_info.fog_box.center);
+    float3 boxSize = volumetric_info.fog_box.size;
+    
+    // 检查是否在盒子内部
+    if (!all(localPos < boxSize)) {
+        return 0.0; // 在盒子外部
+    }
+    
+    // 计算到每个边的距离
+    float3 edgeDist = boxSize - localPos;
+    float minEdgeDist = min(min(edgeDist.x, edgeDist.y), edgeDist.z);
+    
+    // 边缘柔和衰减（smoothstep 提供平滑过渡）
+    float softness = volumetric_info.fog_box.edge_softness;
+    float falloff = 1.0;
+    if (softness > 0.001) {
+        falloff = smoothstep(0.0, softness, minEdgeDist);
+    }
+    
+    // 返回最终盒子密度
+    return volumetric_info.fog_box.density * falloff;
+}
+
+// 采样体积属性（合并环境雾、发光光柱和雾气盒子）
 // 返回: (density, emission_r, emission_g, emission_b)
 float4 SampleVolumeProperties(float3 pos) {
     // 采样环境雾密度
@@ -155,8 +185,11 @@ float4 SampleVolumeProperties(float3 pos) {
     float beamDensity = beamProps.x;
     float3 beamEmission = beamProps.yzw;
     
-    // 合并密度（取最大值或叠加，这里使用最大值避免过度累积）
-    float totalDensity = max(envFogDensity, beamDensity);
+    // 采样黑色雾气盒子
+    float fogBoxDensity = SampleFogBoxDensity(pos);
+    
+    // 合并密度（取最大值避免过度累积）
+    float totalDensity = max(max(envFogDensity, beamDensity), fogBoxDensity);
     
     // 发光只来自光柱
     float3 totalEmission = beamEmission;

@@ -687,6 +687,14 @@ void Application::OnInit() {
     volumetric_info_.scattering.absorption_coeff = glm::vec3(0.02f, 0.02f, 0.02f); // 吸收系数（降低）
     volumetric_info_.scattering.enable = 1.0f;                   // 启用单次散射
     
+    // 亮蓝色雾气盒子配置
+    volumetric_info_.fog_box.center = glm::vec3(0.0f, 1.5f, 2.0f);  // 场景中间偏前位置
+    volumetric_info_.fog_box.size = glm::vec3(1.0f, 1.0f, 1.0f);     // 2x2x2米的立方体（半边长1米）
+    volumetric_info_.fog_box.density = 2.5f;                         // 较高密度，确保明显的阴影效果
+    volumetric_info_.fog_box.enable = 1.0f;                          // 默认启用
+    volumetric_info_.fog_box.absorption_color = glm::vec3(1.0f, 1.0f, 0.1f); // 蓝色雾气（吸收红绿，保留蓝）
+    volumetric_info_.fog_box.edge_softness = 0.25f;                  // 边缘0.25米衰减，产生柔和阴影
+    
     // 创建并上传体积渲染缓冲区
     core_->CreateBuffer(sizeof(VolumetricRenderingInfo), grassland::graphics::BUFFER_TYPE_DYNAMIC, &volumetric_info_buffer_);
     volumetric_info_buffer_->UploadData(&volumetric_info_, sizeof(VolumetricRenderingInfo));
@@ -694,6 +702,7 @@ void Application::OnInit() {
     grassland::LogInfo("  - EnvironmentFogInfo: {} bytes", sizeof(EnvironmentFogInfo));
     grassland::LogInfo("  - LightBeamInfo: {} bytes", sizeof(LightBeamInfo));
     grassland::LogInfo("  - VolumeScatteringInfo: {} bytes", sizeof(VolumeScatteringInfo));
+    grassland::LogInfo("  - FogBoxInfo: {} bytes", sizeof(FogBoxInfo));
 
     // Initialize camera state member variables
     camera_pos_ = glm::vec3{ -0.3f, 2.1f, 10.2f }; // 新相机位置
@@ -1483,6 +1492,44 @@ void Application::RenderInfoOverlay() {
             ImGui::TreePop();
         }
         
+        // 黑色雾气盒子配置
+        if (ImGui::TreeNode("Fog Box (Black Smoke)")) {
+            bool box_enable = volumetric_info_.fog_box.enable > 0.5f;
+            if (ImGui::Checkbox("Enable Fog Box", &box_enable)) {
+                volumetric_info_.fog_box.enable = box_enable ? 1.0f : 0.0f;
+                volumetric_changed = true;
+            }
+            ImGui::TextWrapped("Localized volumetric fog box with soft shadows");
+            
+            if (box_enable) {
+                if (ImGui::DragFloat3("Center Position", &volumetric_info_.fog_box.center.x, 0.1f, -10.0f, 10.0f, "%.2f")) {
+                    volumetric_changed = true;
+                }
+                ImGui::TextWrapped("Position of the fog box center in world space");
+                
+                if (ImGui::DragFloat3("Size (Half-Extent)", &volumetric_info_.fog_box.size.x, 0.05f, 0.1f, 5.0f, "%.2f")) {
+                    volumetric_changed = true;
+                }
+                ImGui::TextWrapped("Half-size from center to edge (total size = 2x this value)");
+                
+                if (ImGui::SliderFloat("Density", &volumetric_info_.fog_box.density, 0.0f, 5.0f, "%.2f")) {
+                    volumetric_changed = true;
+                }
+                ImGui::TextWrapped("Higher density = darker shadows");
+                
+                if (ImGui::ColorEdit3("Absorption Color", &volumetric_info_.fog_box.absorption_color.x)) {
+                    volumetric_changed = true;
+                }
+                ImGui::TextWrapped("Black (0,0,0) = pure shadow, higher values = tinted fog");
+                
+                if (ImGui::SliderFloat("Edge Softness", &volumetric_info_.fog_box.edge_softness, 0.0f, 1.0f, "%.2f")) {
+                    volumetric_changed = true;
+                }
+                ImGui::TextWrapped("Smoothness of shadow edges (0 = hard, 1 = very soft)");
+            }
+            ImGui::TreePop();
+        }
+        
         // 重置按钮
         if (ImGui::Button("Reset All Volumetric Settings", ImVec2(-1, 0))) {
             volumetric_info_.min_step_size = 0.1f;
@@ -1491,20 +1538,26 @@ void Application::RenderInfoOverlay() {
             volumetric_info_.environment_fog.top_height = 1.6f;
             volumetric_info_.environment_fog.bottom_height = 0.0f;
             volumetric_info_.environment_fog.density_multiplier = 0.8f;
-            volumetric_info_.environment_fog.enable = 1.0f;
+            volumetric_info_.environment_fog.enable = 0.0f;  // 默认关闭环境雾
             volumetric_info_.environment_fog.absorption_color = glm::vec3(0.85f, 0.88f, 0.95f);
             volumetric_info_.light_beam.radius = 2.0f;
             volumetric_info_.light_beam.length = 10.0f;
             volumetric_info_.light_beam.density = 0.8f;
             volumetric_info_.light_beam.emission_intensity = 30.0f;
             volumetric_info_.light_beam.emission_color = glm::vec3(1.0f, 0.15f, 0.15f);
-            volumetric_info_.light_beam.enable = 1.0f;
+            volumetric_info_.light_beam.enable = 0.0f;  // 默认关闭光柱
             volumetric_info_.light_beam.radial_falloff_power = 1.5f;
             volumetric_info_.light_beam.longitudinal_falloff_power = 0.8f;
             volumetric_info_.scattering.scattering_coeff = glm::vec3(0.4f, 0.4f, 0.5f);
             volumetric_info_.scattering.phase_g = 0.3f;
             volumetric_info_.scattering.absorption_coeff = glm::vec3(0.02f, 0.02f, 0.02f);
             volumetric_info_.scattering.enable = 1.0f;
+            volumetric_info_.fog_box.center = glm::vec3(0.0f, 1.5f, 2.0f);
+            volumetric_info_.fog_box.size = glm::vec3(1.0f, 1.0f, 1.0f);
+            volumetric_info_.fog_box.density = 2.5f;
+            volumetric_info_.fog_box.enable = 1.0f;  // 默认启用雾气盒子
+            volumetric_info_.fog_box.absorption_color = glm::vec3(1.0f, 1.0f, 0.1f); // 蓝色雾气（吸收红绿，保留蓝）
+            volumetric_info_.fog_box.edge_softness = 0.25f;
             volumetric_changed = true;
         }
     }

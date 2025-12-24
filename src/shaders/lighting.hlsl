@@ -75,6 +75,31 @@ float SampleVolumeDensity(float3 pos) {
         }
     }
     
+    // 采样黑色雾气盒子密度
+    if (volumetric_info.fog_box.enable > 0.5) {
+        // 计算相对于盒子中心的位置（取绝对值用于对称判断）
+        float3 localPos = abs(pos - volumetric_info.fog_box.center);
+        float3 boxSize = volumetric_info.fog_box.size;
+        
+        // 检查是否在盒子内部
+        if (all(localPos < boxSize)) {
+            // 计算到每个边的距离
+            float3 edgeDist = boxSize - localPos;
+            float minEdgeDist = min(min(edgeDist.x, edgeDist.y), edgeDist.z);
+            
+            // 边缘柔和衰减（smoothstep 提供平滑过渡）
+            float softness = volumetric_info.fog_box.edge_softness;
+            float falloff = 1.0;
+            if (softness > 0.001) {
+                falloff = smoothstep(0.0, softness, minEdgeDist);
+            }
+            
+            // 计算最终盒子密度
+            float boxDensity = volumetric_info.fog_box.density * falloff;
+            totalDensity = max(totalDensity, boxDensity);
+        }
+    }
+    
     return totalDensity;
 }
 
@@ -129,15 +154,29 @@ float3 TraceAlphaShadowRGB(float3 rayOrigin, float3 rayDirection, float maxDista
 					// 基础消光系数（散射+吸收）
 					float3 baseExtinction = volumetric_info.scattering.scattering_coeff + volumetric_info.scattering.absorption_coeff;
 					
-					// 应用密度和环境雾的吸收颜色调制
-					// 注意：absorption_color 作为颜色调制，不是直接乘到系数上
+					// 应用密度
 					float3 extinction = baseExtinction * density;
 					
-					// 如果启用环境雾，使用环境雾的吸收颜色来调制消光
-					if (volumetric_info.environment_fog.enable > 0.5) {
-						// 降低环境雾对阴影的影响，避免过度变暗
-						extinction = extinction * lerp(float3(1, 1, 1), volumetric_info.environment_fog.absorption_color, 0.3);
+					// 根据不同的体积类型应用吸收颜色
+					float3 absorptionColor = float3(1, 1, 1); // 默认无颜色调制
+					
+					// 检查是否在雾气盒子内（优先级最高，因为是局部效果）
+					if (volumetric_info.fog_box.enable > 0.5) {
+						float3 localPos = abs(currentPos - volumetric_info.fog_box.center);
+						if (all(localPos < volumetric_info.fog_box.size)) {
+							// 在雾气盒子内，使用盒子的吸收颜色
+							absorptionColor = volumetric_info.fog_box.absorption_color;
+						}
 					}
+					
+					// 如果不在雾气盒子内，检查环境雾
+					if (all(absorptionColor == float3(1, 1, 1)) && volumetric_info.environment_fog.enable > 0.5) {
+						// 降低环境雾对阴影的影响，避免过度变暗
+						absorptionColor = lerp(float3(1, 1, 1), volumetric_info.environment_fog.absorption_color, 0.3);
+					}
+					
+					// 应用吸收颜色调制
+					extinction = extinction * absorptionColor;
 					
 					// 应用透射率：exp(-extinction * distance)
 					float3 transmittance = exp(-extinction * volumeStepSize);
@@ -161,9 +200,24 @@ float3 TraceAlphaShadowRGB(float3 rayOrigin, float3 rayDirection, float maxDista
 				if (density > MIN_DENSITY_THRESHOLD) {
 					float3 baseExtinction = volumetric_info.scattering.scattering_coeff + volumetric_info.scattering.absorption_coeff;
 					float3 extinction = baseExtinction * density;
-					if (volumetric_info.environment_fog.enable > 0.5) {
-						extinction = extinction * lerp(float3(1, 1, 1), volumetric_info.environment_fog.absorption_color, 0.3);
+					
+					// 应用吸收颜色（与主循环一致）
+					float3 absorptionColor = float3(1, 1, 1);
+					
+					// 检查雾气盒子
+					if (volumetric_info.fog_box.enable > 0.5) {
+						float3 localPos = abs(currentPos - volumetric_info.fog_box.center);
+						if (all(localPos < volumetric_info.fog_box.size)) {
+							absorptionColor = volumetric_info.fog_box.absorption_color;
+						}
 					}
+					
+					// 检查环境雾
+					if (all(absorptionColor == float3(1, 1, 1)) && volumetric_info.environment_fog.enable > 0.5) {
+						absorptionColor = lerp(float3(1, 1, 1), volumetric_info.environment_fog.absorption_color, 0.3);
+					}
+					
+					extinction = extinction * absorptionColor;
 					float3 transmittance = exp(-extinction * remainingDist);
 					visibility *= transmittance;
 				}
