@@ -305,242 +305,344 @@ void Application::OnInit() {
     // Create scene - Cornell Box scene
     scene_ = std::make_unique<Scene>(core_.get());
 
-    // ==================== 加载 Staircase 场景 ====================
-    // Staircase 场景变换 - 缩放并平移到原点附近以便相机进入观看
-    // 许多外部模型使用较大的原始单位，这里先缩小 0.02（可根据运行结果再调整）并向后移至 -3.0
-    glm::mat4 staircase_transform = glm::translate(glm::mat4(1.0f), glm::vec3(-0.5f, 0.0f, -3.0f))
-                                   * glm::scale(glm::mat4(1.0f), glm::vec3(0.02f));
+    // ==================== 加载热带岛屿场景 ====================
+    // 定义基础变换矩阵，根据资源大小调整缩放和位置
+    // 将海岛整体上移 1.0 单位，以便更好地与相机和天空对齐
+    glm::mat4 island_base_transform = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 2.5f, 0.0f))
+                                   * glm::scale(glm::mat4(1.0f), glm::vec3(1.0f));
 
-    // 加载 Black 物体
+    // ===== 地形基础 =====
+    // 地面
+    // {
+    //     auto entity = std::make_shared<Entity>(
+    //         "meshes/tropical_island/floor.obj",
+    //         Material(glm::vec3(0.4f, 0.3f, 0.2f), 0.8f, 0.0f),  // 泥土色地面
+    //         island_base_transform
+    //     );
+    //     scene_->AddEntity(entity);
+    // }
+
+    // 沙滩
     {
         auto entity = std::make_shared<Entity>(
-            "meshes/staircase/Black.obj",
-            Material(glm::vec3(0.05f, 0.05f, 0.05f), 0.3f, 0.0f),  // 黑色材质
-            staircase_transform
+            "meshes/tropical_island/sand.obj",
+            Material(glm::vec3(0.9f, 0.8f, 0.6f), 0.7f, 0.0f),  // 沙滩色
+            island_base_transform
         );
         scene_->AddEntity(entity);
     }
 
-    // 加载 Brass 物体
+    // 水面（透明效果）
     {
         auto entity = std::make_shared<Entity>(
-            "meshes/staircase/Brass.obj",
-            Material(glm::vec3(0.8f, 0.6f, 0.3f), 0.2f, 0.9f),  // 黄铜金属材质
-            staircase_transform
+            "meshes/tropical_island/water.obj",
+            Material(glm::vec3(0.2f, 0.6f, 0.9f), 0.02f, 0.0f, 0.95f, 1.333f),  // 更透明、更平滑的水面
+            island_base_transform
         );
         scene_->AddEntity(entity);
     }
 
-    // 加载 BrushedAluminium 物体
+    // 草地
     {
         auto entity = std::make_shared<Entity>(
-            "meshes/staircase/BrushedAluminium.obj",
-            Material(glm::vec3(0.7f, 0.7f, 0.7f), 0.3f, 0.9f),  // 拉丝铝材质
-            staircase_transform,
-            "meshes/staircase/textures/BrushedAluminium.png"
+            "meshes/tropical_island/grass.obj",
+            Material(glm::vec3(0.3f, 0.6f, 0.2f), 0.9f, 0.0f),  // 绿色草地
+            island_base_transform
         );
         scene_->AddEntity(entity);
     }
 
-    // 加载 Candles 物体
+    // ===== 植被 - 树干 =====
+    // 树干1
     {
-        Material candle_material(glm::vec3(0.9f, 0.85f, 0.7f), 0.4f, 0.0f);  // 蜡烛材质
-        candle_material.emission_color = glm::vec3(1.0f, 0.7f, 0.3f);  // 暖黄色发光
-        candle_material.emission_strength = 2.0f;  // 中等发光强度
-        
         auto entity = std::make_shared<Entity>(
-            "meshes/staircase/Candles.obj",
-            candle_material,
-            staircase_transform
+            "meshes/tropical_island/trunk1.obj",
+            Material(glm::vec3(0.4f, 0.25f, 0.15f), 0.8f, 0.0f),  // 棕色树干
+            island_base_transform
         );
         scene_->AddEntity(entity);
     }
 
-    // 加载 ChairSeat 物体
+    // 树干2
     {
         auto entity = std::make_shared<Entity>(
-            "meshes/staircase/ChairSeat.obj",
-            Material(glm::vec3(0.4f, 0.3f, 0.2f), 0.6f, 0.0f),  // 椅子座位材质
-            staircase_transform,
-            "meshes/staircase/textures/Fabric.png"
+            "meshes/tropical_island/trunk2.obj",
+            Material(glm::vec3(0.4f, 0.25f, 0.15f), 0.8f, 0.0f),  // 棕色树干
+            island_base_transform
         );
         scene_->AddEntity(entity);
     }
 
-    // 加载 Emission 物体（发光物体）
+    // ===== 植被 - 树叶 =====
+    // 添加主要树叶（只选择几个关键的，避免过多重复）
     {
-        Material emission_material(glm::vec3(1.0f, 1.0f, 1.0f), 0.0f, 0.0f);
-        emission_material.emission_color = glm::vec3(1.0f, 0.95f, 0.9f);  // 白色光
-        emission_material.emission_strength = 10.0f;  // 强发光
-        
         auto entity = std::make_shared<Entity>(
-            "meshes/staircase/Emission.obj",
-            emission_material,
-            staircase_transform
+            "meshes/tropical_island/leaf1.obj",
+            Material(glm::vec3(0.2f, 0.7f, 0.3f), 0.7f, 0.0f),  // 鲜绿色
+            island_base_transform,
+            "meshes/tropical_island/textures/palm.png"
         );
         scene_->AddEntity(entity);
     }
 
-    // 加载 Glass 物体
     {
         auto entity = std::make_shared<Entity>(
-            "meshes/staircase/Glass.obj",
-            Material(glm::vec3(0.95f, 0.95f, 0.95f), 0.02f, 0.0f, 0.95f, 1.5f),  // 玻璃材质
-            staircase_transform
+            "meshes/tropical_island/leaf5.obj",
+            Material(glm::vec3(0.25f, 0.65f, 0.3f), 0.7f, 0.0f),
+            island_base_transform,
+            "meshes/tropical_island/textures/palm.png"
         );
         scene_->AddEntity(entity);
     }
 
-    // 加载 Gold 物体
     {
         auto entity = std::make_shared<Entity>(
-            "meshes/staircase/Gold.obj",
-            Material(glm::vec3(1.0f, 0.8f, 0.3f), 0.15f, 1.0f),  // 金色金属材质
-            staircase_transform
+            "meshes/tropical_island/leaf10.obj",
+            Material(glm::vec3(0.3f, 0.6f, 0.25f), 0.7f, 0.0f),
+            island_base_transform,
+            "meshes/tropical_island/textures/palm.png"
         );
         scene_->AddEntity(entity);
     }
 
-    // 加载 Lampshade 物体
     {
         auto entity = std::make_shared<Entity>(
-            "meshes/staircase/Lampshade.obj",
-            Material(glm::vec3(0.9f, 0.9f, 0.85f), 0.5f, 0.0f),  // 灯罩材质
-            staircase_transform
+            "meshes/tropical_island/leaf15.obj",
+            Material(glm::vec3(0.2f, 0.7f, 0.35f), 0.7f, 0.0f),
+            island_base_transform,
+            "meshes/tropical_island/textures/palm.png"
         );
         scene_->AddEntity(entity);
     }
 
-    // 加载 MagnoliaPaint 物体
     {
         auto entity = std::make_shared<Entity>(
-            "meshes/staircase/MagnoliaPaint.obj",
-            Material(glm::vec3(0.95f, 0.93f, 0.88f), 0.7f, 0.0f),  // 玉兰白油漆材质
-            staircase_transform
+            "meshes/tropical_island/leaf20.obj",
+            Material(glm::vec3(0.25f, 0.65f, 0.25f), 0.7f, 0.0f),
+            island_base_transform,
+            "meshes/tropical_island/textures/palm.png"
         );
         scene_->AddEntity(entity);
     }
 
-    // 加载 Painting1 物体
+    // 添加短叶子
     {
         auto entity = std::make_shared<Entity>(
-            "meshes/staircase/Painting1.obj",
-            Material(glm::vec3(0.8f, 0.7f, 0.6f), 0.6f, 0.0f),  // 画作1材质
-            staircase_transform,
-            "meshes/staircase/textures/Painting1.png"
+            "meshes/tropical_island/shortleaf1.obj",
+            Material(glm::vec3(0.3f, 0.6f, 0.2f), 0.8f, 0.0f),
+            island_base_transform,
+            "meshes/tropical_island/textures/palm.png"
         );
         scene_->AddEntity(entity);
     }
 
-    // 加载 Painting2 物体
     {
         auto entity = std::make_shared<Entity>(
-            "meshes/staircase/Painting2.obj",
-            Material(glm::vec3(0.7f, 0.6f, 0.5f), 0.6f, 0.0f),  // 画作2材质
-            staircase_transform,
-            "meshes/staircase/textures/Painting2.png"
+            "meshes/tropical_island/shortleaf5.obj",
+            Material(glm::vec3(0.25f, 0.65f, 0.25f), 0.8f, 0.0f),
+            island_base_transform,
+            "meshes/tropical_island/textures/palm.png"
         );
         scene_->AddEntity(entity);
     }
 
-    // 加载 Painting3 物体
     {
         auto entity = std::make_shared<Entity>(
-            "meshes/staircase/Painting3.obj",
-            Material(glm::vec3(0.6f, 0.7f, 0.6f), 0.6f, 0.0f),  // 画作3材质
-            staircase_transform,
-            "meshes/staircase/textures/Painting3.png"
+            "meshes/tropical_island/shortleaf10.obj",
+            Material(glm::vec3(0.2f, 0.7f, 0.3f), 0.8f, 0.0f),
+            island_base_transform,
+            "meshes/tropical_island/textures/palm.png"
         );
         scene_->AddEntity(entity);
     }
 
-    // 加载 StainlessSteel 物体
+    // ===== 建筑和装饰 =====
+    // 码头1
     {
         auto entity = std::make_shared<Entity>(
-            "meshes/staircase/StainlessSteel.obj",
-            Material(glm::vec3(0.75f, 0.75f, 0.75f), 0.25f, 1.0f),  // 不锈钢材质
-            staircase_transform
+            "meshes/tropical_island/dock1.obj",
+            Material(glm::vec3(0.6f, 0.45f, 0.3f), 0.7f, 0.0f),  // 木质码头
+            island_base_transform
         );
         scene_->AddEntity(entity);
     }
 
-    // 加载 Wallpaper 物体
+    // 码头2
     {
         auto entity = std::make_shared<Entity>(
-            "meshes/staircase/Wallpaper.obj",
-            Material(glm::vec3(0.85f, 0.82f, 0.78f), 0.8f, 0.0f),  // 壁纸材质
-            staircase_transform,
-            "meshes/staircase/textures/Wallpaper.png"
+            "meshes/tropical_island/dock2.obj",
+            Material(glm::vec3(0.6f, 0.45f, 0.3f), 0.7f, 0.0f),  // 木质码头
+            island_base_transform
         );
         scene_->AddEntity(entity);
     }
 
-    // 加载 WhitePaint 物体
+    // 船只
     {
         auto entity = std::make_shared<Entity>(
-            "meshes/staircase/WhitePaint.obj",
-            Material(glm::vec3(0.95f, 0.95f, 0.95f), 0.7f, 0.0f),  // 白色油漆材质
-            staircase_transform
+            "meshes/tropical_island/boat.obj",
+            Material(glm::vec3(0.5f, 0.3f, 0.2f), 0.6f, 0.0f),  // 木质船身
+            island_base_transform
         );
         scene_->AddEntity(entity);
     }
 
-    // 加载 WhitePlastic 物体
+    // 木板装饰
     {
         auto entity = std::make_shared<Entity>(
-            "meshes/staircase/WhitePlastic.obj",
-            Material(glm::vec3(0.9f, 0.9f, 0.9f), 0.4f, 0.0f),  // 白色塑料材质
-            staircase_transform
+            "meshes/tropical_island/plank1.obj",
+            Material(glm::vec3(0.6f, 0.4f, 0.25f), 0.7f, 0.0f),
+            island_base_transform
         );
         scene_->AddEntity(entity);
     }
 
-    // 加载 WoodChair 物体
     {
         auto entity = std::make_shared<Entity>(
-            "meshes/staircase/WoodChair.obj",
-            Material(glm::vec3(0.5f, 0.3f, 0.2f), 0.7f, 0.0f),  // 木质椅子材质
-            staircase_transform,
-            "meshes/staircase/textures/WoodChair.png"
+            "meshes/tropical_island/plank2.obj",
+            Material(glm::vec3(0.6f, 0.4f, 0.25f), 0.7f, 0.0f),
+            island_base_transform
         );
         scene_->AddEntity(entity);
     }
 
-    // 加载 WoodFloor 物体
+    // 船桨
     {
         auto entity = std::make_shared<Entity>(
-            "meshes/staircase/WoodFloor.obj",
-            Material(glm::vec3(0.6f, 0.4f, 0.25f), 0.65f, 0.0f),  // 木地板材质
-            staircase_transform,
-            "meshes/staircase/textures/WoodFloor.png"
+            "meshes/tropical_island/oar1.obj",
+            Material(glm::vec3(0.5f, 0.35f, 0.2f), 0.6f, 0.0f),
+            island_base_transform
         );
         scene_->AddEntity(entity);
     }
 
-    // 加载 WoodLamp 物体
     {
         auto entity = std::make_shared<Entity>(
-            "meshes/staircase/WoodLamp.obj",
-            Material(glm::vec3(0.55f, 0.35f, 0.22f), 0.7f, 0.0f),  // 木质灯具材质
-            staircase_transform,
-            "meshes/staircase/textures/WoodPanel.png"
+            "meshes/tropical_island/oar2.obj",
+            Material(glm::vec3(0.5f, 0.35f, 0.2f), 0.6f, 0.0f),
+            island_base_transform
         );
         scene_->AddEntity(entity);
     }
 
-    // 加载 WoodStairs 物体
+    // 绳索
     {
         auto entity = std::make_shared<Entity>(
-            "meshes/staircase/WoodStairs.obj",
-            Material(glm::vec3(0.5f, 0.35f, 0.2f), 0.7f, 0.0f),  // 木质楼梯材质
-            staircase_transform,
-            "meshes/staircase/textures/WoodPanel.png"
+            "meshes/tropical_island/rope.obj",
+            Material(glm::vec3(0.7f, 0.6f, 0.4f), 0.8f, 0.0f),  // 麻绳色
+            island_base_transform
         );
         scene_->AddEntity(entity);
     }
-    
-    grassland::LogInfo("Loaded staircase scene with {} objects", 21);
-    // ==================== Staircase 场景加载完成 ====================
+
+    // ===== 岩石 =====
+    {
+        auto entity = std::make_shared<Entity>(
+            "meshes/tropical_island/rock1.obj",
+            Material(glm::vec3(0.5f, 0.5f, 0.5f), 0.9f, 0.0f),  // 灰色岩石
+            island_base_transform
+        );
+        scene_->AddEntity(entity);
+    }
+
+    {
+        auto entity = std::make_shared<Entity>(
+            "meshes/tropical_island/rock2.obj",
+            Material(glm::vec3(0.48f, 0.48f, 0.48f), 0.9f, 0.0f),
+            island_base_transform
+        );
+        scene_->AddEntity(entity);
+    }
+
+    {
+        auto entity = std::make_shared<Entity>(
+            "meshes/tropical_island/rock3.obj",
+            Material(glm::vec3(0.45f, 0.45f, 0.45f), 0.9f, 0.0f),
+            island_base_transform
+        );
+        scene_->AddEntity(entity);
+    }
+
+    {
+        auto entity = std::make_shared<Entity>(
+            "meshes/tropical_island/rock4.obj",
+            Material(glm::vec3(0.52f, 0.5f, 0.47f), 0.9f, 0.0f),
+            island_base_transform
+        );
+        scene_->AddEntity(entity);
+    }
+
+    {
+        auto entity = std::make_shared<Entity>(
+            "meshes/tropical_island/rock5.obj",
+            Material(glm::vec3(0.55f, 0.5f, 0.45f), 0.9f, 0.0f),
+            island_base_transform
+        );
+        scene_->AddEntity(entity);
+    }
+
+    {
+        auto entity = std::make_shared<Entity>(
+            "meshes/tropical_island/rock6.obj",
+            Material(glm::vec3(0.47f, 0.47f, 0.44f), 0.9f, 0.0f),
+            island_base_transform
+        );
+        scene_->AddEntity(entity);
+    }
+
+    // 添加第三个木板
+    {
+        auto entity = std::make_shared<Entity>(
+            "meshes/tropical_island/plank3.obj",
+            Material(glm::vec3(0.55f, 0.4f, 0.25f), 0.7f, 0.0f),
+            island_base_transform
+        );
+        scene_->AddEntity(entity);
+    }
+
+    // 添加更多树叶以丰富植被
+    {
+        auto entity = std::make_shared<Entity>(
+            "meshes/tropical_island/leaf3.obj",
+            Material(glm::vec3(0.22f, 0.68f, 0.32f), 0.7f, 0.0f),
+            island_base_transform,
+            "meshes/tropical_island/textures/palm.png"
+        );
+        scene_->AddEntity(entity);
+    }
+
+    {
+        auto entity = std::make_shared<Entity>(
+            "meshes/tropical_island/leaf8.obj",
+            Material(glm::vec3(0.28f, 0.62f, 0.28f), 0.7f, 0.0f),
+            island_base_transform,
+            "meshes/tropical_island/textures/palm.png"
+        );
+        scene_->AddEntity(entity);
+    }
+
+    {
+        auto entity = std::make_shared<Entity>(
+            "meshes/tropical_island/shortleaf3.obj",
+            Material(glm::vec3(0.32f, 0.58f, 0.22f), 0.8f, 0.0f),
+            island_base_transform,
+            "meshes/tropical_island/textures/palm.png"
+        );
+        scene_->AddEntity(entity);
+    }
+
+    {
+        auto entity = std::make_shared<Entity>(
+            "meshes/tropical_island/shortleaf7.obj",
+            Material(glm::vec3(0.26f, 0.64f, 0.26f), 0.8f, 0.0f),
+            island_base_transform,
+            "meshes/tropical_island/textures/palm.png"
+        );
+        scene_->AddEntity(entity);
+    }
+
+    grassland::LogInfo("Loaded tropical island scene with {} objects", 31);
+    // ==================== 热带岛屿场景加载完成 ====================
 
     
     scene_->BuildAccelerationStructures();
@@ -568,69 +670,66 @@ void Application::OnInit() {
         point_lights_[i].radius = 0.0f;
     }
     
-    // 在环境光顶部靠右位置添加一个明显的点光源
-    // 环境光位置：area_lights_[0].position = (0.0f, 10.5f, 0.0f)
-    // 点光源位置：顶部靠右，稍微偏前，强度较高以明显区别于环境光
-    point_lights_[0].position = glm::vec3(3.5f, 10.5f, 2.0f);  // 顶部靠右，稍微偏前
-    point_lights_[0].color = glm::vec3(1.0f, 0.95f, 0.9f);      // 稍微暖色调的白光
-    point_lights_[0].strength = 2000.0f;                        // 高强度，明显区别于环境光
-    point_lights_[0].radius = 0.15f;                            // 较小的半径，产生明显的高光
-
-    // 为 Staircase 场景添加若干点光源（烛光与台灯）
-    // Candle/emission cluster (soft warm lights)
-    point_lights_[1].position = glm::vec3(1.0f, 1.25f, -1.0f);
-    point_lights_[1].color = glm::vec3(1.0f, 0.75f, 0.45f);
-    point_lights_[1].strength = 120.0f;   // 温暖的局部光
-    point_lights_[1].radius = 0.35f;      // 更大的半径以产生柔和衰减
-
-    // Small lamp near stairs
-    point_lights_[2].position = glm::vec3(-0.8f, 1.6f, -0.5f);
-    point_lights_[2].color = glm::vec3(1.0f, 0.95f, 0.9f);
-    point_lights_[2].strength = 300.0f;
-    point_lights_[2].radius = 0.25f;
+    // 为热带岛屿场景添加点光源
+    // 主要阳光反射点光源（模拟太阳光在水面的反射）
+    point_lights_[0].position = glm::vec3(5.0f, 8.0f, 3.0f);   // 高处斜射
+    point_lights_[0].color = glm::vec3(1.0f, 0.95f, 0.8f);     // 温暖的阳光色
+    point_lights_[0].strength = 200.0f;                        // 略微减弱的阳光
+    point_lights_[0].radius = 0.2f;
+    
+    // 水面反射光
+    point_lights_[1].position = glm::vec3(-2.0f, 1.5f, 2.0f);  // 水面附近
+    point_lights_[1].color = glm::vec3(0.7f, 0.9f, 1.0f);     // 蓝色水光
+    point_lights_[1].strength = 120.0f;                        // 略微减弱的水面反射光
+    point_lights_[1].radius = 0.8f;                            // 较大半径产生柔和效果
+    
+    // 另一个水面反射点
+    point_lights_[2].position = glm::vec3(3.0f, 1.2f, -1.0f); 
+    point_lights_[2].color = glm::vec3(0.8f, 0.95f, 1.0f);
+    point_lights_[2].strength = 90.0f;
+    point_lights_[2].radius = 0.6f;
     
     // 创建并上传点光源缓冲区
     core_->CreateBuffer(sizeof(PointLight) * 16, grassland::graphics::BUFFER_TYPE_DYNAMIC, &point_lights_buffer_);
     point_lights_buffer_->UploadData(point_lights_.data(), sizeof(PointLight) * 16);
-    grassland::LogInfo("Initialized {} point lights", 3);
+    grassland::LogInfo("Initialized {} point lights for tropical island", 3);
 
     // 初始化面光源数组（最多8个）
     area_lights_.resize(8);
-    // 配置主光源 - 天花板白光
-    // Ceiling height: 548.8 * 0.02 = 10.976 (after cornell_box_transform scale)
-    // Position should be near ceiling center, slightly below it
-    area_lights_[0].position = glm::vec3(0.0f, 10.5f, 0.0f);      // 接近天花板（调整到正确位置）
-    area_lights_[0].color = glm::vec3(1.0f, 1.0f, 1.0f);         // 白色
-    area_lights_[0].strength = 60.0f;                            // 主顶面光，用于整体照明
-    area_lights_[0].width = 6.0f;                                 // 扩大面积以匹配场景（从3.0改为6.0）
-    area_lights_[0].height = 6.0f;                                // 扩大面积以匹配场景（从3.0改为6.0）
-    area_lights_[0].direction = glm::normalize(glm::vec3(0.0f, -1.0f, 0.0f));  // 向下
-    area_lights_[0].u_axis = glm::normalize(glm::vec3(1.0f, 0.0f, 0.0f));      // X轴
-    area_lights_[0].v_axis = glm::normalize(glm::vec3(0.0f, 0.0f, 1.0f));      // Z轴
+    
+    // 配置主光源 - 天空阳光
+    area_lights_[0].position = glm::vec3(0.0f, 12.0f, 0.0f);     // 高空太阳位置
+    area_lights_[0].color = glm::vec3(1.0f, 0.95f, 0.85f);       // 温暖阳光色
+    area_lights_[0].strength = 60.0f;                            // 稍弱的阳光
+    area_lights_[0].width = 8.0f;                                // 大面积照明
+    area_lights_[0].height = 8.0f;
+    area_lights_[0].direction = glm::normalize(glm::vec3(-0.3f, -1.0f, -0.2f));  // 斜射阳光
+    area_lights_[0].u_axis = glm::normalize(glm::vec3(1.0f, 0.0f, 0.0f));
+    area_lights_[0].v_axis = glm::normalize(glm::vec3(0.0f, 0.0f, 1.0f));
     area_lights_[0].pad1 = 0.0f;
     area_lights_[0].pad2 = 0.0f;
     
-    // 配置左侧光
-    area_lights_[1].position = glm::vec3(-3.0f, 2.2f, -0.5f);     // 靠近楼梯侧面
-    area_lights_[1].color = glm::vec3(0.95f, 0.9f, 0.8f);         // 偏暖的填充光
-    area_lights_[1].strength = 18.0f;                             // 中等强度，用于侧向补光
-    area_lights_[1].width = 0.5f;                                 // 窄条
-    area_lights_[1].height = 2.5f;                                // 高条
-    area_lights_[1].direction = glm::normalize(glm::vec3(1.0f, 0.0f, 0.0f));   // 向右
-    area_lights_[1].u_axis = glm::normalize(glm::vec3(0.0f, 1.0f, 0.0f));      // Y轴
-    area_lights_[1].v_axis = glm::normalize(glm::vec3(0.0f, 0.0f, 1.0f));      // Z轴
+    // 配置环境补光 - 天空散射光
+    area_lights_[1].position = glm::vec3(-4.0f, 8.0f, 2.0f);    // 天空位置
+    area_lights_[1].color = glm::vec3(0.6f, 0.8f, 1.0f);        // 蓝色天空光
+    area_lights_[1].strength = 18.0f;                           // 稍弱的天空散射补光
+    area_lights_[1].width = 5.0f;
+    area_lights_[1].height = 5.0f;
+    area_lights_[1].direction = glm::normalize(glm::vec3(0.5f, -1.0f, -0.3f));
+    area_lights_[1].u_axis = glm::normalize(glm::vec3(1.0f, 0.0f, 0.0f));
+    area_lights_[1].v_axis = glm::normalize(glm::vec3(0.0f, 0.0f, 1.0f));
     area_lights_[1].pad1 = 0.0f;
     area_lights_[1].pad2 = 0.0f;
     
-    // 配置右侧光
-    area_lights_[2].position = glm::vec3(2.5f, 2.2f, -0.5f);      // 靠近楼梯另一侧
-    area_lights_[2].color = glm::vec3(1.0f, 0.85f, 0.7f);         // 偏暖的补光
-    area_lights_[2].strength = 14.0f;                             // 中等强度，柔和补光
-    area_lights_[2].width = 0.5f;                                 // 窄条
-    area_lights_[2].height = 2.5f;                                // 高条
-    area_lights_[2].direction = glm::normalize(glm::vec3(-1.0f, 0.0f, 0.0f));  // 向左
-    area_lights_[2].u_axis = glm::normalize(glm::vec3(0.0f, 1.0f, 0.0f));      // Y轴
-    area_lights_[2].v_axis = glm::normalize(glm::vec3(0.0f, 0.0f, 1.0f));      // Z轴
+    // 配置水面反射光源
+    area_lights_[2].position = glm::vec3(2.0f, 3.0f, -3.0f);    // 水面反射位置
+    area_lights_[2].color = glm::vec3(0.7f, 0.9f, 1.0f);        // 水色反射光
+    area_lights_[2].strength = 10.0f;                           // 略弱的水面反射
+    area_lights_[2].width = 3.0f;
+    area_lights_[2].height = 3.0f;
+    area_lights_[2].direction = glm::normalize(glm::vec3(0.0f, 1.0f, 0.5f));   // 向上反射
+    area_lights_[2].u_axis = glm::normalize(glm::vec3(1.0f, 0.0f, 0.0f));
+    area_lights_[2].v_axis = glm::normalize(glm::vec3(0.0f, 0.0f, 1.0f));
     area_lights_[2].pad1 = 0.0f;
     area_lights_[2].pad2 = 0.0f;
     
@@ -654,19 +753,19 @@ void Application::OnInit() {
     grassland::LogInfo("Initialized {} area lights", 3);
 
     // ==================== 初始化 Skybox / Environment Map ====================
-    // 初始化 skybox 信息
-    skybox_info_.zenith_color = glm::vec3(0.3f, 0.5f, 0.85f);    // 深蓝色天顶
-    skybox_info_.horizon_color = glm::vec3(0.7f, 0.75f, 0.85f);  // 浅蓝色地平线
-    skybox_info_.ground_color = glm::vec3(0.3f, 0.3f, 0.35f);    // 深灰色地面
-    skybox_info_.has_environment_map = 1.0f;                       // 默认开启环境贴图
-    skybox_info_.environment_intensity = 1.0f;                     // 默认强度
-    skybox_info_.environment_rotation = 0.0f;                      // 无旋转
+    // 初始化 skybox 信息 - 热带岛屿天空
+    skybox_info_.zenith_color = glm::vec3(0.4f, 0.7f, 1.0f);     // 明亮蓝色天顶
+    skybox_info_.horizon_color = glm::vec3(0.8f, 0.9f, 1.0f);    // 浅蓝色地平线
+    skybox_info_.ground_color = glm::vec3(0.2f, 0.5f, 0.3f);     // 绿色地面（岛屿植被色）
+    skybox_info_.has_environment_map = 1.0f;                     // 默认开启环境贴图
+    skybox_info_.environment_intensity = 1.0f;                   // 稍微降低环境强度
+    skybox_info_.environment_rotation = 0.0f;                    // 无旋转
     
-    // 太阳设置
-    skybox_info_.sun_direction = glm::normalize(glm::vec3(0.5f, 0.8f, 0.3f));
-    skybox_info_.sun_intensity = 0.0f;                             // 默认关闭太阳光
-    skybox_info_.sun_color = glm::vec3(1.0f, 0.95f, 0.85f);       // 暖色阳光
-    skybox_info_.sun_angular_radius = 0.00465f;                    // 约 0.53 度（真实太阳大小）
+    // 太阳设置 - 热带阳光
+    skybox_info_.sun_direction = glm::normalize(glm::vec3(0.6f, 0.7f, 0.3f));  // 高角度阳光
+    skybox_info_.sun_intensity = 2.0f;                           // 略微减弱太阳强度
+    skybox_info_.sun_color = glm::vec3(1.0f, 0.95f, 0.8f);      // 温暖阳光色
+    skybox_info_.sun_angular_radius = 0.00465f;                  // 约 0.53 度（真实太阳大小）
     
     // 创建 skybox info 缓冲区
     core_->CreateBuffer(sizeof(SkyboxInfo), grassland::graphics::BUFFER_TYPE_DYNAMIC, &skybox_info_buffer_);
@@ -691,10 +790,10 @@ void Application::OnInit() {
     camera_up_ = glm::vec3{ 0.0f, 1.0f, 0.0f }; // World up
     camera_speed_ = 0.05f;
 
-    // 将相机放在场景入口处，略低并向内看以匹配示意图构图
+    // 将相机放在更接近海岛的位置，便于观察水面与细节（平视）
     // 位置可根据运行时效果微调
-    camera_pos_ = glm::vec3(0.0f, 4.0f, 2.0f); // 在场景前方，略高于地面
-    camera_front_ = glm::normalize(glm::vec3(0.0f, 0.08f, -1.0f));
+    camera_pos_ = glm::vec3(3.08f, 4.10f, 0.23f); // 稍微后移以获得更好的视野
+    camera_front_ = glm::normalize(glm::vec3(-0.97f, -0.22f, 0.02f)); // 平视，不俯视
     // 从前向量计算 yaw/pitch 以保持鼠标控制一致性
     yaw_ = glm::degrees(atan2(camera_front_.z, camera_front_.x));
     pitch_ = glm::degrees(asin(glm::clamp(camera_front_.y, -1.0f, 1.0f)));
