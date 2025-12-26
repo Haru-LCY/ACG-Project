@@ -874,10 +874,27 @@ void Application::OnInit() {
     motion_blur_direction_ = glm::vec2(1.0f, 0.0f); // 默认水平方向
     
     // Initialize Cartoon Rendering parameters
-    enable_toon_shading_ = 1;       // 默认关闭卡通渲染
-    enable_toon_outline_ = 1;       // 默认关闭轮廓线
+    enable_toon_shading_ = 1;       // 默认开启卡通渲染
+    enable_toon_outline_ = 1;       // 默认开启轮廓线
     toon_color_levels_ = 4;         // 默认4个色阶
     toon_shading_steps_ = 3;        // 默认3个光照阶梯
+    
+    // Initialize Two-Tone Shading parameters (方案一)
+    toon_threshold_ = 0.5f;                              // 默认阈值
+    toon_shadow_smoothness_ = 0.05f;                     // 默认柔和度
+    toon_shadow_tint_ = glm::vec3(0.5f, 0.6f, 0.8f);     // 冷色调（蓝色）
+    toon_highlight_tint_ = glm::vec3(1.0f, 1.0f, 0.95f); // 暖色调（微黄）
+    
+    // Initialize Rim Light parameters (方案二)
+    enable_rim_light_ = 1;                      // 默认开启边缘光
+    rim_light_strength_ = 2.0f;                 // 默认强度
+    rim_light_power_ = 3.0f;                    // 默认锐度
+    rim_light_color_ = glm::vec3(1.0f, 1.0f, 0.9f); // 微黄色
+    
+    // Initialize Multi-Step Shading parameters (方案三)
+    toon_use_multi_step_ = 0;      // 默认使用二色调模式
+    toon_num_steps_ = 3;            // 默认3个阶梯
+    toon_step_smoothness_ = 0.1f;   // 默认柔和度
 
     // Calculate initial camera_front_ based on yaw and pitch
     glm::vec3 front;
@@ -907,6 +924,20 @@ void Application::OnInit() {
     camera_object.enable_toon_outline = enable_toon_outline_;
     camera_object.toon_color_levels = toon_color_levels_;
     camera_object.toon_shading_steps = toon_shading_steps_;
+    // Two-Tone Shading parameters (方案一)
+    camera_object.toon_threshold = toon_threshold_;
+    camera_object.toon_shadow_smoothness = toon_shadow_smoothness_;
+    camera_object.toon_shadow_tint = toon_shadow_tint_;
+    camera_object.toon_highlight_tint = toon_highlight_tint_;
+    // Rim Light parameters (方案二)
+    camera_object.enable_rim_light = enable_rim_light_;
+    camera_object.rim_light_strength = rim_light_strength_;
+    camera_object.rim_light_power = rim_light_power_;
+    camera_object.rim_light_color = rim_light_color_;
+    // Multi-Step Shading parameters (方案三)
+    camera_object.toon_use_multi_step = toon_use_multi_step_;
+    camera_object.toon_num_steps = toon_num_steps_;
+    camera_object.toon_step_smoothness = toon_step_smoothness_;
     camera_object_buffer_->UploadData(&camera_object, sizeof(CameraObject));
 
     core_->CreateImage(window_->GetWidth(), window_->GetHeight(), grassland::graphics::IMAGE_FORMAT_R32G32B32A32_SFLOAT,
@@ -1149,6 +1180,20 @@ void Application::OnUpdate() {
         current_camera_object.enable_toon_outline = enable_toon_outline_;
         current_camera_object.toon_color_levels = toon_color_levels_;
         current_camera_object.toon_shading_steps = toon_shading_steps_;
+        // Two-Tone Shading parameters (方案一)
+        current_camera_object.toon_threshold = toon_threshold_;
+        current_camera_object.toon_shadow_smoothness = toon_shadow_smoothness_;
+        current_camera_object.toon_shadow_tint = toon_shadow_tint_;
+        current_camera_object.toon_highlight_tint = toon_highlight_tint_;
+        // Rim Light parameters (方案二)
+        current_camera_object.enable_rim_light = enable_rim_light_;
+        current_camera_object.rim_light_strength = rim_light_strength_;
+        current_camera_object.rim_light_power = rim_light_power_;
+        current_camera_object.rim_light_color = rim_light_color_;
+        // Multi-Step Shading parameters (方案三)
+        current_camera_object.toon_use_multi_step = toon_use_multi_step_;
+        current_camera_object.toon_num_steps = toon_num_steps_;
+        current_camera_object.toon_step_smoothness = toon_step_smoothness_;
         camera_object_buffer_->UploadData(&current_camera_object, sizeof(CameraObject));
         // --------------- 修改结束 ---------------
 
@@ -1378,6 +1423,83 @@ void Application::RenderInfoOverlay() {
             toon_changed = true;
         }
         ImGui::TextWrapped("Number of lighting steps (typically 2-4)");
+        
+        ImGui::Spacing();
+        ImGui::Separator();
+        
+        // ==================== 方案一：色调分离控制 ====================
+        ImGui::Text("Two-Tone Shading:");
+        if (ImGui::SliderFloat("Threshold", &toon_threshold_, 0.2f, 0.8f)) {
+            toon_changed = true;
+        }
+        ImGui::TextWrapped("Light/shadow separation threshold");
+        
+        if (ImGui::SliderFloat("Smoothness", &toon_shadow_smoothness_, 0.0f, 0.2f)) {
+            toon_changed = true;
+        }
+        ImGui::TextWrapped("Edge softness (0=hard, >0=soft/painterly)");
+        
+        if (ImGui::ColorEdit3("Shadow Tint", &toon_shadow_tint_[0])) {
+            toon_changed = true;
+        }
+        ImGui::TextWrapped("Cool tone for shadow areas");
+        
+        if (ImGui::ColorEdit3("Highlight Tint", &toon_highlight_tint_[0])) {
+            toon_changed = true;
+        }
+        ImGui::TextWrapped("Warm tone for lit areas");
+        
+        ImGui::Spacing();
+        ImGui::Separator();
+        
+        // ==================== 方案二：边缘光控制 ====================
+        ImGui::Text("Rim Light:");
+        bool rim_light_enabled = (enable_rim_light_ > 0);
+        if (ImGui::Checkbox("Enable Rim Light", &rim_light_enabled)) {
+            enable_rim_light_ = rim_light_enabled ? 1 : 0;
+            toon_changed = true;
+        }
+        
+        if (enable_rim_light_ > 0) {
+            if (ImGui::SliderFloat("Rim Strength", &rim_light_strength_, 0.0f, 5.0f)) {
+                toon_changed = true;
+            }
+            ImGui::TextWrapped("Intensity of rim light");
+            
+            if (ImGui::SliderFloat("Rim Power", &rim_light_power_, 1.0f, 10.0f)) {
+                toon_changed = true;
+            }
+            ImGui::TextWrapped("Edge sharpness (higher=sharper)");
+            
+            if (ImGui::ColorEdit3("Rim Color", &rim_light_color_[0])) {
+                toon_changed = true;
+            }
+            ImGui::TextWrapped("Color of rim light");
+        }
+        
+        ImGui::Spacing();
+        ImGui::Separator();
+        
+        // ==================== 方案三：多级阶梯控制 ====================
+        ImGui::Text("Multi-Step Shading:");
+        bool multi_step_enabled = (toon_use_multi_step_ > 0);
+        if (ImGui::Checkbox("Use Multi-Step", &multi_step_enabled)) {
+            toon_use_multi_step_ = multi_step_enabled ? 1 : 0;
+            toon_changed = true;
+        }
+        ImGui::TextWrapped("Use multiple steps instead of two-tone");
+        
+        if (toon_use_multi_step_ > 0) {
+            if (ImGui::SliderInt("Num Steps", &toon_num_steps_, 2, 5)) {
+                toon_changed = true;
+            }
+            ImGui::TextWrapped("Number of shading steps");
+            
+            if (ImGui::SliderFloat("Step Smoothness", &toon_step_smoothness_, 0.0f, 0.3f)) {
+                toon_changed = true;
+            }
+            ImGui::TextWrapped("Smoothness of each step");
+        }
         
         ImGui::Spacing();
     }

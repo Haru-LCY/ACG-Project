@@ -159,9 +159,44 @@
     
     // ==================== 方案一：色彩量化（卡通效果）====================
     // 将连续色彩离散化为固定色阶，产生扁平化的卡通风格
-    if (camera_info.enable_toon_shading > 0) {
+    // 修复：只对击中物体的像素进行量化，避免环境贴图被量化
+    if (camera_info.enable_toon_shading > 0 && pickPayload.hit) {
         int levels = max(2, camera_info.toon_color_levels);
         mappedColor = QuantizeColor(mappedColor, levels);
+        
+        // ==================== 色调分离：应用明暗色调 ====================
+        // 在最终输出前应用色调调制，增强冷暖对比
+        if (camera_info.toon_shadow_smoothness > 0.0 && camera_info.toon_use_multi_step == 0) {
+            // 计算视角方向
+            float3 cameraPos = camera_info.camera_to_world[3].xyz;
+            float3 viewDir = normalize(cameraPos - pickPayload.hit_pos);
+            float3 normal = normalize(pickPayload.normal);
+            
+            // 简化的光照估算：计算平均光照方向
+            float3 avgLightDir = float3(0, 0, 0);
+            int lightCount = 0;
+            
+            // 遍历点光源计算平均方向
+            for (int i = 0; i < 16; i++) {
+                if (point_lights[i].strength > 0.0) {
+                    avgLightDir += normalize(point_lights[i].position - pickPayload.hit_pos);
+                    lightCount++;
+                }
+            }
+            
+            // 如果有光源，应用色调调制
+            if (lightCount > 0) {
+                avgLightDir = normalize(avgLightDir);
+                float NdotL = saturate(dot(normal, avgLightDir));
+                
+                // 计算色调系数（使用与光照计算相同的 smoothstep）
+                float toneFactor = SmoothStepShading(NdotL, camera_info.toon_threshold, camera_info.toon_shadow_smoothness);
+                
+                // 应用色调调制：在阴影区使用冷色调，高光区使用暖色调
+                float3 toneModulation = lerp(camera_info.toon_shadow_tint, camera_info.toon_highlight_tint, toneFactor);
+                mappedColor *= toneModulation;
+            }
+        }
     }
     
     // ==================== 方案二：边缘检测与描边 ====================

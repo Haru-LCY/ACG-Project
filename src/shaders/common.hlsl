@@ -22,11 +22,38 @@ struct CameraInfo {
   int motion_blur_mode;     // 0=Off, 1=Camera, 2=Object, 3=Radial, 4=Directional
   float motion_blur_intensity; // 运动模糊强度
   float2 motion_blur_direction; // 方向性模糊的方向
-  // Cartoon Rendering 参数
-  int enable_toon_shading;  // 是否启用卡通渲染 (0=Off, 1=On)
-  int enable_toon_outline;  // 是否启用轮廓线 (0=Off, 1=On)
-  int toon_color_levels;    // 色彩量化级别 (3-10)
-  int toon_shading_steps;   // 光照阶梯数 (2-5)
+    // Cartoon Rendering 参数
+    int enable_toon_shading;  // 是否启用卡通渲染 (0=Off, 1=On)
+    int enable_toon_outline;  // 是否启用轮廓线 (0=Off, 1=On)
+    int toon_color_levels;    // 色彩量化级别 (3-10)
+    int toon_shading_steps;   // 光照阶梯数 (2-5)
+    
+    // 色调分离参数 (Two-Tone Shading)
+    float toon_threshold;         // 明暗分界阈值 (0.3-0.7)
+    float toon_shadow_smoothness; // 明暗边界柔化程度 (0.0-0.2)
+    float padding_toon1;          // 对齐填充
+    float padding_toon2;          // 对齐填充
+    
+    float3 toon_shadow_tint;      // 暗面色调（冷色调）
+    float padding_toon3;
+    
+    float3 toon_highlight_tint;   // 明面色调（暖色调）
+    float padding_toon4;
+    
+    // 边缘光参数 (Rim Light)
+    int enable_rim_light;         // 是否启用边缘光
+    float rim_light_strength;     // 边缘光强度
+    float rim_light_power;        // 边缘光锐度 (1-10)
+    float padding_rim1;
+    
+    float3 rim_light_color;       // 边缘光颜色
+    float padding_rim2;
+    
+    // 多级阶梯参数 (Multi-Step Shading)
+    int toon_use_multi_step;      // 是否使用多级阶梯（vs 二色调）
+    int toon_num_steps;            // 阶梯数量 (2-5)
+    float toon_step_smoothness;   // 每个阶梯的柔和度
+    float padding_step1;
 };
 
 // Principled BSDF Material (matches C++ struct layout)
@@ -292,6 +319,92 @@ float StepShading(float NdotL, int steps) {
     steps = max(2, steps);
     // 将 [0,1] 范围分为 steps 个阶梯
     return floor(NdotL * float(steps)) / float(steps);
+}
+
+// ==================== 方案一：色调分离函数 ====================
+
+// 柔和阶梯函数：使用 smoothstep 在阈值附近创建柔和过渡
+// NdotL: 法线与光线方向的点积 (0-1)
+// threshold: 明暗分界阈值
+// smoothness: 柔化程度（过渡区域宽度）
+// 返回：柔和的明暗系数 (0-1)
+float SmoothStepShading(float NdotL, float threshold, float smoothness) {
+    // 在 threshold 附近创建平滑过渡
+    // smoothness 控制过渡区域的宽度
+    return smoothstep(threshold - smoothness, threshold + smoothness, NdotL);
+}
+
+// 色调分离函数：应用冷暖色调到明暗区域
+// NdotL: 法线与光线方向的点积 (0-1)
+// baseColor: 材质基础颜色
+// shadowTint: 暗面色调（冷色调）
+// highlightTint: 明面色调（暖色调）
+// threshold: 明暗分界阈值
+// smoothness: 柔化程度
+// 返回：应用色调后的颜色
+float3 ApplyTwoToneShading(float NdotL, float3 baseColor, float3 shadowTint, float3 highlightTint, float threshold, float smoothness) {
+    // 计算柔和的明暗系数
+    float lightFactor = SmoothStepShading(NdotL, threshold, smoothness);
+    
+    // 在阴影区应用冷色调，高光区应用暖色调
+    float3 shadedColor = lerp(baseColor * shadowTint, baseColor * highlightTint, lightFactor);
+    
+    return shadedColor;
+}
+
+// ==================== 方案三：多级阶梯光照函数 ====================
+
+// 多级阶梯光照：支持柔和边界的多级阶梯
+// NdotL: 法线与光线方向的点积 (0-1)
+// steps: 阶梯数量 (2-5)
+// smoothness: 每个阶梯的柔和度 (0=硬边界)
+// 返回：阶梯化后的光照强度 (0-1)
+float MultiStepShading(float NdotL, int steps, float smoothness) {
+    steps = max(2, steps);
+    
+    if (smoothness < 0.001) {
+        // 无柔化，使用原有的硬边界
+        return floor(NdotL * float(steps)) / float(steps);
+    } else {
+        // 柔化每个阶梯的边界
+        float stepSize = 1.0 / float(steps);
+        float stepIndex = floor(NdotL / stepSize);
+        float stepValue = stepIndex * stepSize;
+        float nextStepValue = (stepIndex + 1.0) * stepSize;
+        
+        // 在阶梯边界处使用 smoothstep
+        float edgeStart = nextStepValue - smoothness * stepSize;
+        float edgeEnd = nextStepValue + smoothness * stepSize;
+        
+        if (NdotL < edgeStart) {
+            return stepValue;
+        } else if (NdotL > edgeEnd) {
+            return nextStepValue;
+        } else {
+            return lerp(stepValue, nextStepValue, smoothstep(edgeStart, edgeEnd, NdotL));
+        }
+    }
+}
+
+// ==================== 方案二：边缘光函数 ====================
+
+// 计算 Fresnel 边缘光
+// normal: 表面法线（归一化）
+// viewDir: 视角方向（归一化，从表面指向相机）
+// rimColor: 边缘光颜色
+// rimStrength: 边缘光强度
+// rimPower: 边缘光锐度（越大边缘越锐利）
+// 返回：边缘光贡献
+float3 ComputeRimLight(float3 normal, float3 viewDir, float3 rimColor, float rimStrength, float rimPower) {
+    // 计算法线和视角的点积
+    float NdotV = saturate(dot(normal, viewDir));
+    
+    // 边缘处 NdotV 接近 0，中心处接近 1
+    // 使用 pow 控制边缘的锐度
+    float rimFactor = pow(1.0 - NdotV, rimPower);
+    
+    // 应用强度和颜色
+    return rimColor * rimFactor * rimStrength;
 }
 
 // Sobel 边缘检测：检测法线不连续性

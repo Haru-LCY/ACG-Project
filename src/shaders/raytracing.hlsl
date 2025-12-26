@@ -514,6 +514,21 @@ float3 TracePathWithObjectMotionBlur(float3 rayOrigin, float3 rayDir, float moti
                 radiance += throughput * areaLightContrib;
             }
         }
+        
+        // ==================== 方案二：添加边缘光贡献 ====================
+        if (camera_info.enable_rim_light > 0 && bounce == 0) {
+            // 只在第一次弹射时添加边缘光（避免在反射/折射中重复计算）
+            float3 rimLight = ComputeRimLight(
+                N,                              // 表面法线
+                V,                              // 视角方向
+                camera_info.rim_light_color,    // 边缘光颜色
+                camera_info.rim_light_strength, // 边缘光强度
+                camera_info.rim_light_power     // 边缘光锐度
+            );
+            
+            // 累积边缘光贡献
+            radiance += throughput * rimLight;
+        }
 
         // ===== 间接光照 (BSDF Sampling / 递归路径追踪) =====
         

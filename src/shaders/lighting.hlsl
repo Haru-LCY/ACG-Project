@@ -296,10 +296,20 @@ float3 ComputeAreaLightContribution(float3 hitPos, float3 normal, float3 viewDir
             continue;
         }
         
-        // ===== 卡通渲染：应用阶梯光照 =====
+        // ===== 卡通渲染：应用多级阶梯或色调分离 =====
+        float originalNdotL = NdotL;
         if (camera_info.enable_toon_shading > 0) {
-            int steps = max(2, camera_info.toon_shading_steps);
-            NdotL = StepShading(NdotL, steps);
+            if (camera_info.toon_use_multi_step > 0) {
+                // 方案三：多级阶梯模式
+                NdotL = MultiStepShading(NdotL, camera_info.toon_num_steps, camera_info.toon_step_smoothness);
+            } else if (camera_info.toon_shadow_smoothness > 0.0) {
+                // 方案一：二色调柔和模式
+                NdotL = SmoothStepShading(NdotL, camera_info.toon_threshold, camera_info.toon_shadow_smoothness);
+            } else {
+                // 硬边界模式（原有风格）
+                int steps = max(2, camera_info.toon_shading_steps);
+                NdotL = StepShading(NdotL, steps);
+            }
         }
         
         // 3. 阴影检测：计算光源到表面的可见度
@@ -431,11 +441,20 @@ float3 ComputePointLightContribution(float3 hitPos, float3 normal, float3 viewDi
 		return float3(0.0, 0.0, 0.0);
 	}
 	
-	// ===== 卡通渲染：应用阶梯光照 =====
-	// 将平滑的 NdotL 转换为阶梯式（如果启用）
+	// ===== 卡通渲染：应用多级阶梯或色调分离 =====
+	float originalNdotL = NdotL;
 	if (camera_info.enable_toon_shading > 0) {
-		int steps = max(2, camera_info.toon_shading_steps);
-		NdotL = StepShading(NdotL, steps);
+		if (camera_info.toon_use_multi_step > 0) {
+			// 方案三：多级阶梯模式
+			NdotL = MultiStepShading(NdotL, camera_info.toon_num_steps, camera_info.toon_step_smoothness);
+		} else if (camera_info.toon_shadow_smoothness > 0.0) {
+			// 方案一：二色调柔和模式
+			NdotL = SmoothStepShading(NdotL, camera_info.toon_threshold, camera_info.toon_shadow_smoothness);
+		} else {
+			// 硬边界模式（原有风格）
+			int steps = max(2, camera_info.toon_shading_steps);
+			NdotL = StepShading(NdotL, steps);
+		}
 	}
 	
 	// 检查阴影遮挡：计算光源到表面的可见度

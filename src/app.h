@@ -25,6 +25,33 @@ struct CameraObject {
     int enable_toon_outline;      // 是否启用轮廓线: 0=Off, 1=On
     int toon_color_levels;        // 色彩量化级别 (3-10)
     int toon_shading_steps;       // 光照阶梯数 (2-5)
+    
+    // 色调分离参数 (Two-Tone Shading)
+    float toon_threshold;         // 明暗分界阈值 (0.3-0.7)
+    float toon_shadow_smoothness; // 明暗边界柔化程度 (0.0-0.2)
+    float padding_toon1;          // 对齐填充
+    float padding_toon2;          // 对齐填充
+    
+    glm::vec3 toon_shadow_tint;   // 暗面色调（冷色调）
+    float padding_toon3;
+    
+    glm::vec3 toon_highlight_tint; // 明面色调（暖色调）
+    float padding_toon4;
+    
+    // 边缘光参数 (Rim Light)
+    int enable_rim_light;         // 是否启用边缘光
+    float rim_light_strength;     // 边缘光强度
+    float rim_light_power;        // 边缘光锐度 (1-10)
+    float padding_rim1;
+    
+    glm::vec3 rim_light_color;    // 边缘光颜色
+    float padding_rim2;
+    
+    // 多级阶梯参数 (Multi-Step Shading)
+    int toon_use_multi_step;      // 是否使用多级阶梯（vs 二色调）
+    int toon_num_steps;            // 阶梯数量 (2-5)
+    float toon_step_smoothness;   // 每个阶梯的柔和度
+    float padding_step1;
 };
 
 // Skybox / Environment Map 信息 (与 shader 中的定义匹配)
@@ -299,6 +326,23 @@ private:
     int enable_toon_outline_;     // 是否启用轮廓线
     int toon_color_levels_;       // 色彩量化级别
     int toon_shading_steps_;      // 光照阶梯数
+    
+    // 色调分离参数
+    float toon_threshold_;
+    float toon_shadow_smoothness_;
+    glm::vec3 toon_shadow_tint_;
+    glm::vec3 toon_highlight_tint_;
+    
+    // 边缘光参数
+    int enable_rim_light_;
+    float rim_light_strength_;
+    float rim_light_power_;
+    glm::vec3 rim_light_color_;
+    
+    // 多级阶梯参数
+    int toon_use_multi_step_;
+    int toon_num_steps_;
+    float toon_step_smoothness_;
     
     // Mouse hovering
     double mouse_x_;
