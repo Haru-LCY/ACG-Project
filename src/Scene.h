@@ -76,6 +76,10 @@ public:
 
     // 更新材质缓冲区数据（从CPU端材质更新到GPU）
     void UpdateMaterials();
+    
+    // 重新收集所有实体的纹理（用于更新纹理ID）
+    // 功能：重新分配纹理ID，通常在启用/禁用纹理时调用
+    void CollectTextures();
 
 private:
     // ========== 私有辅助函数 ==========
@@ -83,8 +87,6 @@ private:
     void UpdateMaterialsBuffer();
     // 构建全局几何缓冲区（合并所有实体的几何数据）
     void BuildGlobalGeometryBuffers();
-    // 收集所有实体的纹理
-    void CollectTextures();
 
     grassland::graphics::Core* core_;                              // 图形核心对象指针
     std::vector<std::shared_ptr<Entity>> entities_;                // 实体列表

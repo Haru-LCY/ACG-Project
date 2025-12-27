@@ -364,7 +364,7 @@ void Application::OnInit() {
     //     scene_->AddEntity(front_wall);
     // }
 
-    // Add Cornell Box Front Wall (white block material with height map)
+    // Add Cornell Box Front Wall (white block material with normal map and height map)
     {
         // White block material (high roughness, more diffuse reflection)
         Material front_wall_material(glm::vec3(1.0f, 1.0f, 1.0f), 0.8f, 0.0f);  // white, high roughness, non-metallic
@@ -381,8 +381,9 @@ void Application::OnInit() {
             "meshes/cube.obj",
             front_wall_material,
             front_wall_transform,
-            "",
-            "textures/normal.png"
+            "",                          // No base texture
+            "textures/normal.png",       // Normal map
+            "textures/height_map.png"    // Height map (separate texture)
         );
         scene_->AddEntity(front_wall);
     }
@@ -556,6 +557,13 @@ void Application::OnInit() {
     point_lights_[0].strength = 2000.0f;                        // 高强度，明显区别于环境光
     point_lights_[0].radius = 0.15f;                            // 较小的半径，产生明显的高光
     
+    // 在摄像机附近添加一个不太亮的点光源（用于补光）
+    // 摄像机位置：(0.36, 5.63, -16.20)，在其前上方放置
+    point_lights_[1].position = glm::vec3(0.5f, 6.5f, -12.0f);  // 摄像机前方稍微偏上
+    point_lights_[1].color = glm::vec3(0.95f, 0.95f, 1.0f);     // 稍微偏冷的白光
+    point_lights_[1].strength = 300.0f;                          // 不太亮，用于补光
+    point_lights_[1].radius = 0.2f;                              // 中等半径
+    
     // 创建并上传点光源缓冲区
     core_->CreateBuffer(sizeof(PointLight) * 16, grassland::graphics::BUFFER_TYPE_DYNAMIC, &point_lights_buffer_);
     point_lights_buffer_->UploadData(point_lights_.data(), sizeof(PointLight) * 16);
@@ -659,7 +667,7 @@ void Application::OnInit() {
     volumetric_info_.min_step_size = 0.1f;       // 最小步长（高密度区域，增大以提高性能）
     volumetric_info_.max_step_size = 0.3f;       // 最大步长（低密度区域）
     volumetric_info_.max_distance = 100.0f;      // 最大追踪距离
-    volumetric_info_.enable = 1.0f;              // 启用体积渲染
+    volumetric_info_.enable = 0.0f;              // 关闭体积渲染
     
     // 环境雾配置（基于高度的程序化雾）
     volumetric_info_.environment_fog.top_height = 1.6f;          // 雾的顶部高度（清华盒子高度）
@@ -685,13 +693,13 @@ void Application::OnInit() {
     volumetric_info_.scattering.scattering_coeff = glm::vec3(0.4f, 0.4f, 0.5f); // 散射系数（降低以提高性能）
     volumetric_info_.scattering.phase_g = 0.3f;                  // 前向散射（原硬编码值）
     volumetric_info_.scattering.absorption_coeff = glm::vec3(0.02f, 0.02f, 0.02f); // 吸收系数（降低）
-    volumetric_info_.scattering.enable = 1.0f;                   // 启用单次散射
+    volumetric_info_.scattering.enable = 0.0f;                   // 关闭单次散射
     
     // 亮蓝色雾气盒子配置
     volumetric_info_.fog_box.center = glm::vec3(0.0f, 1.5f, 2.0f);  // 场景中间偏前位置
     volumetric_info_.fog_box.size = glm::vec3(1.0f, 1.0f, 1.0f);     // 2x2x2米的立方体（半边长1米）
     volumetric_info_.fog_box.density = 2.5f;                         // 较高密度，确保明显的阴影效果
-    volumetric_info_.fog_box.enable = 1.0f;                          // 默认启用
+    volumetric_info_.fog_box.enable = 0.0f;                          // 关闭雾气盒子
     volumetric_info_.fog_box.absorption_color = glm::vec3(1.0f, 1.0f, 0.1f); // 蓝色雾气（吸收红绿，保留蓝）
     volumetric_info_.fog_box.edge_softness = 0.25f;                  // 边缘0.25米衰减，产生柔和阴影
     
@@ -705,15 +713,14 @@ void Application::OnInit() {
     grassland::LogInfo("  - FogBoxInfo: {} bytes", sizeof(FogBoxInfo));
 
     // Initialize camera state member variables
-    camera_pos_ = glm::vec3{ -0.3f, 2.1f, 10.2f }; // 新相机位置
+    camera_pos_ = glm::vec3{ 2.85f, 13.36f, -11.13f }; // 相机位置
     camera_up_ = glm::vec3{ 0.0f, 1.0f, 0.0f }; // World up
     camera_speed_ = 0.05f; // 提升5倍速度（从0.01到0.05）
 
     // Initialize new mouse/view variables
-    // 方向向量 (0.05, 0.19, -1) 归一化后计算 yaw 和 pitch
-    glm::vec3 target_dir = glm::normalize(glm::vec3(0.05f, 0.19f, -1.0f));
-    pitch_ = glm::degrees(asin(target_dir.y)); // pitch = asin(y)
-    yaw_ = glm::degrees(atan2(target_dir.z, target_dir.x)); // yaw = atan2(z, x)
+    // 从图片中的 yaw 和 pitch 设置相机朝向
+    yaw_ = -248.0f;   // 水平旋转角度
+    pitch_ = -42.7f;  // 垂直旋转角度
     last_x_ = (float)window_->GetWidth() / 2.0f;
     last_y_ = (float)window_->GetHeight() / 2.0f;
     mouse_sensitivity_ = 0.1f;
@@ -1532,6 +1539,7 @@ void Application::RenderInfoOverlay() {
         
         // 重置按钮
         if (ImGui::Button("Reset All Volumetric Settings", ImVec2(-1, 0))) {
+            volumetric_info_.enable = 0.0f;  // 默认关闭体积渲染
             volumetric_info_.min_step_size = 0.1f;
             volumetric_info_.max_step_size = 0.3f;
             volumetric_info_.max_distance = 100.0f;
@@ -1551,11 +1559,11 @@ void Application::RenderInfoOverlay() {
             volumetric_info_.scattering.scattering_coeff = glm::vec3(0.4f, 0.4f, 0.5f);
             volumetric_info_.scattering.phase_g = 0.3f;
             volumetric_info_.scattering.absorption_coeff = glm::vec3(0.02f, 0.02f, 0.02f);
-            volumetric_info_.scattering.enable = 1.0f;
+            volumetric_info_.scattering.enable = 0.0f;  // 默认关闭体积散射
             volumetric_info_.fog_box.center = glm::vec3(0.0f, 1.5f, 2.0f);
             volumetric_info_.fog_box.size = glm::vec3(1.0f, 1.0f, 1.0f);
             volumetric_info_.fog_box.density = 2.5f;
-            volumetric_info_.fog_box.enable = 1.0f;  // 默认启用雾气盒子
+            volumetric_info_.fog_box.enable = 0.0f;  // 默认关闭雾气盒子
             volumetric_info_.fog_box.absorption_color = glm::vec3(1.0f, 1.0f, 0.1f); // 蓝色雾气（吸收红绿，保留蓝）
             volumetric_info_.fog_box.edge_softness = 0.25f;
             volumetric_changed = true;
@@ -1576,6 +1584,151 @@ void Application::RenderInfoOverlay() {
     size_t entity_count = scene_->GetEntityCount();
     ImGui::Text("Entities: %zu", entity_count);
     ImGui::Text("Materials: %zu", entity_count); // One material per entity
+    
+    ImGui::Spacing();
+    
+    // Global Material Features
+    ImGui::SeparatorText("Material Features");
+    bool material_features_changed = false;
+    
+    // Global Normal Map control
+    {
+        // 检查是否有任何实体有法线贴图
+        bool any_has_normal_map = false;
+        for (const auto& entity : scene_->GetEntities()) {
+            if (entity && entity->HasNormalMap()) {
+                any_has_normal_map = true;
+                break;
+            }
+        }
+        
+        if (any_has_normal_map) {
+            // 检查当前是否所有有法线贴图的实体都启用了 normal map
+            bool all_enabled = true;
+            bool any_enabled = false;
+            for (const auto& entity : scene_->GetEntities()) {
+                if (entity && entity->HasNormalMap()) {
+                    Material mat = entity->GetMaterial();
+                    if (mat.normal_map_id >= 0) {
+                        any_enabled = true;
+                    } else {
+                        all_enabled = false;
+                    }
+                }
+            }
+            
+            // 使用三态：全部启用、部分启用、全部禁用
+            int normal_map_state = all_enabled ? 1 : (any_enabled ? 0 : -1);
+            const char* normal_map_labels[] = { "All Disabled", "Mixed", "All Enabled" };
+            int current_normal_map_state = normal_map_state + 1; // 转换为 0, 1, 2
+            
+            if (ImGui::Combo("Normal Map", &current_normal_map_state, normal_map_labels, 3)) {
+                bool target_enabled = (current_normal_map_state == 2); // 2 = All Enabled
+                
+                // 应用到所有有法线贴图的实体
+                for (auto& entity : scene_->GetEntities()) {
+                    if (entity && entity->HasNormalMap()) {
+                        Material mat = entity->GetMaterial();
+                        if (target_enabled) {
+                            // 启用：如果 normal_map_id 是 -1，需要重新分配
+                            if (mat.normal_map_id < 0) {
+                                scene_->CollectTextures();
+                                mat = entity->GetMaterial(); // 重新获取更新后的材质
+                            }
+                        } else {
+                            // 禁用：设置 normal_map_id 为 -1
+                            mat.normal_map_id = -1;
+                        }
+                        entity->SetMaterial(mat);
+                    }
+                }
+                scene_->UpdateMaterials();
+                material_features_changed = true;
+            }
+        } else {
+            ImGui::TextDisabled("Normal Map: No entities with normal maps");
+        }
+    }
+    
+    // Global Height Map control
+    {
+        // 检查当前是否所有实体都启用了 height map
+        bool all_enabled = true;
+        bool any_enabled = false;
+        for (const auto& entity : scene_->GetEntities()) {
+            Material mat = entity->GetMaterial();
+            if (mat.height_scale > 0.001f) {
+                any_enabled = true;
+            } else {
+                all_enabled = false;
+            }
+        }
+        
+        // 使用三态：全部启用、部分启用、全部禁用
+        int height_map_state = all_enabled ? 1 : (any_enabled ? 0 : -1);
+        const char* height_map_labels[] = { "All Disabled", "Mixed", "All Enabled" };
+        int current_height_map_state = height_map_state + 1; // 转换为 0, 1, 2
+        
+        if (ImGui::Combo("Height Map", &current_height_map_state, height_map_labels, 3)) {
+            bool target_enabled = (current_height_map_state == 2); // 2 = All Enabled
+            
+            // 应用到所有实体
+            for (auto& entity : scene_->GetEntities()) {
+                Material mat = entity->GetMaterial();
+                if (target_enabled) {
+                    // 启用：设置默认高度缩放值
+                    if (mat.height_scale <= 0.001f) {
+                        mat.height_scale = 0.1f; // 默认值
+                    }
+                } else {
+                    // 禁用：设置 height_scale 为 0
+                    mat.height_scale = 0.0f;
+                }
+                entity->SetMaterial(mat);
+            }
+            scene_->UpdateMaterials();
+            material_features_changed = true;
+        }
+        
+        // 如果启用了 height map，显示全局高度缩放滑块
+        if (any_enabled) {
+            // 计算平均高度缩放值
+            float avg_height_scale = 0.0f;
+            int count = 0;
+            for (const auto& entity : scene_->GetEntities()) {
+                Material mat = entity->GetMaterial();
+                if (mat.height_scale > 0.001f) {
+                    avg_height_scale += mat.height_scale;
+                    count++;
+                }
+            }
+            if (count > 0) {
+                avg_height_scale /= count;
+                float height_scale_value = avg_height_scale;
+                
+                if (ImGui::SliderFloat("Height Scale (Avg)", &height_scale_value, 0.0f, 0.5f, "%.3f")) {
+                    // 应用到所有启用了 height map 的实体
+                    for (auto& entity : scene_->GetEntities()) {
+                        Material mat = entity->GetMaterial();
+                        if (mat.height_scale > 0.001f) {
+                            mat.height_scale = height_scale_value;
+                            entity->SetMaterial(mat);
+                        }
+                    }
+                    scene_->UpdateMaterials();
+                    material_features_changed = true;
+                }
+            }
+        }
+    }
+    
+    // 如果材质特性改变，重置累积
+    if (material_features_changed && film_) {
+        film_->Reset();
+        accumulated_frames_ = 0;
+    }
+    
+    ImGui::Spacing();
     
     // Show hovered entity
     if (hovered_entity_id_ >= 0) {
@@ -1848,6 +2001,58 @@ void Application::RenderEntityPanel() {
             if (ImGui::Checkbox("Has Alpha Map", &has_alpha)) {
                 mat.has_alpha_map = has_alpha ? 1.0f : 0.0f;
                 material_changed = true;
+            }
+        }
+        
+        // Normal Map 控制
+        {
+            bool has_normal_map = entity->HasNormalMap();
+            bool enable_normal_map = (mat.normal_map_id >= 0);
+            
+            if (has_normal_map) {
+                if (ImGui::Checkbox("Enable Normal Map", &enable_normal_map)) {
+                    if (enable_normal_map) {
+                        // 启用：如果 normal_map_id 是 -1（被禁用过），需要重新分配
+                        if (mat.normal_map_id < 0) {
+                            // 重新收集纹理以恢复正确的法线贴图ID
+                            scene_->CollectTextures();
+                            scene_->UpdateMaterials();
+                            // 重新获取材质（因为 CollectTextures 更新了ID）
+                            mat = entity->GetMaterial();
+                            grassland::LogInfo("Normal map re-enabled, texture IDs reassigned");
+                        }
+                    } else {
+                        // 禁用：设置 normal_map_id 为 -1
+                        mat.normal_map_id = -1;
+                    }
+                    material_changed = true;
+                }
+                ImGui::TextWrapped("Normal map: %s (ID: %d)", enable_normal_map ? "Enabled" : "Disabled", mat.normal_map_id);
+            } else {
+                ImGui::TextDisabled("Normal Map: Not available (no normal map texture loaded)");
+            }
+        }
+        
+        // Height Map 控制
+        {
+            bool enable_height_map = (mat.height_scale > 0.001f);
+            if (ImGui::Checkbox("Enable Height Map", &enable_height_map)) {
+                if (enable_height_map) {
+                    // 启用：设置默认高度缩放值
+                    if (mat.height_scale <= 0.001f) {
+                        mat.height_scale = 0.1f; // 默认值
+                    }
+                } else {
+                    // 禁用：设置 height_scale 为 0
+                    mat.height_scale = 0.0f;
+                }
+                material_changed = true;
+            }
+            if (enable_height_map) {
+                if (ImGui::SliderFloat("Height Scale", &mat.height_scale, 0.0f, 0.5f, "%.3f")) {
+                    material_changed = true;
+                }
+                ImGui::TextWrapped("Controls parallax mapping intensity (0.01-0.1 typical)");
             }
         }
         

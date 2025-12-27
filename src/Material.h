@@ -41,8 +41,10 @@ struct Material {
     float has_alpha_map;         // 是否有Alpha贴图标志（>0.5=true）
     int texture_id;              // 纹理ID（-1=无纹理）
     int normal_map_id;           // 法线贴图ID（-1=无法线贴图）
+    int height_map_id;           // 高度贴图ID（-1=无高度贴图）
     float height_scale;          // 高度贴图缩放系数（0=禁用，通常 0.01-0.1）
     float padding3;              // 填充（用于16字节对齐）
+    float padding4;              // 填充（用于16字节对齐）
 
     // 默认构造函数：使用默认材质参数
     Material()
@@ -72,8 +74,10 @@ struct Material {
         , has_alpha_map(0.0f)               // 无Alpha贴图
         , texture_id(-1)                     // 无纹理
         , normal_map_id(-1)                 // 无法线贴图
+        , height_map_id(-1)                 // 无高度贴图
         , height_scale(0.0f)                // 禁用高度贴图
-        , padding3(0.0f) {                  // 填充
+        , padding3(0.0f)                    // 填充
+        , padding4(0.0f) {                  // 填充
     }
 
     // 常用构造函数：颜色、粗糙度、金属度
@@ -107,8 +111,10 @@ struct Material {
         , has_alpha_map(0.0f)
         , texture_id(-1)
         , normal_map_id(-1)
+        , height_map_id(-1)
         , height_scale(0.0f)
-        , padding3(0.0f) {
+        , padding3(0.0f)
+        , padding4(0.0f) {
     }
 
     // 遗留构造函数（用于向后兼容）
@@ -144,12 +150,14 @@ struct Material {
         , has_alpha_map(0.0f)
         , texture_id(-1)
         , normal_map_id(-1)
+        , height_map_id(-1)
         , height_scale(0.0f)
-        , padding3(0.0f) {
+        , padding3(0.0f)
+        , padding4(0.0f) {
     }
 };
 
 // 验证结构体大小与HLSL布局一致（每行必须16字节对齐）
 // Verify struct size is consistent with HLSL layout (must be 16 byte aligned per row)
-static_assert(sizeof(Material) == 152, "Material size mismatch: C++ Material must match HLSL layout (152 bytes)");
+static_assert(sizeof(Material) == 160, "Material size mismatch: C++ Material must match HLSL layout (160 bytes)");
 

@@ -12,11 +12,13 @@ public:
     // transform: 世界空间变换矩阵（默认为单位矩阵）
     // texture_path: 纹理文件路径（可选）
     // normal_map_path: 法线贴图路径（可选）
+    // height_map_path: 高度贴图路径（可选）
     Entity(const std::string& obj_file_path, 
            const Material& material = Material(),
            const glm::mat4& transform = glm::mat4(1.0f),
            const std::string& texture_path = "",
-           const std::string& normal_map_path = "");
+           const std::string& normal_map_path = "",
+           const std::string& height_map_path = "");
 
     // 析构函数：清理资源
     ~Entity();
@@ -37,6 +39,12 @@ public:
     // normal_map_path: 法线贴图文件路径
     // 返回：成功返回true，失败返回false
     bool LoadNormalMap(grassland::graphics::Core* core, const std::string& normal_map_path);
+    
+    // 从文件加载高度贴图
+    // core: 图形核心对象指针
+    // height_map_path: 高度贴图文件路径
+    // 返回：成功返回true，失败返回false
+    bool LoadHeightMap(grassland::graphics::Core* core, const std::string& height_map_path);
 
     // ========== Getter方法 ==========
     // 获取顶点缓冲区指针
@@ -49,6 +57,8 @@ public:
     grassland::graphics::Image* GetTexture() const { return texture_.get(); }
     // 获取法线贴图指针
     grassland::graphics::Image* GetNormalMap() const { return normal_map_.get(); }
+    // 获取高度贴图指针
+    grassland::graphics::Image* GetHeightMap() const { return height_map_.get(); }
     // 获取材质引用
     const Material& GetMaterial() const { return material_; }
     // 获取变换矩阵引用
@@ -59,6 +69,8 @@ public:
     bool HasTexture() const { return texture_ != nullptr; }
     // 检查是否有法线贴图
     bool HasNormalMap() const { return normal_map_ != nullptr; }
+    // 检查是否有高度贴图
+    bool HasHeightMap() const { return height_map_ != nullptr; }
     
     // 获取物体速度（用于运动模糊）
     // 返回：世界空间速度向量（单位：单位/帧）
@@ -73,6 +85,8 @@ public:
     void SetTextureId(int id) { material_.texture_id = id; }
     // 设置法线贴图ID（用于纹理数组索引）
     void SetNormalMapId(int id) { material_.normal_map_id = id; }
+    // 设置高度贴图ID（用于纹理数组索引）
+    void SetHeightMapId(int id) { material_.height_map_id = id; }
     
     // 设置物体速度（用于运动模糊）
     // velocity: 世界空间速度向量（单位：单位/帧）
@@ -97,12 +111,14 @@ private:
     glm::mat4 transform_;                      // 世界空间变换矩阵
     std::string texture_path_;                 // 纹理文件路径
     std::string normal_map_path_;              // 法线贴图文件路径
+    std::string height_map_path_;              // 高度贴图文件路径
 
     std::unique_ptr<grassland::graphics::Buffer> vertex_buffer_;    // 顶点缓冲区
     std::unique_ptr<grassland::graphics::Buffer> index_buffer_;     // 索引缓冲区
     std::unique_ptr<grassland::graphics::Buffer> normal_buffer_;    // 法线缓冲区
     std::unique_ptr<grassland::graphics::Image> texture_;           // 纹理图像
     std::unique_ptr<grassland::graphics::Image> normal_map_;        // 法线贴图图像
+    std::unique_ptr<grassland::graphics::Image> height_map_;        // 高度贴图图像
     std::unique_ptr<grassland::graphics::AccelerationStructure> blas_;  // 底层加速结构
 
     bool mesh_loaded_;                         // 网格是否已加载标志

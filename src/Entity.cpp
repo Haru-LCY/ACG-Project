@@ -5,11 +5,13 @@ Entity::Entity(const std::string& obj_file_path,
                const Material& material,
                const glm::mat4& transform,
                const std::string& texture_path,
-               const std::string& normal_map_path)
+               const std::string& normal_map_path,
+               const std::string& height_map_path)
     : material_(material)
     , transform_(transform)
     , texture_path_(texture_path)
     , normal_map_path_(normal_map_path)
+    , height_map_path_(height_map_path)
     , mesh_loaded_(false) {
     
     // 立即尝试加载网格
@@ -24,6 +26,7 @@ Entity::~Entity() {
     vertex_buffer_.reset();
     texture_.reset();
     normal_map_.reset();
+    height_map_.reset();
 }
 
 // 从OBJ文件加载网格数据
@@ -103,6 +106,11 @@ void Entity::BuildBLAS(grassland::graphics::Core* core) {
     if (!normal_map_path_.empty()) {
         LoadNormalMap(core, normal_map_path_);
     }
+    
+    // 如果提供了高度贴图路径，则加载高度贴图
+    if (!height_map_path_.empty()) {
+        LoadHeightMap(core, height_map_path_);
+    }
 }
 
 // 从文件加载纹理
@@ -158,5 +166,33 @@ bool Entity::LoadNormalMap(grassland::graphics::Core* core, const std::string& n
                        normal_map_path, 
                        normal_map_->Extent().width, 
                        normal_map_->Extent().height);
+    return true;
+}
+
+// 从文件加载高度贴图
+// core: 图形核心对象指针
+// height_map_path: 高度贴图文件路径（相对路径）
+// 返回：成功返回true，失败返回false
+bool Entity::LoadHeightMap(grassland::graphics::Core* core, const std::string& height_map_path) {
+    // 检查路径是否为空
+    if (height_map_path.empty()) {
+        grassland::LogWarning("Empty height map path provided");
+        return false;
+    }
+    
+    // 查找资源文件的完整路径
+    std::string full_path = grassland::FindAssetFile(height_map_path);
+    
+    // 使用框架的LoadImageFromFile函数加载图像
+    if (grassland::graphics::LoadImageFromFile(core, full_path, &height_map_) != 0) {
+        grassland::LogError("Failed to load height map from: {}", height_map_path);
+        return false;
+    }
+    
+    // 记录成功加载的信息
+    grassland::LogInfo("Successfully loaded height map: {} ({}x{})", 
+                       height_map_path, 
+                       height_map_->Extent().width, 
+                       height_map_->Extent().height);
     return true;
 }

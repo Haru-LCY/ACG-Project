@@ -347,12 +347,12 @@
 			B = normalize(cross(N, T));
 		}
 		
-		// 应用 Height Map / Parallax Mapping（如果启用了高度缩放）
-		if (mat.height_scale > 0.001) {
+		// 应用 Height Map / Parallax Mapping（如果启用了高度缩放且有高度贴图）
+		if (mat.height_scale > 0.001 && mat.height_map_id >= 0) {
 			// 计算视线方向（从击中点指向相机/光线起点）
 			float3 viewDir = normalize(-WorldRayDirection());
-			// 应用视差偏移
-			payload.uv = ParallaxMapping(textures[mat.normal_map_id], payload.uv, viewDir, T, B, payload.normal, mat.height_scale);
+			// 应用视差偏移（使用独立的 height_map_id）
+			payload.uv = ParallaxMapping(textures[mat.height_map_id], payload.uv, viewDir, T, B, payload.normal, mat.height_scale);
 		}
 		
 		// 从法线贴图采样（使用 SampleLevel 代替 Sample，因为在 closesthit shader 中不能使用隐式导数）

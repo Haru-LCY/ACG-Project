@@ -66,8 +66,10 @@ struct Material {
   float has_alpha_map;
   int texture_id;
   int normal_map_id;
-  float height_scale;  // 高度贴图缩放系数（0=禁用，通常 0.01-0.1）
+  int height_map_id;      // 高度贴图ID（-1=无高度贴图）
+  float height_scale;     // 高度贴图缩放系数（0=禁用，通常 0.01-0.1）
   float padding3;
+  float padding4;
 };
 
 struct HoverInfo {

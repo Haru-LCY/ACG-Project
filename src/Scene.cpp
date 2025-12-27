@@ -301,7 +301,7 @@ void Scene::BuildGlobalGeometryBuffers() {
 void Scene::CollectTextures() {
     textures_.clear();
     
-    // 从所有实体收集唯一纹理（包括基础纹理和法线贴图）
+    // 从所有实体收集唯一纹理（包括基础纹理、法线贴图和高度贴图）
     for (auto& entity : entities_) {
         // 收集基础纹理
         if (entity->HasTexture()) {
@@ -321,6 +321,16 @@ void Scene::CollectTextures() {
             entity->SetNormalMapId(normal_map_id);
             
             grassland::LogInfo("Assigned normal map ID {} to entity with normal map", normal_map_id);
+        }
+        
+        // 收集高度贴图
+        if (entity->HasHeightMap()) {
+            // 将高度贴图添加到数组，并在实体的材质中设置高度贴图ID
+            int height_map_id = static_cast<int>(textures_.size());
+            textures_.push_back(entity->GetHeightMap());
+            entity->SetHeightMapId(height_map_id);
+            
+            grassland::LogInfo("Assigned height map ID {} to entity with height map", height_map_id);
         }
     }
     
