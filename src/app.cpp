@@ -425,11 +425,11 @@ void Application::OnInit() {
         scene_->AddEntity(green_wall);
     }
 
-    // Add Cornell Box Red Wall
+    // Add Cornell Box Red Wall (changed to blue)
     {
         auto red_wall = std::make_shared<Entity>(
             "meshes/cornell_box_red_wall.obj",
-            Material(glm::vec3(1.0f, 0.0f, 0.0f), 0.8f, 0.0f),  // red
+            Material(glm::vec3(0.0f, 0.0f, 1.0f), 0.8f, 0.0f),  // blue
             cornell_box_transform
         );
         scene_->AddEntity(red_wall);
@@ -675,7 +675,7 @@ void Application::OnInit() {
     volumetric_info_.light_beam.density = 0.8f;                  // 光柱密度（原硬编码值）
     volumetric_info_.light_beam.emission_intensity = 30.0f;      // 发光强度（原硬编码值）
     volumetric_info_.light_beam.emission_color = glm::vec3(1.0f, 0.15f, 0.15f); // 红色光柱（原硬编码值）
-    volumetric_info_.light_beam.enable = 0.0f;                   // 暂时关闭发光光柱
+    volumetric_info_.light_beam.enable = 1.0f;                   // 启用发光光柱
     volumetric_info_.light_beam.beam_direction = glm::vec3(0.0f, -1.0f, 0.0f); // 向下
     volumetric_info_.light_beam.radial_falloff_power = 1.5f;     // 径向衰减指数
     volumetric_info_.light_beam.longitudinal_falloff_power = 0.8f; // 纵向衰减指数
