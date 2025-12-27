@@ -270,7 +270,7 @@ void Application::OnMouseButton(int button, int action, int mods, double xpos, d
 
 void Application::OnInit() {
     alive_ = true;
-    core_->CreateWindowObject(1600, 1280,
+    core_->CreateWindowObject(2500, 1358,
         ((core_->API() == grassland::graphics::BACKEND_API_VULKAN) ? "[Vulkan]" : "[D3D12]") +
         std::string(" Ray Tracing Scene Demo"),
         &window_);

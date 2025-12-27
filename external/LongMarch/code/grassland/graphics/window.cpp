@@ -15,7 +15,7 @@ void InitializeGLFW() {
 }  // namespace
 
 Window::Window(int width, int height, const std::string &title, bool fullscreen, bool resizable, bool enable_hdr)
-    : enable_hdr_(enable_hdr) {
+    : title_(title), enable_hdr_(enable_hdr) {
   InitializeGLFW();
 
   glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
@@ -88,11 +88,12 @@ int Window::GetHeight() const {
 }
 
 void Window::SetTitle(const std::string &title) {
+  title_ = title;
   glfwSetWindowTitle(window_, title.c_str());
 }
 
 std::string Window::GetTitle() const {
-  return glfwGetWindowTitle(window_);
+  return title_;
 }
 
 void Window::Resize(int new_width, int new_height) {
