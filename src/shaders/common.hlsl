@@ -299,15 +299,30 @@ static const float3 TOON_OUTLINE_COLOR = float3(0.0, 0.0, 0.0); // 轮廓线颜�
 
 // ==================== Cartoon Rendering 辅助函数 ====================
 
-// 色彩量化函数：将连续色彩离散化为固定数量的色阶
+// 色彩量化函数：将连续色彩离散化为固定数量的色阶（平滑版本）
 // color: 输入颜色 (HDR或LDR)
 // levels: 量化级别数 (建议 3-10)
 // 返回：量化后的颜色
 float3 QuantizeColor(float3 color, int levels) {
     // 确保 levels 至少为 2
     levels = max(2, levels);
-    // 量化每个通道
-    return floor(color * float(levels)) / float(levels);
+    
+    float stepSize = 1.0 / float(levels);
+    
+    // 计算每个通道应该属于哪个色阶
+    float3 quantized = floor(color / stepSize) * stepSize;
+    float3 nextQuantized = quantized + stepSize;
+    
+    // 计算到下一个色阶的归一化距离 (0-1)
+    float3 remainder = (color - quantized) / stepSize;
+    
+    // 使用 smoothstep 在色阶边界创建平滑过渡
+    // 过渡区域宽度约为 stepSize 的 40%，减少噪点和硬边界
+    float transitionWidth = 0.4;
+    float3 blendFactor = smoothstep(transitionWidth, 1.0 - transitionWidth, remainder);
+    
+    // 在色阶之间平滑插值
+    return lerp(quantized, nextQuantized, blendFactor);
 }
 
 // 阶梯光照函数：将平滑的光照强度转换为阶梯式

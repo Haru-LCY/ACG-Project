@@ -302,347 +302,90 @@ void Application::OnInit() {
     mouse_y_ = 0.0;
     // Don't grab cursor initially - user can right-click to enable camera mode
 
-    // Create scene - Cornell Box scene
+    // Create scene - Helmet 模型场景
     scene_ = std::make_unique<Scene>(core_.get());
 
-    // ==================== 加载热带岛屿场景 ====================
-    // 定义基础变换矩阵，根据资源大小调整缩放和位置
-    // 将海岛整体上移 1.0 单位，以便更好地与相机和天空对齐
-    glm::mat4 island_base_transform = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 2.5f, 0.0f))
-                                   * glm::scale(glm::mat4(1.0f), glm::vec3(1.0f));
-
-    // ===== 地形基础 =====
-    // 地面
+    // ==================== 加载 Helmet 模型场景 ====================
+    // 根据 helmet.mtl 文件定义材质
+    // mat0: 白色/灰色 (Kd 0.8 0.8 0.8) - 主体部分
+    // mat1: 红色 (Kd 0.8 0 0.00652) - 装饰部分
+    // mat2: 红色 (Kd 0.8 0 0.00652) - 装饰部分
+    // mat3: 白色/灰色 (Kd 0.8 0.8 0.8) - 主体部分
+    
+    // 头盔的基础变换：稍微缩小并居中
+    glm::mat4 helmet_transform = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, 0.0f))
+                                * glm::scale(glm::mat4(1.0f), glm::vec3(0.05f));  // 缩小到合适大小
+    
+    // 加载 mat0 部分 - 主体（白色/灰色）
+    {
+        Material mat;
+        mat.base_color = glm::vec3(0.8f, 0.8f, 0.8f);  // 白色基础色
+        mat.roughness = 0.4f;   // 中等粗糙度，有一定光泽
+        mat.metallic = 0.2f;    // 轻微金属感
+        mat.specular = 0.5f;    // 中等镜面反射
+        
+        auto entity = std::make_shared<Entity>(
+            "meshes/helmet_split/helmet_mat0.obj",
+            mat,
+            helmet_transform
+        );
+        scene_->AddEntity(entity);
+        grassland::LogInfo("Loaded helmet_mat0.obj (main body - white/gray)");
+    }
+    
+    // 加载 mat1 部分 - 装饰（红色）
+    {
+        Material mat;
+        mat.base_color = glm::vec3(0.8f, 0.0f, 0.00652f);  // 鲜艳红色
+        mat.roughness = 0.3f;   // 较光滑
+        mat.metallic = 0.1f;    // 轻微金属感
+        mat.specular = 0.5f;    // 中等镜面反射
+        
+        auto entity = std::make_shared<Entity>(
+            "meshes/helmet_split/helmet_mat1.obj",
+            mat,
+            helmet_transform
+        );
+        scene_->AddEntity(entity);
+        grassland::LogInfo("Loaded helmet_mat1.obj (decoration - red)");
+    }
+    
+    // 加载 mat2 部分 - 装饰（红色）
     // {
+    //     Material mat;
+    //     mat.base_color = glm::vec3(0.8f, 0.0f, 0.00652f);  // 鲜艳红色
+    //     mat.roughness = 0.3f;   // 较光滑
+    //     mat.metallic = 0.1f;    // 轻微金属感
+    //     mat.specular = 0.5f;    // 中等镜面反射
+        
     //     auto entity = std::make_shared<Entity>(
-    //         "meshes/tropical_island/floor.obj",
-    //         Material(glm::vec3(0.4f, 0.3f, 0.2f), 0.8f, 0.0f),  // 泥土色地面
-    //         island_base_transform
+    //         "meshes/helmet_split/helmet_mat2.obj",
+    //         mat,
+    //         helmet_transform
     //     );
     //     scene_->AddEntity(entity);
+    //     grassland::LogInfo("Loaded helmet_mat2.obj (decoration - red)");
     // }
-
-    // 沙滩
-    {
-        auto entity = std::make_shared<Entity>(
-            "meshes/tropical_island/sand.obj",
-            Material(glm::vec3(0.9f, 0.8f, 0.6f), 0.7f, 0.0f),  // 沙滩色
-            island_base_transform
-        );
-        scene_->AddEntity(entity);
-    }
-
-    // 水面（透明效果）
-    {
-        auto entity = std::make_shared<Entity>(
-            "meshes/tropical_island/water.obj",
-            Material(glm::vec3(0.2f, 0.6f, 0.9f), 0.02f, 0.0f, 0.95f, 1.333f),  // 更透明、更平滑的水面
-            island_base_transform
-        );
-        scene_->AddEntity(entity);
-    }
-
-    // 草地
-    {
-        auto entity = std::make_shared<Entity>(
-            "meshes/tropical_island/grass.obj",
-            Material(glm::vec3(0.3f, 0.6f, 0.2f), 0.9f, 0.0f),  // 绿色草地
-            island_base_transform
-        );
-        scene_->AddEntity(entity);
-    }
-
-    // ===== 植被 - 树干 =====
-    // 树干1
-    {
-        auto entity = std::make_shared<Entity>(
-            "meshes/tropical_island/trunk1.obj",
-            Material(glm::vec3(0.4f, 0.25f, 0.15f), 0.8f, 0.0f),  // 棕色树干
-            island_base_transform
-        );
-        scene_->AddEntity(entity);
-    }
-
-    // 树干2
-    {
-        auto entity = std::make_shared<Entity>(
-            "meshes/tropical_island/trunk2.obj",
-            Material(glm::vec3(0.4f, 0.25f, 0.15f), 0.8f, 0.0f),  // 棕色树干
-            island_base_transform
-        );
-        scene_->AddEntity(entity);
-    }
-
-    // ===== 植被 - 树叶 =====
-    // 添加主要树叶（只选择几个关键的，避免过多重复）
-    {
-        auto entity = std::make_shared<Entity>(
-            "meshes/tropical_island/leaf1.obj",
-            Material(glm::vec3(0.2f, 0.7f, 0.3f), 0.7f, 0.0f),  // 鲜绿色
-            island_base_transform,
-            "meshes/tropical_island/textures/palm.png"
-        );
-        scene_->AddEntity(entity);
-    }
-
-    {
-        auto entity = std::make_shared<Entity>(
-            "meshes/tropical_island/leaf5.obj",
-            Material(glm::vec3(0.25f, 0.65f, 0.3f), 0.7f, 0.0f),
-            island_base_transform,
-            "meshes/tropical_island/textures/palm.png"
-        );
-        scene_->AddEntity(entity);
-    }
-
-    {
-        auto entity = std::make_shared<Entity>(
-            "meshes/tropical_island/leaf10.obj",
-            Material(glm::vec3(0.3f, 0.6f, 0.25f), 0.7f, 0.0f),
-            island_base_transform,
-            "meshes/tropical_island/textures/palm.png"
-        );
-        scene_->AddEntity(entity);
-    }
-
-    {
-        auto entity = std::make_shared<Entity>(
-            "meshes/tropical_island/leaf15.obj",
-            Material(glm::vec3(0.2f, 0.7f, 0.35f), 0.7f, 0.0f),
-            island_base_transform,
-            "meshes/tropical_island/textures/palm.png"
-        );
-        scene_->AddEntity(entity);
-    }
-
-    {
-        auto entity = std::make_shared<Entity>(
-            "meshes/tropical_island/leaf20.obj",
-            Material(glm::vec3(0.25f, 0.65f, 0.25f), 0.7f, 0.0f),
-            island_base_transform,
-            "meshes/tropical_island/textures/palm.png"
-        );
-        scene_->AddEntity(entity);
-    }
-
-    // 添加短叶子
-    {
-        auto entity = std::make_shared<Entity>(
-            "meshes/tropical_island/shortleaf1.obj",
-            Material(glm::vec3(0.3f, 0.6f, 0.2f), 0.8f, 0.0f),
-            island_base_transform,
-            "meshes/tropical_island/textures/palm.png"
-        );
-        scene_->AddEntity(entity);
-    }
-
-    {
-        auto entity = std::make_shared<Entity>(
-            "meshes/tropical_island/shortleaf5.obj",
-            Material(glm::vec3(0.25f, 0.65f, 0.25f), 0.8f, 0.0f),
-            island_base_transform,
-            "meshes/tropical_island/textures/palm.png"
-        );
-        scene_->AddEntity(entity);
-    }
-
-    {
-        auto entity = std::make_shared<Entity>(
-            "meshes/tropical_island/shortleaf10.obj",
-            Material(glm::vec3(0.2f, 0.7f, 0.3f), 0.8f, 0.0f),
-            island_base_transform,
-            "meshes/tropical_island/textures/palm.png"
-        );
-        scene_->AddEntity(entity);
-    }
-
-    // ===== 建筑和装饰 =====
-    // 码头1
-    {
-        auto entity = std::make_shared<Entity>(
-            "meshes/tropical_island/dock1.obj",
-            Material(glm::vec3(0.6f, 0.45f, 0.3f), 0.7f, 0.0f),  // 木质码头
-            island_base_transform
-        );
-        scene_->AddEntity(entity);
-    }
-
-    // 码头2
-    {
-        auto entity = std::make_shared<Entity>(
-            "meshes/tropical_island/dock2.obj",
-            Material(glm::vec3(0.6f, 0.45f, 0.3f), 0.7f, 0.0f),  // 木质码头
-            island_base_transform
-        );
-        scene_->AddEntity(entity);
-    }
-
-    // 船只
-    {
-        auto entity = std::make_shared<Entity>(
-            "meshes/tropical_island/boat.obj",
-            Material(glm::vec3(0.5f, 0.3f, 0.2f), 0.6f, 0.0f),  // 木质船身
-            island_base_transform
-        );
-        scene_->AddEntity(entity);
-    }
-
-    // 木板装饰
-    {
-        auto entity = std::make_shared<Entity>(
-            "meshes/tropical_island/plank1.obj",
-            Material(glm::vec3(0.6f, 0.4f, 0.25f), 0.7f, 0.0f),
-            island_base_transform
-        );
-        scene_->AddEntity(entity);
-    }
-
-    {
-        auto entity = std::make_shared<Entity>(
-            "meshes/tropical_island/plank2.obj",
-            Material(glm::vec3(0.6f, 0.4f, 0.25f), 0.7f, 0.0f),
-            island_base_transform
-        );
-        scene_->AddEntity(entity);
-    }
-
-    // 船桨
-    {
-        auto entity = std::make_shared<Entity>(
-            "meshes/tropical_island/oar1.obj",
-            Material(glm::vec3(0.5f, 0.35f, 0.2f), 0.6f, 0.0f),
-            island_base_transform
-        );
-        scene_->AddEntity(entity);
-    }
-
-    {
-        auto entity = std::make_shared<Entity>(
-            "meshes/tropical_island/oar2.obj",
-            Material(glm::vec3(0.5f, 0.35f, 0.2f), 0.6f, 0.0f),
-            island_base_transform
-        );
-        scene_->AddEntity(entity);
-    }
-
-    // 绳索
-    {
-        auto entity = std::make_shared<Entity>(
-            "meshes/tropical_island/rope.obj",
-            Material(glm::vec3(0.7f, 0.6f, 0.4f), 0.8f, 0.0f),  // 麻绳色
-            island_base_transform
-        );
-        scene_->AddEntity(entity);
-    }
-
-    // ===== 岩石 =====
-    {
-        auto entity = std::make_shared<Entity>(
-            "meshes/tropical_island/rock1.obj",
-            Material(glm::vec3(0.5f, 0.5f, 0.5f), 0.9f, 0.0f),  // 灰色岩石
-            island_base_transform
-        );
-        scene_->AddEntity(entity);
-    }
-
-    {
-        auto entity = std::make_shared<Entity>(
-            "meshes/tropical_island/rock2.obj",
-            Material(glm::vec3(0.48f, 0.48f, 0.48f), 0.9f, 0.0f),
-            island_base_transform
-        );
-        scene_->AddEntity(entity);
-    }
-
-    {
-        auto entity = std::make_shared<Entity>(
-            "meshes/tropical_island/rock3.obj",
-            Material(glm::vec3(0.45f, 0.45f, 0.45f), 0.9f, 0.0f),
-            island_base_transform
-        );
-        scene_->AddEntity(entity);
-    }
-
-    {
-        auto entity = std::make_shared<Entity>(
-            "meshes/tropical_island/rock4.obj",
-            Material(glm::vec3(0.52f, 0.5f, 0.47f), 0.9f, 0.0f),
-            island_base_transform
-        );
-        scene_->AddEntity(entity);
-    }
-
-    {
-        auto entity = std::make_shared<Entity>(
-            "meshes/tropical_island/rock5.obj",
-            Material(glm::vec3(0.55f, 0.5f, 0.45f), 0.9f, 0.0f),
-            island_base_transform
-        );
-        scene_->AddEntity(entity);
-    }
-
-    {
-        auto entity = std::make_shared<Entity>(
-            "meshes/tropical_island/rock6.obj",
-            Material(glm::vec3(0.47f, 0.47f, 0.44f), 0.9f, 0.0f),
-            island_base_transform
-        );
-        scene_->AddEntity(entity);
-    }
-
-    // 添加第三个木板
-    {
-        auto entity = std::make_shared<Entity>(
-            "meshes/tropical_island/plank3.obj",
-            Material(glm::vec3(0.55f, 0.4f, 0.25f), 0.7f, 0.0f),
-            island_base_transform
-        );
-        scene_->AddEntity(entity);
-    }
-
-    // 添加更多树叶以丰富植被
-    {
-        auto entity = std::make_shared<Entity>(
-            "meshes/tropical_island/leaf3.obj",
-            Material(glm::vec3(0.22f, 0.68f, 0.32f), 0.7f, 0.0f),
-            island_base_transform,
-            "meshes/tropical_island/textures/palm.png"
-        );
-        scene_->AddEntity(entity);
-    }
-
-    {
-        auto entity = std::make_shared<Entity>(
-            "meshes/tropical_island/leaf8.obj",
-            Material(glm::vec3(0.28f, 0.62f, 0.28f), 0.7f, 0.0f),
-            island_base_transform,
-            "meshes/tropical_island/textures/palm.png"
-        );
-        scene_->AddEntity(entity);
-    }
-
-    {
-        auto entity = std::make_shared<Entity>(
-            "meshes/tropical_island/shortleaf3.obj",
-            Material(glm::vec3(0.32f, 0.58f, 0.22f), 0.8f, 0.0f),
-            island_base_transform,
-            "meshes/tropical_island/textures/palm.png"
-        );
-        scene_->AddEntity(entity);
-    }
-
-    {
-        auto entity = std::make_shared<Entity>(
-            "meshes/tropical_island/shortleaf7.obj",
-            Material(glm::vec3(0.26f, 0.64f, 0.26f), 0.8f, 0.0f),
-            island_base_transform,
-            "meshes/tropical_island/textures/palm.png"
-        );
-        scene_->AddEntity(entity);
-    }
-
-    grassland::LogInfo("Loaded tropical island scene with {} objects", 31);
-    // ==================== 热带岛屿场景加载完成 ====================
+    
+    // // 加载 mat3 部分 - 主体（白色/灰色）
+    // {
+    //     Material mat;
+    //     mat.base_color = glm::vec3(0.8f, 0.8f, 0.8f);  // 白色基础色
+    //     mat.roughness = 0.4f;   // 中等粗糙度
+    //     mat.metallic = 0.2f;    // 轻微金属感
+    //     mat.specular = 0.5f;    // 中等镜面反射
+        
+    //     auto entity = std::make_shared<Entity>(
+    //         "meshes/helmet_split/helmet_mat3.obj",
+    //         mat,
+    //         helmet_transform
+    //     );
+    //     scene_->AddEntity(entity);
+    //     grassland::LogInfo("Loaded helmet_mat3.obj (main body - white/gray)");
+    // }
+    
+    grassland::LogInfo("Loaded helmet scene with 4 material groups");
+    // ==================== Helmet 模型场景加载完成 ====================
 
     
     scene_->BuildAccelerationStructures();
@@ -662,74 +405,85 @@ void Application::OnInit() {
     // 初始化点光源数组（最多16个）
     point_lights_.resize(16);  // 预留16个点光源槽位
     
-    // 删除所有之前的点光源（强度设为0）
-    for (int i = 0; i < 16; ++i) {
+    // 添加一个主光源（强白光）- 正上方偏右后方（更自然的布光）
+    // Move main point light down so it's inside the room (y near ceiling = 4.8)
+    point_lights_[0].position = glm::vec3(2.0f, 3.8f, 5.0f);
+    point_lights_[0].color = glm::vec3(1.0f, 1.0f, 1.0f);
+    point_lights_[0].strength = 1000.0f; // half of original 2000.0f (can tune in UI)
+    point_lights_[0].radius = 0.2f;  // 扩大一倍（从0.1到0.2）避免黑色阴影
+    
+    // 添加一个补光光源（柔和白光）- 左上方，避免产生强反光
+    point_lights_[1].position = glm::vec3(-5.0f, 5.0f, 3.0f);
+    point_lights_[1].color = glm::vec3(1.0f, 1.0f, 1.0f);
+    point_lights_[1].strength = 0.0f; // 暂时关闭
+    point_lights_[1].radius = 0.2f;  // 扩大一倍（从0.1到0.2）
+    
+    // 添加一个环境光（模拟天空反射）
+    point_lights_[2].position = glm::vec3(0.0f, 0.5f, 6.0f);
+    point_lights_[2].color = glm::vec3(0.95f, 0.95f, 1.0f);
+    point_lights_[2].strength = 0.0f; // 暂时关闭
+    point_lights_[2].radius = 0.2f;  // 扩大一倍（从0.1到0.2）
+
+    // 添加一个背景高亮点光源用于产生远处的bokeh高光
+    point_lights_[3].position = glm::vec3(0.0f, 1.2f, -7.0f);
+    point_lights_[3].color = glm::vec3(1.0f, 0.9f, 0.7f);
+    point_lights_[3].strength = 250.0f; // 暂时关闭
+    point_lights_[3].radius = 0.1f;    // 扩大一倍（从0.05到0.1）避免黑色阴影
+    
+    // 在相机位置添加一个点光源（强度适中）
+    point_lights_[4].position = glm::vec3(-0.20f, 0.05f, -0.10f);  // 相机位置
+    point_lights_[4].color = glm::vec3(1.0f, 1.0f, 1.0f);  // 白光
+    point_lights_[4].strength = 150.0f;  // 强度适中，不强
+    point_lights_[4].radius = 0.15f;  // 适中的半径
+    
+    // 其余光源强度设为0（未使用）
+    for (int i = 5; i < 16; ++i) {
         point_lights_[i].position = glm::vec3(0.0f);
         point_lights_[i].color = glm::vec3(1.0f);
         point_lights_[i].strength = 0.0f;  // 强度为0表示未激活
         point_lights_[i].radius = 0.0f;
     }
     
-    // 为热带岛屿场景添加点光源
-    // 主要阳光反射点光源（模拟太阳光在水面的反射）
-    point_lights_[0].position = glm::vec3(5.0f, 8.0f, 3.0f);   // 高处斜射
-    point_lights_[0].color = glm::vec3(1.0f, 0.95f, 0.8f);     // 温暖的阳光色
-    point_lights_[0].strength = 200.0f;                        // 略微减弱的阳光
-    point_lights_[0].radius = 0.2f;
-    
-    // 水面反射光
-    point_lights_[1].position = glm::vec3(-2.0f, 1.5f, 2.0f);  // 水面附近
-    point_lights_[1].color = glm::vec3(0.7f, 0.9f, 1.0f);     // 蓝色水光
-    point_lights_[1].strength = 120.0f;                        // 略微减弱的水面反射光
-    point_lights_[1].radius = 0.8f;                            // 较大半径产生柔和效果
-    
-    // 另一个水面反射点
-    point_lights_[2].position = glm::vec3(3.0f, 1.2f, -1.0f); 
-    point_lights_[2].color = glm::vec3(0.8f, 0.95f, 1.0f);
-    point_lights_[2].strength = 90.0f;
-    point_lights_[2].radius = 0.6f;
-    
     // 创建并上传点光源缓冲区
     core_->CreateBuffer(sizeof(PointLight) * 16, grassland::graphics::BUFFER_TYPE_DYNAMIC, &point_lights_buffer_);
     point_lights_buffer_->UploadData(point_lights_.data(), sizeof(PointLight) * 16);
-    grassland::LogInfo("Initialized {} point lights for tropical island", 3);
+    grassland::LogInfo("Initialized {} point lights", 5);
 
     // 初始化面光源数组（最多8个）
     area_lights_.resize(8);
-    
-    // 配置主光源 - 天空阳光
-    area_lights_[0].position = glm::vec3(0.0f, 12.0f, 0.0f);     // 高空太阳位置
-    area_lights_[0].color = glm::vec3(1.0f, 0.95f, 0.85f);       // 温暖阳光色
-    area_lights_[0].strength = 60.0f;                            // 稍弱的阳光
-    area_lights_[0].width = 8.0f;                                // 大面积照明
-    area_lights_[0].height = 8.0f;
-    area_lights_[0].direction = glm::normalize(glm::vec3(-0.3f, -1.0f, -0.2f));  // 斜射阳光
-    area_lights_[0].u_axis = glm::normalize(glm::vec3(1.0f, 0.0f, 0.0f));
-    area_lights_[0].v_axis = glm::normalize(glm::vec3(0.0f, 0.0f, 1.0f));
+    // 配置主光源 - 天花板白光
+    area_lights_[0].position = glm::vec3(0.0f, 4.8f, 0.0f);      // 接近天花板
+    area_lights_[0].color = glm::vec3(1.0f, 1.0f, 1.0f);         // 白色
+    area_lights_[0].strength = 0.0f;                            // 较强的主光源
+    area_lights_[0].width = 3.0f;                                 // 较大面积
+    area_lights_[0].height = 3.0f;                                
+    area_lights_[0].direction = glm::normalize(glm::vec3(0.0f, -1.0f, 0.0f));  // 向下
+    area_lights_[0].u_axis = glm::normalize(glm::vec3(1.0f, 0.0f, 0.0f));      // X轴
+    area_lights_[0].v_axis = glm::normalize(glm::vec3(0.0f, 0.0f, 1.0f));      // Z轴
     area_lights_[0].pad1 = 0.0f;
     area_lights_[0].pad2 = 0.0f;
     
-    // 配置环境补光 - 天空散射光
-    area_lights_[1].position = glm::vec3(-4.0f, 8.0f, 2.0f);    // 天空位置
-    area_lights_[1].color = glm::vec3(0.6f, 0.8f, 1.0f);        // 蓝色天空光
-    area_lights_[1].strength = 18.0f;                           // 稍弱的天空散射补光
-    area_lights_[1].width = 5.0f;
-    area_lights_[1].height = 5.0f;
-    area_lights_[1].direction = glm::normalize(glm::vec3(0.5f, -1.0f, -0.3f));
-    area_lights_[1].u_axis = glm::normalize(glm::vec3(1.0f, 0.0f, 0.0f));
-    area_lights_[1].v_axis = glm::normalize(glm::vec3(0.0f, 0.0f, 1.0f));
+    // 配置左侧光
+    area_lights_[1].position = glm::vec3(-4.9f, 2.0f, 0.0f);     // 靠近左墙
+    area_lights_[1].color = glm::vec3(0.4f, 0.4f, 1.0f);         // 柔和蓝色
+    area_lights_[1].strength = 0.0f;                             // 中等强度
+    area_lights_[1].width = 0.5f;                                 // 窄条
+    area_lights_[1].height = 2.5f;                                // 高条
+    area_lights_[1].direction = glm::normalize(glm::vec3(1.0f, 0.0f, 0.0f));   // 向右
+    area_lights_[1].u_axis = glm::normalize(glm::vec3(0.0f, 1.0f, 0.0f));      // Y轴
+    area_lights_[1].v_axis = glm::normalize(glm::vec3(0.0f, 0.0f, 1.0f));      // Z轴
     area_lights_[1].pad1 = 0.0f;
     area_lights_[1].pad2 = 0.0f;
     
-    // 配置水面反射光源
-    area_lights_[2].position = glm::vec3(2.0f, 3.0f, -3.0f);    // 水面反射位置
-    area_lights_[2].color = glm::vec3(0.7f, 0.9f, 1.0f);        // 水色反射光
-    area_lights_[2].strength = 10.0f;                           // 略弱的水面反射
-    area_lights_[2].width = 3.0f;
-    area_lights_[2].height = 3.0f;
-    area_lights_[2].direction = glm::normalize(glm::vec3(0.0f, 1.0f, 0.5f));   // 向上反射
-    area_lights_[2].u_axis = glm::normalize(glm::vec3(1.0f, 0.0f, 0.0f));
-    area_lights_[2].v_axis = glm::normalize(glm::vec3(0.0f, 0.0f, 1.0f));
+    // 配置右侧光
+    area_lights_[2].position = glm::vec3(4.9f, 2.0f, 0.0f);      // 靠近右墙
+    area_lights_[2].color = glm::vec3(1.0f, 0.6f, 0.4f);         // 暖橙色
+    area_lights_[2].strength = 0.0f;                             // 中等强度
+    area_lights_[2].width = 0.5f;                                 // 窄条
+    area_lights_[2].height = 2.5f;                                // 高条
+    area_lights_[2].direction = glm::normalize(glm::vec3(-1.0f, 0.0f, 0.0f));  // 向左
+    area_lights_[2].u_axis = glm::normalize(glm::vec3(0.0f, 1.0f, 0.0f));      // Y轴
+    area_lights_[2].v_axis = glm::normalize(glm::vec3(0.0f, 0.0f, 1.0f));      // Z轴
     area_lights_[2].pad1 = 0.0f;
     area_lights_[2].pad2 = 0.0f;
     
@@ -753,19 +507,19 @@ void Application::OnInit() {
     grassland::LogInfo("Initialized {} area lights", 3);
 
     // ==================== 初始化 Skybox / Environment Map ====================
-    // 初始化 skybox 信息 - 热带岛屿天空
-    skybox_info_.zenith_color = glm::vec3(0.4f, 0.7f, 1.0f);     // 明亮蓝色天顶
-    skybox_info_.horizon_color = glm::vec3(0.8f, 0.9f, 1.0f);    // 浅蓝色地平线
-    skybox_info_.ground_color = glm::vec3(0.2f, 0.5f, 0.3f);     // 绿色地面（岛屿植被色）
-    skybox_info_.has_environment_map = 1.0f;                     // 默认开启环境贴图
-    skybox_info_.environment_intensity = 1.0f;                   // 稍微降低环境强度
-    skybox_info_.environment_rotation = 0.0f;                    // 无旋转
+    // 初始化 skybox 信息
+    skybox_info_.zenith_color = glm::vec3(0.3f, 0.5f, 0.85f);    // 深蓝色天顶
+    skybox_info_.horizon_color = glm::vec3(0.7f, 0.75f, 0.85f);  // 浅蓝色地平线
+    skybox_info_.ground_color = glm::vec3(0.3f, 0.3f, 0.35f);    // 深灰色地面
+    skybox_info_.has_environment_map = 1.0f;                       // 默认开启环境贴图
+    skybox_info_.environment_intensity = 1.0f;                     // 默认强度
+    skybox_info_.environment_rotation = 0.0f;                      // 无旋转
     
-    // 太阳设置 - 热带阳光
-    skybox_info_.sun_direction = glm::normalize(glm::vec3(0.6f, 0.7f, 0.3f));  // 高角度阳光
-    skybox_info_.sun_intensity = 2.0f;                           // 略微减弱太阳强度
-    skybox_info_.sun_color = glm::vec3(1.0f, 0.95f, 0.8f);      // 温暖阳光色
-    skybox_info_.sun_angular_radius = 0.00465f;                  // 约 0.53 度（真实太阳大小）
+    // 太阳设置
+    skybox_info_.sun_direction = glm::normalize(glm::vec3(0.5f, 0.8f, 0.3f));
+    skybox_info_.sun_intensity = 0.0f;                             // 默认关闭太阳光
+    skybox_info_.sun_color = glm::vec3(1.0f, 0.95f, 0.85f);       // 暖色阳光
+    skybox_info_.sun_angular_radius = 0.00465f;                    // 约 0.53 度（真实太阳大小）
     
     // 创建 skybox info 缓冲区
     core_->CreateBuffer(sizeof(SkyboxInfo), grassland::graphics::BUFFER_TYPE_DYNAMIC, &skybox_info_buffer_);
@@ -817,13 +571,13 @@ void Application::OnInit() {
     volumetric_info_.scattering.scattering_coeff = glm::vec3(0.4f, 0.4f, 0.5f); // 散射系数（降低以提高性能）
     volumetric_info_.scattering.phase_g = 0.3f;                  // 前向散射（原硬编码值）
     volumetric_info_.scattering.absorption_coeff = glm::vec3(0.02f, 0.02f, 0.02f); // 吸收系数（降低）
-    volumetric_info_.scattering.enable = 1.0f;                   // 启用单次散射
+    volumetric_info_.scattering.enable = 0.0f;                   // 关闭单次散射
     
     // 亮蓝色雾气盒子配置
     volumetric_info_.fog_box.center = glm::vec3(0.0f, 1.5f, 2.0f);  // 场景中间偏前位置
     volumetric_info_.fog_box.size = glm::vec3(1.0f, 1.0f, 1.0f);     // 2x2x2米的立方体（半边长1米）
     volumetric_info_.fog_box.density = 2.5f;                         // 较高密度，确保明显的阴影效果
-    volumetric_info_.fog_box.enable = 1.0f;                          // 默认启用
+    volumetric_info_.fog_box.enable = 0.0f;                          // 关闭雾气盒子
     volumetric_info_.fog_box.absorption_color = glm::vec3(1.0f, 1.0f, 0.1f); // 蓝色雾气（吸收红绿，保留蓝）
     volumetric_info_.fog_box.edge_softness = 0.25f;                  // 边缘0.25米衰减，产生柔和阴影
     
@@ -837,19 +591,16 @@ void Application::OnInit() {
     grassland::LogInfo("  - FogBoxInfo: {} bytes", sizeof(FogBoxInfo));
 
     // Initialize camera state member variables
+    camera_pos_ = glm::vec3{ -0.35f, 0.25f, -0.06f }; // 相机初始位置
     camera_up_ = glm::vec3{ 0.0f, 1.0f, 0.0f }; // World up
-    camera_speed_ = 0.05f;
+    camera_speed_ = 0.050f; // 相机移动速度
 
-    // 将相机放在更接近海岛的位置，便于观察水面与细节（平视）
-    // 位置可根据运行时效果微调
-    camera_pos_ = glm::vec3(3.08f, 4.10f, 0.23f); // 稍微后移以获得更好的视野
-    camera_front_ = glm::normalize(glm::vec3(-0.97f, -0.22f, 0.02f)); // 平视，不俯视
-    // 从前向量计算 yaw/pitch 以保持鼠标控制一致性
-    yaw_ = glm::degrees(atan2(camera_front_.z, camera_front_.x));
-    pitch_ = glm::degrees(asin(glm::clamp(camera_front_.y, -1.0f, 1.0f)));
+    // Initialize new mouse/view variables
+    yaw_ = -90.6f; // 水平旋转角度
+    pitch_ = 86.4f; // 垂直旋转角度
     last_x_ = (float)window_->GetWidth() / 2.0f;
     last_y_ = (float)window_->GetHeight() / 2.0f;
-    mouse_sensitivity_ = 0.1f;
+    mouse_sensitivity_ = 0.10f;
     first_mouse_ = true;
     // Initialize hover stability variables
     hover_candidate_id_ = -2; // invalid
@@ -861,7 +612,7 @@ void Application::OnInit() {
     focus_distance_ = 6.0f;  // 默认焦距6米 -> focal plane at z=2 (camera z=8)
         samples_per_frame_ = 2;  // 每帧每像素多采样次数，默认为2，能显著降低闪烁
         focused_entity_id_ = -1; // no focus locked initially
-    exposure_ = 0.25f;       // Default exposure multiplier (half of original 0.5f)
+    exposure_ = 0.15f;      // Default exposure multiplier
     lights_need_upload_ = false; // track if any light params changed
     
     // Initialize MSAA parameters
@@ -876,13 +627,13 @@ void Application::OnInit() {
     // Initialize Cartoon Rendering parameters
     enable_toon_shading_ = 1;       // 默认开启卡通渲染
     enable_toon_outline_ = 1;       // 默认开启轮廓线
-    toon_color_levels_ = 4;         // 默认4个色阶
+    toon_color_levels_ = 6;         // 增加到6个色阶，减少噪点，过渡更平滑
     toon_shading_steps_ = 3;        // 默认3个光照阶梯
     
     // Initialize Two-Tone Shading parameters (方案一)
     toon_threshold_ = 0.5f;                              // 默认阈值
-    toon_shadow_smoothness_ = 0.05f;                     // 默认柔和度
-    toon_shadow_tint_ = glm::vec3(0.5f, 0.6f, 0.8f);     // 冷色调（蓝色）
+    toon_shadow_smoothness_ = 0.15f;                     // 增加柔和度，减少噪点
+    toon_shadow_tint_ = glm::vec3(0.7f, 0.75f, 0.85f);   // 提高阴影亮度，避免过黑（浅蓝灰色）
     toon_highlight_tint_ = glm::vec3(1.0f, 1.0f, 0.95f); // 暖色调（微黄）
     
     // Initialize Rim Light parameters (方案二)
@@ -906,7 +657,7 @@ void Application::OnInit() {
     // Set initial camera buffer data
     CameraObject camera_object{};
     camera_object.screen_to_camera = glm::inverse(
-        glm::perspective(glm::radians(45.0f), (float)window_->GetWidth() / (float)window_->GetHeight(), 0.1f, 100.0f));
+        glm::perspective(glm::radians(60.0f), (float)window_->GetWidth() / (float)window_->GetHeight(), 0.1f, 10.0f));
     camera_object.camera_to_world =
         glm::inverse(glm::lookAt(camera_pos_, camera_pos_ + camera_front_, camera_up_));
     camera_object.aperture = aperture_;
