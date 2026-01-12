@@ -1,60 +1,8 @@
-# Advanced Computer Graphics 2025 - Project Requirements
+# Advanced Computer Graphics 2025 - Chunyu Liu and Zhengwei Feng
 
-## Core Components
+How to Build : Open the directory in the Microsoft Visual Studio and use cmake to build the project.
 
-### • Base (Basic)
-- Implement a path tracing algorithm that correctly handles diffuse and specular materials :white_check_mark: lcy
-
-### • Scene Creation (Basic, +1pt for tidiness and attractiveness)
-- Build a custom scene with aesthetic considerations
-- Use geometry created from scratch or found online (with proper source credit)
-
-### • Acceleration Structure (Basic, +2pts for Surface Area Heuristic or advanced algorithm)
-- Implement an acceleration structure such as BVH (Bounding Volume Hierarchy)
-- *Note: Not required for hardware-based renderers (built-in acceleration)*
-
-## Advanced Features
-
-### • Material (Choose one)
-- Transmissive material (Basic) :white_check_mark: lcy
-- **Principled BSDF (2pts)**
-- **Multi-layer material (2pts)**
-- **Rendering of fur, hair, skin, etc. (2pts)**
-
-### • Texture (Choose one or more)
-- Color texture (Basic) :white_check_mark: lcy
-- **Normal map, height map, attribute map, or functional texture mapping (1pt each, up to 2pts)**
-- **Implement an adaptive mipmap algorithm (2pts)**
-
-### • Importance Sampling (2pts) :white_check_mark: lcy
-- Use advanced sampling algorithms for path tracing 
-- Importance sampling with Russian Roulette
-- Multiple importance sampling
-
-### • Volumetric Rendering (Choose one or more)
-- **Subsurface scattering (2pts)**
-- Homogeneous volume rendering (1pt)
-- Inhomogeneous volume rendering (1pt)
-- Channel-independent subsurface scattering (1pt)
-- Volumetric emission (1pt)
-- **Volumetric alpha shadow (2pts)**
-
-### • Special Visual Effects (Choose one or more)
-- Motion blur
--  depth of field (Basic) :white_check_mark: lcy
-- Alpha shadow (Basic) :white_check_mark: lcy
-- **Cartoon style rendering (2pts)**
-- **Chromatic dispersion (2pts)**
-
-### • Lighting (Choose one)
-- Point light and area light (Basic) :white_check_mark: lcy
-- **Environment lighting with HDR, such as skybox (2pts)**
-
-### • Anti-aliasing (Basic)
-- Implement an anti-aliasing algorithm
-
-### • Simulation-based content creation (Up to 2pts)
-
+Then run the ShortMarchDemo.exe to start the application.
 
 # Keyboard Shortcuts
 
@@ -70,6 +18,25 @@
 | **Ctrl+S** | Save screenshot as PNG | Inspection mode |
 
 
+# Git Branches
+
+This project contains multiple branches, each showcasing different scenes and rendering features:
+
+## Main Scene Branches
+
+- **main** - Robot scene featuring a "Terminator" character with cartoon rendering style
+- **scene** - Staircase scene demonstrating rendering of complex geometric structures
+- **demo** - Tropical island scene showcasing large-scale open-world rendering capabilities
+- **volumetric-show** - Volumetric rendering scene demonstrating participating media and volume effects
+- **height-map-switch** - Scene demonstrating normal map and height map switching for detail texture comparison
+
+## Development Branches
+
+The following branches document technical exploration and experimentation during development:
+- **NO-BVH** - Experimental branch without BVH acceleration structure
+- **kdt1** / **kdt2** - KD-Tree acceleration structure implementation attempts
+- **try-fix** - Bug fixes and debugging branch
+
 # Project Structure
 
 ```
@@ -79,83 +46,63 @@ src/
 ├── Scene.h/Scene.cpp     # Scene manager (TLAS, materials buffer)
 ├── Entity.h/Entity.cpp   # Entity class (mesh, BLAS, transform)
 ├── Film.h/Film.cpp       # Film class for progressive accumulation
-├── Material.h            # Material structure for PBR properties
-└── shaders/
-    └── shader.hlsl       # Ray tracing shaders (raygen, miss, closest hit)
+├── Material.h            # Material structure (Principled BSDF)
+└── shaders/              # Ray tracing shaders
+    ├── raygen.hlsl       # Ray generation shader
+    ├── raytracing.hlsl   # Ray tracing pipeline
+    ├── bsdf.hlsl         # BSDF evaluation functions
+    ├── lighting.hlsl     # Lighting calculations
+    ├── geometry.hlsl     # Geometry utilities
+    ├── normal_map.hlsl   # Normal mapping
+    ├── skybox.hlsl       # Skybox rendering
+    ├── motion_blur.hlsl  # Motion blur effects
+    ├── msaa.hlsl         # Multi-sample anti-aliasing
+    ├── common.hlsl       # Common definitions
+    └── rng.hlsl          # Random number generation
 ```
 
 # Code Architecture
 
-## Application Class (`app.h/app.cpp`)
-The main application class manages:
-- Graphics core initialization (D3D12 or Vulkan)
-- Window creation and event handling
-- Camera state and controls
-- Scene rendering and entity interaction
-- ImGui interface rendering
+The project uses a D3D12/Vulkan-based ray tracing rendering architecture:
 
-Key methods:
-- `OnInit()` - Initialize graphics, create scene, load entities
-- `OnUpdate()` - Process input, update hover detection, upload GPU buffers
-- `OnRender()` - Execute ray tracing, apply post-process highlighting, render ImGui overlays
-- `OnClose()` - Clean up resources
-- `UpdateHoveredEntity()` - GPU-based entity ID and pixel color readback for accurate picking
-- `ApplyHoverHighlight()` - Post-process highlighting applied after accumulation
-- `SaveAccumulatedOutput()` - Save clean accumulated render to PNG file
-
-## Scene Class (`Scene.h/Scene.cpp`)
-Manages the scene graph:
-- `AddEntity()` - Add entities to the scene
-- `BuildAccelerationStructures()` - Build TLAS from all entity BLAS
-- `UpdateMaterialsBuffer()` - Upload materials to GPU
-- `GetTLAS()` - Get the acceleration structure for rendering
-
-## Entity Class (`Entity.h/Entity.cpp`)
-Represents individual objects:
-- `LoadMesh()` - Load geometry from `.obj` files
-- `BuildBLAS()` - Create Bottom-Level Acceleration Structure
-- Material and transform properties
-
-## Film Class (`Film.h/Film.cpp`)
-Manages progressive sample accumulation:
-- `Reset()` - Clear accumulated samples (called when camera stops moving)
-- `IncrementSampleCount()` - Track the number of accumulated samples
-- `DevelopToOutput()` - Average accumulated colors and output final image
-- `Resize()` - Handle window resize events
-- Internal buffers for accumulated color and sample counts
-
-## Shader (`shaders/shader.hlsl`)
-HLSL ray tracing shaders:
-- `RayGenMain` - Generate primary rays from camera, accumulate samples to film buffers, write entity IDs
-- `MissMain` - Sky gradient for missed rays
-- `ClosestHitMain` - Shading with material properties (highlighting done in post-process)
-- Writes to multiple outputs: color, entity ID, and accumulation buffers
+- **Application** (`app.h/app.cpp`) - Manages graphics core initialization, window events, camera controls, scene rendering, and ImGui interface. Supports features like cartoon shading, motion blur, MSAA, and progressive rendering.
+- **Scene** (`Scene.h/Scene.cpp`) - Manages the scene graph, builds TLAS (Top-Level Acceleration Structure), uploads material buffers, and handles entity offsets for global buffers.
+- **Entity** (`Entity.h/Entity.cpp`) - Represents objects in the scene with mesh data, BLAS (Bottom-Level Acceleration Structure), transform matrices, and optional texture/normal map support.
+- **Film** (`Film.h/Film.cpp`) - Manages progressive sample accumulation for denoising and high-quality rendering when the camera is stationary.
+- **Material** (`Material.h`) - Implements Disney's Principled BSDF model with parameters including base color, roughness, metallic, specular, transmission, subsurface scattering, emission, and texture mapping.
+- **Shaders** (`shaders/*.hlsl`) - HLSL ray tracing shaders including RayGen, Miss, ClosestHit shaders, BSDF evaluation, lighting calculations, and various post-processing effects.
 
 ## Adding New Entities
 
 To add new objects to the scene, edit `Application::OnInit()` in `app.cpp`:
 
 ```cpp
-// Example: Add a new red sphere
-auto red_sphere = std::make_shared<Entity>(
-    "meshes/preview_sphere.obj",                    // Mesh path
-    Material(glm::vec3(1.0f, 0.0f, 0.0f), 0.3f, 0.0f),  // Red, smooth, non-metallic
-    glm::translate(glm::mat4(1.0f), glm::vec3(3.0f, 1.0f, 0.0f))  // Position
+auto entity = std::make_shared<Entity>(
+    "meshes/model.obj",                              // Mesh path
+    Material(glm::vec3(1.0f, 0.0f, 0.0f), 0.3f, 0.0f),  // Material
+    glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, 0.0f)),  // Transform
+    "textures/diffuse.png",                          // Optional texture path
+    "textures/normal.png"                            // Optional normal map path
 );
-scene_->AddEntity(red_sphere);
+scene_->AddEntity(entity);
+scene_->BuildAccelerationStructures();
 ```
 
-After adding entities, remember to call `scene_->BuildAccelerationStructures()`.
+## Material Parameters
 
-## Customizing Materials
+Materials use Disney's Principled BSDF model with extensive parameters:
 
-Materials use a simple PBR model:
 ```cpp
 Material(
     glm::vec3(r, g, b),  // Base color (0.0 to 1.0)
     roughness,            // Surface roughness (0.0 = smooth, 1.0 = rough)
-    metallic              // Metallic factor (0.0 = dielectric, 1.0 = metal)
+    metallic,             // Metallic factor (0.0 = dielectric, 1.0 = metal)
+    specular,             // Specular intensity (0.0 to 1.0)
+    specular_tint,        // Specular tint (0.0 to 1.0)
+    // ... and many more parameters for advanced material properties
 );
 ```
+
+See `Material.h` for the complete list of material parameters including transmission, subsurface scattering, clearcoat, sheen, and emission properties.
 
 
